@@ -33,3 +33,8 @@ c-capnproto.pc
 
 subprojects/googletest-*
 subprojects/packagecache
+
+fuzz/in
+fuzz/out
+fuzz/read-mem*
+fuzz/read-fp*
