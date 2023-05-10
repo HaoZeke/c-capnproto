@@ -13,7 +13,9 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#ifndef _MSC_VER
 #include <unistd.h>
+#endif
 
 #if defined(unix) && !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <endian.h>
@@ -30,7 +32,13 @@ typedef intmax_t ssize_t;
 #include <stddef.h>
 #endif
 
-// Cross-platform macro ALIGNED_(x) aligns a struct by `x` bytes.
+/* Cross-platform macro ALIGNED_(x) aligns a struct or a field
+ * by `x` bytes. When applied to a struct, it applies to the
+ * aggregate but not the individual members of the struct. So
+ * apply ALIGNED_(x) to individual members that need to be
+ * aligned.
+ * Confer: https://www.ibm.com/docs/en/i/7.1?topic=attributes-aligned-type-attribute
+ */
 #ifdef _MSC_VER
 #define ALIGNED_(x) __declspec(align(x))
 #endif
@@ -115,7 +123,7 @@ struct capn_tree *capn_tree_insert(struct capn_tree *root, struct capn_tree *n);
  * one by incrementing cap and returning the expanded segment.
  *
  * data, len, and cap must all be 8 byte aligned, hence the ALIGNED_(8) macro
- * on the struct definition.
+ * on the struct fields.
  *
  * data, len, cap, and user should all be set by the user. Other values
  * should be zero initialized.
@@ -127,9 +135,10 @@ struct ALIGNED_(8) capn_segment {
 	struct capn *capn;
 	uint32_t id;
 	/* user settable */
-	char *data;
-	size_t len, cap;
-	void *user;
+	ALIGNED_(8) char *data;
+	ALIGNED_(8) size_t len;
+	ALIGNED_(8) size_t cap;
+	ALIGNED_(8) void *user;
 };
 
 enum CAPN_TYPE {
