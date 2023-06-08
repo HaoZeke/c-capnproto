@@ -27,7 +27,8 @@
  * Windows seems to only have SSIZE_T in BaseTsd.h
  */
 #ifdef _MSC_VER
-typedef intmax_t ssize_t;
+#include <BaseTsd.h>
+typedef SSIZE_T ssize_t;
 #else
 #include <stddef.h>
 #endif
