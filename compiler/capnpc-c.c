@@ -14,6 +14,10 @@
 #include <string.h>
 #include <errno.h>
 #include <ctype.h>
+#ifdef _WIN32
+#include <io.h>
+#include <fcntl.h>
+#endif
 
 struct value {
 	struct Type t;
@@ -1316,6 +1320,14 @@ int main() {
 	int i, j;
 	uint64_t total_len=0;
 	struct capn_segment *current_seg;
+
+#ifdef _WIN32
+    /* schemas need to be read in binary mode, not default text mode */
+	if(_setmode(_fileno( stdin ), _O_BINARY)==-1) {
+		fprintf(stderr, "failed to set stdin to binary mode\n");
+		return -1;
+	}
+#endif
 
 	if (capn_init_fp(&capn, stdin, 0)==-1) {
 		fprintf(stderr, "failed to read schema from stdin\n");
