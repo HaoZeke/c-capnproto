@@ -1597,7 +1597,7 @@ int main() {
 		fprintf(srcf, "/* AUTO GENERATED - DO NOT EDIT */\n");
 		fprintf(srcf, "#ifdef __GNUC__\n"
 				"# define capnp_unused __attribute__((unused))\n"
-				"# define capnp_use(x) (void) x;\n"
+				"# define capnp_use(x) (void) (x);\n"
 				"#else\n"
 				"# define capnp_unused\n"
 				"# define capnp_use(x)\n"
