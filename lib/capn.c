@@ -481,7 +481,36 @@ err:
 }
 
 static void write_ptr_tag(char *d, capn_ptr p, int off) {
-	uint64_t val = U64(U32(I32(off/8) << 2));
+	/*
+	lsb                      struct pointer                       msb
+	+-+-----------------------------+---------------+---------------+
+	|A|             B               |       C       |       D       |
+	+-+-----------------------------+---------------+---------------+
+
+	A (2 bits) = 0, to indicate that this is a struct pointer.
+	B (30 bits) = Offset, in words, from the end of the pointer to the
+		start of the struct's data section.  Signed.
+	C (16 bits) = Size of the struct's data section, in words.
+	D (16 bits) = Size of the struct's pointer section, in words.
+
+	For B we can't simply left-shift by 2 bits since C11 6.5.7.4
+	https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf
+	says we can get undefined behavior when the left-shift exceeds
+	the signed integer (ie. values run into the sign bit). The
+	ASAN detector will rightly complain. So we do two's complement
+	manually, and check bounds, to stay within unsigned arithmetic.
+	*/
+	const int off_words = off / 8;
+	uint64_t val;
+	if (off_words < 0) {
+		if (off_words < -(2147483647 >> 2) - 1) {
+			goto err;
+		}
+		uint32_t twos = 1 + ~(U32(-off_words) << 2);
+		val = U64(twos);
+	} else {
+		val = U64(U32(off_words) << 2);
+	}
 
 	switch (p.type) {
 	case CAPN_STRUCT:
@@ -528,6 +557,9 @@ static void write_ptr_tag(char *d, capn_ptr p, int off) {
 	}
 
 	*(uint64_t*) d = capn_flip64(val);
+
+err:
+	memset(&p, 0, sizeof(p));
 }
 
 static void write_far_ptr(char *d, struct capn_segment *s, char *tgt) {
