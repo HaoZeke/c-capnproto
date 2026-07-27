@@ -1,6 +1,8 @@
 capnpc-c (HaoZeke fork)
 =======================
 
+[![CI](https://github.com/HaoZeke/c-capnproto/actions/workflows/ci.yml/badge.svg)](https://github.com/HaoZeke/c-capnproto/actions/workflows/ci.yml)
+
 Pure **C** runtime + `capnpc-c` plugin for [Cap'n Proto](https://capnproto.org/).
 
 This repository is **[HaoZeke/c-capnproto](https://github.com/HaoZeke/c-capnproto)**,
@@ -109,3 +111,15 @@ a while:
 - [liamstask's fork](https://github.com/liamstask/c-capnproto)
 - [baruch's fork](https://github.com/baruch/c-capnproto)
 - [kylemanna's fork](https://github.com/kylemanna/c-capnproto)
+
+## Install layout
+
+| Artifact | Path |
+|----------|------|
+| Plugin | `bin/capnpc-c` |
+| Header | `include/capnp_c.h` |
+| Library | `lib/libcapnp_c.a` / `.so` |
+| pkg-config | `lib/pkgconfig/c-capnproto.pc` |
+| Schema helper | `share/c-capnproto/c.capnp` |
+
+Maintaining: [MAINTAINING.md](MAINTAINING.md). Security: [SECURITY.md](SECURITY.md).

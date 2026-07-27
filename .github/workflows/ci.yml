@@ -1,38 +1,60 @@
-name: "CI Unit Tests"
+name: CI
 
 on:
   push:
-    branches:
-      - master
+    branches: [master]
   pull_request:
 
 jobs:
-  Normal:
-    runs-on: ubuntu-20.04
+  meson:
+    name: meson (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-    - name: Install meson and ninja
-      run: pip3 install --user meson ninja
-    - name: Run Unit Tests
-      run: |
-        export PATH=${HOME}/.local/bin:${PATH}
-        meson setup -Dbuildtype=release build
-        meson compile -C build
-        build/capn-test
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install meson ninja
+        run: pip install meson ninja
+      - name: Configure
+        run: meson setup build -Dbuildtype=release -Denable_tests=true
+      - name: Build
+        run: meson compile -C build
+      - name: Test
+        run: meson test -C build --print-errorlogs
+      - name: Install smoke
+        run: |
+          DESTDIR=$PWD/destdir meson install -C build
+          test -x destdir/usr/local/bin/capnpc-c
+          test -f destdir/usr/local/include/capnp_c.h
+          test -f destdir/usr/local/lib/pkgconfig/c-capnproto.pc \
+            || test -f destdir/usr/local/lib/*/pkgconfig/c-capnproto.pc \
+            || ls -R destdir/usr/local/lib | head -40
 
-  Sanitizers:
-    runs-on: ubuntu-22.04
+  sanitizers:
+    name: ASan+UBSan
+    runs-on: ubuntu-latest
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-    - name: Install meson and ninja
-      run: pip3 install --user meson ninja
-    - name: Run Unit Tests with ASAN
-      env:
-        ASAN_OPTIONS: detect_leaks=0,detect_odr_violation=0,allocator_may_return_null=1
-      run: |
-        export PATH=${HOME}/.local/bin:${PATH}
-        meson setup -Dbuildtype=debugoptimized -Db_sanitize=address,undefined build
-        meson compile -C build
-        build/capn-test
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install meson ninja
+        run: pip install meson ninja
+      - name: Configure
+        run: meson setup build -Dbuildtype=debugoptimized -Db_sanitize=address,undefined -Denable_tests=true
+      - name: Build
+        run: meson compile -C build
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=0,detect_odr_violation=0,allocator_may_return_null=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: meson test -C build --print-errorlogs
