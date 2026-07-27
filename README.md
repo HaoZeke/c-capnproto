@@ -1,54 +1,45 @@
-capnpc-c
-========
+capnpc-c (HaoZeke fork)
+=======================
 
-This is a C plugin for [Cap'n Proto](http://kentonv.github.io/capnproto), an
-efficient protocol for sharing data and capabilities.
+Pure **C** runtime + `capnpc-c` plugin for [Cap'n Proto](https://capnproto.org/).
 
-## UNMAINTAINED
+This repository is **[HaoZeke/c-capnproto](https://github.com/HaoZeke/c-capnproto)**,
+a maintained fork of `opensourcerouting/c-capnproto` (itself from
+`jmckaskill/c-capnproto`). Upstream declared itself unmaintained (no releases,
+unreviewed PRs; last real work ~2023). Public forks surveyed 2026-07: no
+active maintainer with a credible commit series. This fork exists as the
+canonical pure-C Cap'n home next to
+[HaoZeke/capnp-fortran](https://github.com/HaoZeke/capnp-fortran).
 
-This project is currently **NOT MAINTAINED**.  If you are interested in
-taking over maintenance and/or need this for some project, please look at
-issue https://github.com/opensourcerouting/c-capnproto/issues/55
+**Upstream lineage:** `jmckaskill` → `opensourcerouting` → **this fork**.
 
-No releases will be made.  PRs may sit unreviewed for multiple years.  **PRs
-MAY get merged WITHOUT ANY REVIEW, as a last ditch attempt to not waste
-people's efforts on PRs.  This means things may break completely.**
+> ## Security warning (inherited)
 
-> ## Security warning!
+> The generated code assumes all input to be trusted until bounds-checking is
+> restored. Do **not** feed untrusted Cap'n streams to the generated readers
+> without an explicit validation layer. Tracking work: bounds checks on
+> decode, CI, and tagged releases on this fork.
 
-> The generated code assumes all input to be trusted. Do NOT use with
-> untrusted input! There is currently no code in place to check if
-> structures/pointers are within bounds.
-
-This is only the code generator plugin, to properly make use of it you
-need to download, build and install capnpc and then build and install
-this project and then you can utilize it as:
+## Building (Meson, recommended)
 
 ```sh
-capnpc compiler/test.capnp -oc
+git clone --recurse-submodules https://github.com/HaoZeke/c-capnproto.git
+cd c-capnproto
+meson setup build
+meson compile -C build
+# plugin: build/capnpc-c   runtime: build/libcapnp.a (or shared)
+meson install -C build   # optional: put capnpc-c on PATH
 ```
 
-[![Build Status](https://travis-ci.org/opensourcerouting/c-capnproto.svg?branch=master)](https://travis-ci.org/opensourcerouting/c-capnproto)
-
-## Building on Linux
+## Building (autotools)
 
 ```sh
-git clone --recurse-submodules https://github.com/opensourcerouting/c-capnproto
+git clone --recurse-submodules https://github.com/HaoZeke/c-capnproto.git
 cd c-capnproto
 autoreconf -f -i -s
 ./configure
 make
 make check
-```
-
-## Building with Meson
-
-```sh
-git clone --recurse-submodules https://github.com/opensourcerouting/c-capnproto
-cd c-capnproto
-meson setup build
-meson compile -C build
-build/capn-test
 ```
 
 ## Usage
