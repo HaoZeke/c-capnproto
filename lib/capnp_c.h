@@ -236,11 +236,23 @@ int capn_setv64(capn_list64 p, int off, const uint64_t *data, int sz);
 /* capn_new_* functions create a new object
  * datasz is in bytes, ptrs is # of pointers, sz is # of elements in the list
  * On an error a CAPN_NULL pointer is returned
+ *
+ * List encoding (capnproto.org/encoding.html, matching C++):
+ *   - List(Text), List(Data), List(AnyPointer): pointer list, element size C=6.
+ *     Use capn_new_ptr_list(seg, n). Then capn_set_text / capn_setp per index.
+ *   - List(Struct): composite list, element size C=7. Use
+ *     capn_new_list(seg, n, struct_datasz_bytes, struct_ptrs).
+ *   - capn_new_list(seg, n, 0, 1) is List of 0-data/1-pointer *structs*
+ *     (composite), not List(Text). capn_set_text on that list returns -1;
+ *     use capn_new_ptr_list for List(Text).
+ * Text is List(UInt8) with a trailing NUL included in the wire element count.
  */
 capn_ptr capn_new_string(struct capn_segment *seg, const char *str, ssize_t sz);
 capn_ptr capn_new_struct(struct capn_segment *seg, int datasz, int ptrs);
 capn_ptr capn_new_interface(struct capn_segment *seg, int datasz, int ptrs);
 capn_ptr capn_new_ptr_list(struct capn_segment *seg, int sz);
+/* Alias for List(Text) / List(Data) / List(AnyPointer) (wire C=6). */
+#define capn_new_text_list(seg, sz) capn_new_ptr_list((seg), (sz))
 capn_ptr capn_new_list(struct capn_segment *seg, int sz, int datasz, int ptrs);
 capn_list1 capn_new_list1(struct capn_segment *seg, int sz);
 capn_list8 capn_new_list8(struct capn_segment *seg, int sz);
