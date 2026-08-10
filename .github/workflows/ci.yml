@@ -12,7 +12,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        include:
+          - os: ubuntu-latest
+            meson_opts: -Denable_tests=true
+            run_tests: true
+          - os: macos-latest
+            meson_opts: -Denable_tests=true
+            run_tests: true
+          - os: windows-latest
+            meson_opts: --vsenv -Denable_tests=false
+            run_tests: false
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,19 +32,35 @@ jobs:
       - name: Install meson ninja
         run: pip install meson ninja
       - name: Configure
-        run: meson setup build -Dbuildtype=release -Denable_tests=true
+        run: meson setup build -Dbuildtype=release ${{ matrix.meson_opts }}
       - name: Build
         run: meson compile -C build
       - name: Test
+        if: matrix.run_tests
         run: meson test -C build --print-errorlogs
+      - name: Skip tests (MSVC gtest)
+        if: ${{ !matrix.run_tests }}
+        run: echo "Windows job builds libcapnp_c and capnpc-c only; gtest subproject is not built (-Denable_tests=false)."
       - name: Install smoke
+        if: runner.os != 'Windows'
         run: |
           DESTDIR=$PWD/destdir meson install -C build
           test -x destdir/usr/local/bin/capnpc-c
           test -f destdir/usr/local/include/capnp_c.h
+          test -f destdir/usr/local/include/c.capnp.h
+          test -f destdir/usr/local/share/c-capnproto/c.capnp
           test -f destdir/usr/local/lib/pkgconfig/c-capnproto.pc \
             || test -f destdir/usr/local/lib/*/pkgconfig/c-capnproto.pc \
             || ls -R destdir/usr/local/lib | head -40
+      - name: Install smoke (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          meson install -C build --destdir "$PWD/destdir"
+          find destdir -name 'capnpc-c.exe' | grep .
+          find destdir -name 'capnp_c.h' | grep .
+          find destdir -name 'c.capnp.h' | grep .
+          find destdir -name 'c.capnp' | grep .
 
   sanitizers:
     name: ASan+UBSan
