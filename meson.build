@@ -207,6 +207,32 @@ if get_option('enable_tests') and not meson.is_subproject()
     )
     test('group-in-union-test', group_in_union_test)
 
+    list_decode_srcdest_gen = custom_target(
+      'list-decode-srcdest-capnp',
+      input: 'tests' / 'list-decode-srcdest.capnp',
+      output: ['list-decode-srcdest.capnp.c', 'list-decode-srcdest.capnp.h'],
+      command: [
+        capnp, 'compile',
+        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-I', meson.current_source_dir() / 'compiler',
+        '--src-prefix', meson.current_source_dir() / 'tests',
+        '@INPUT@',
+      ],
+      depends: [capnpc_c],
+    )
+
+    list_decode_srcdest_test = executable(
+      'list-decode-srcdest-test',
+      'tests' / 'list-decode-srcdest-test.cpp',
+      list_decode_srcdest_gen,
+      include_directories: include_directories(['lib', 'tests', 'compiler']),
+      dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
+      c_args: codec_c_args + ['-include', meson.current_source_dir() / 'tests' / 'list-decode-srcdest.h'],
+      cpp_args: common_cpp_args,
+      install: false,
+    )
+    test('list-decode-srcdest-test', list_decode_srcdest_test)
+
     foreach t : ['data-codec', 'empty-list', 'null-text']
       gen = custom_target(
         t + '-capnp',
