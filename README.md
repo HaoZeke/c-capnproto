@@ -19,8 +19,10 @@ canonical pure-C Cap'n home next to
 
 > Decode rejects out-of-segment pointer landings, applies a 64MiB traversal
 > budget, and walks the pointer graph (`capn_validate`, nesting limit 64).
-> This is still **not** C++ `MessageReader` parity. Do **not** treat generated
-> readers as untrusted-safe. See [SECURITY.md](SECURITY.md).
+> Failed hops are still `CAPN_NULL`; check `capn_ok` to tell them from a
+> missing field. This is still **not** C++ `MessageReader` throw-parity.
+> Do **not** treat generated readers as untrusted-safe. See
+> [SECURITY.md](SECURITY.md).
 
 ## Building (Meson, recommended)
 
