@@ -239,6 +239,8 @@ CAPN_EXPORT int capn_set_root(struct capn *c, capn_ptr p);
  * capn_setp will copy the data, create far pointers, etc if the target
  * is in a different segment/context.
  * Both of these will use/return inner pointers for composite lists.
+ * A tgt of type CAPN_NULL, or with data == NULL, is encoded as a null
+ * pointer. Zero-init C structs so optional pointer fields stay unset.
  */
 CAPN_EXPORT capn_ptr capn_getp(capn_ptr p, int off, int resolve);
 CAPN_EXPORT int capn_setp(capn_ptr p, int off, capn_ptr tgt);

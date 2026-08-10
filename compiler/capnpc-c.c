@@ -643,8 +643,9 @@ static void set_member(struct str *func, struct field *f, const char *ptr, const
 	case Type__list:
 	case Type_anyPointer:
 		if (!f->v.intval) {
-			str_addf(func, "capn_setp(%s, %d, %s);\n",
-					ptr, f->f.slot.offset, pvar);
+			g_nullused = 1;
+			str_addf(func, "capn_setp(%s, %d, (%s.type != CAPN_NULL) ? %s : capn_null);\n",
+					ptr, f->f.slot.offset, pvar, pvar);
 		} else if (!strcmp(f->v.tname, "capn_ptr")) {
 			g_nullused = 1;
 			str_addf(func, "capn_setp(%s, %d, (%s.data != capn_val%d.data) ? %s : capn_null);\n",

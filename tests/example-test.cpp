@@ -16,6 +16,7 @@
 
 #include "capnp_c.h"
 #include "addressbook.capnp.h"
+#include "test.capnp.h"
 
 static capn_text chars_to_text(const char *chars) {
   return (capn_text) {
@@ -226,6 +227,85 @@ TEST(Examples, WriteWithSetRootHasPayload) {
     read_Person(&rp, rroot);
     EXPECT_EQ((uint32_t)17, rp.id);
     EXPECT_CAPN_TEXT_EQ("somebody", rp.name);
+    capn_free(&rc);
+  }
+}
+
+TEST(Examples, ZeroedNestedPointersAreNull) {
+  uint8_t buf[4096];
+  ssize_t sz = 0;
+
+  {
+    struct capn c;
+    capn_init_malloc(&c);
+    struct capn_segment *cs = capn_root(&c).seg;
+
+    /* Zero-init omits optional pointer fields (phones, nested structs). */
+    struct Person p = {0};
+    p.id = 9;
+    p.name = chars_to_text("unset-phones");
+    Person_ptr pp = new_Person(cs);
+    write_Person(&p, pp);
+    ASSERT_EQ(0, capn_set_root(&c, pp.p));
+    sz = capn_write_mem(&c, buf, sizeof(buf), 0);
+    ASSERT_GT(sz, 0);
+    capn_free(&c);
+  }
+
+  {
+    struct capn rc;
+    ASSERT_EQ(0, capn_init_mem(&rc, buf, (size_t)sz, 0));
+    Person_ptr rroot;
+    struct Person rp;
+    rroot.p = capn_getp(capn_root(&rc), 0, 1);
+    ASSERT_NE(CAPN_NULL, rroot.p.type);
+    read_Person(&rp, rroot);
+    EXPECT_EQ((uint32_t)9, rp.id);
+    EXPECT_EQ(CAPN_NULL, capn_getp(rroot.p, 2, 1).type);
+    capn_resolve(&rp.phones.p);
+    EXPECT_EQ(CAPN_NULL, rp.phones.p.type);
+    EXPECT_EQ(0, capn_len(rp.phones));
+    capn_free(&rc);
+  }
+}
+
+TEST(Examples, ZeroedNestedStructIsNull) {
+  uint8_t buf[8192];
+  ssize_t sz = 0;
+
+  {
+    struct capn c;
+    capn_init_malloc(&c);
+    TestAllTypes_ptr tp = new_TestAllTypes(capn_root(&c).seg);
+    struct TestAllTypes t = {0};
+    t.int32Field = 42;
+    write_TestAllTypes(&t, tp);
+    ASSERT_EQ(0, capn_set_root(&c, tp.p));
+
+    struct TestAllTypes live = {0};
+    read_TestAllTypes(&live, tp);
+    EXPECT_EQ(42, live.int32Field);
+    EXPECT_EQ(CAPN_NULL, capn_getp(tp.p, 2, 1).type);
+    capn_resolve(&live.structField.p);
+    EXPECT_EQ(CAPN_NULL, live.structField.p.type);
+
+    sz = capn_write_mem(&c, buf, sizeof(buf), 0);
+    ASSERT_GT(sz, 0);
+    capn_free(&c);
+  }
+
+  {
+    struct capn rc;
+    ASSERT_EQ(0, capn_init_mem(&rc, buf, (size_t)sz, 0));
+    TestAllTypes_ptr rp;
+    struct TestAllTypes rr = {0};
+    rp.p = capn_getp(capn_root(&rc), 0, 1);
+    ASSERT_NE(CAPN_NULL, rp.p.type);
+    read_TestAllTypes(&rr, rp);
+    EXPECT_EQ(42, rr.int32Field);
+    EXPECT_EQ(CAPN_NULL, capn_getp(rp.p, 2, 1).type);
+    capn_resolve(&rr.structField.p);
+    EXPECT_EQ(CAPN_NULL, rr.structField.p.type);
     capn_free(&rc);
   }
 }

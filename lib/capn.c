@@ -587,7 +587,12 @@ static int write_ptr(struct capn_segment *s, char *d, capn_ptr p) {
 	/* note p.seg can be NULL if its a ptr to static data */
 	char *pdata = p.data - 8*p.is_composite_list;
 
-	if (p.type == CAPN_NULL || (p.type == CAPN_STRUCT && p.datasz == 0 && p.ptrs == 0)) {
+	/* CAPN_NULL, a zeroed pointer field, or a STRUCT with no payload
+	 * (including datasz/ptrs set but data == NULL) encode as a null
+	 * pointer. Zero-init C structs (`= {0}` / memset) to omit optional
+	 * pointer fields. */
+	if (p.type == CAPN_NULL || p.data == NULL
+	    || (p.type == CAPN_STRUCT && p.datasz == 0 && p.ptrs == 0)) {
 		return write_ptr_tag(d, p, 0);
 
 	} else if (!p.seg || p.seg->capn != s->capn || p.is_list_member) {

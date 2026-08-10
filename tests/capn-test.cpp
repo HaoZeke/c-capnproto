@@ -500,6 +500,28 @@ TEST(WireFormat, WritePtrTagOverflowDoesNotWrite) {
   EXPECT_NE(UINT64_C(0xdeadbeefcafebabe), word);
 }
 
+TEST(WireFormat, NullStructPointerEncodesAsNull) {
+  Session ctx;
+  capn_ptr root = capn_root(&ctx.capn);
+  capn_ptr outer = capn_new_struct(root.seg, 0, 1);
+  ASSERT_EQ(CAPN_STRUCT, outer.type);
+  ASSERT_EQ(0, capn_set_root(&ctx.capn, outer));
+
+  capn_ptr nil;
+  memset(&nil, 0, sizeof(nil));
+  EXPECT_EQ(0, capn_setp(outer, 0, nil));
+  EXPECT_EQ(CAPN_NULL, capn_getp(outer, 0, 1).type);
+
+  /* Present-looking struct metadata with no payload must still encode as
+   * null, not a far/copy of a NULL data pointer. */
+  capn_ptr hollow;
+  memset(&hollow, 0, sizeof(hollow));
+  hollow.type = CAPN_STRUCT;
+  hollow.datasz = 8;
+  EXPECT_EQ(0, capn_setp(outer, 0, hollow));
+  EXPECT_EQ(CAPN_NULL, capn_getp(outer, 0, 1).type);
+}
+
 TEST(WireFormat, WritePtrTagNegativeOffsetRoundTrip) {
   Session ctx;
   capn_ptr root = capn_root(&ctx.capn);
