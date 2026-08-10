@@ -476,6 +476,34 @@ TEST(Alignment, MallocSegmentData) {
   capn_free(&c);
 }
 
+TEST(Alignment, MallocSegmentDefaultMinSize) {
+  /* create() rounds the first small write up to CAPN_CREATE_MIN_SZ (4096). */
+  struct capn c;
+  capn_init_malloc(&c);
+  capn_ptr root = capn_root(&c);
+  ASSERT_TRUE(root.seg != NULL);
+  size_t alloc = root.seg->cap + sizeof(struct capn_segment);
+  EXPECT_EQ(size_t{4096}, alloc);
+  EXPECT_EQ(size_t{0}, alloc % 4096);
+  capn_free(&c);
+}
+
+TEST(Alignment, MallocSegmentRoundsUpTo4096) {
+  struct capn c;
+  capn_init_malloc(&c);
+  capn_ptr root = capn_root(&c);
+  ASSERT_TRUE(root.seg != NULL);
+  /* 5000 data bytes plus list tag do not fit in the first 4096-byte
+   * segment, so create() allocates a second and rounds it up. */
+  capn_list8 big = capn_new_list8(root.seg, 5000);
+  ASSERT_EQ(CAPN_LIST, big.p.type);
+  ASSERT_TRUE(big.p.seg != NULL);
+  size_t alloc = big.p.seg->cap + sizeof(struct capn_segment);
+  EXPECT_EQ(size_t{0}, alloc % 4096);
+  EXPECT_GE(alloc, size_t{4096});
+  capn_free(&c);
+}
+
 /* 30-bit signed pointer offset is [-2^29, 2^29-1] words. */
 static const int64_t kPtrOffMinWords = -(INT64_C(1) << 29);
 static const int64_t kPtrOffMaxWords = (INT64_C(1) << 29) - 1;
