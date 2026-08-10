@@ -370,9 +370,10 @@ CAPN_EXPORT int64_t capn_size(struct capn *c);
 
 /* capn_write_(fp|mem) writes segments to the file/memory buffer in
  * serialized form and returns the number of bytes written.
+ * capn_write_fp is a userspace FILE* entry; the prototype stays valid
+ * under __KERNEL__ (FILE is void) and the implementation returns -1.
  */
-/* TODO */
-/*int capn_write_fp(struct capn *c, FILE *f, int packed);*/
+CAPN_EXPORT int capn_write_fp(struct capn *c, FILE *f, int packed);
 CAPN_EXPORT int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, size_t count), int fd, int packed);
 CAPN_EXPORT int64_t capn_write_mem(struct capn *c, uint8_t *p, size_t sz, int packed);
 
