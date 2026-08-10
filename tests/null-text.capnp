@@ -1,6 +1,7 @@
 @0xa5b3d80c6921471e;
 
 using C = import "/c.capnp";
+$C.fieldgetset;
 $C.codecgen;
 $C.extraheader("#include \"null-text.h\"");
 

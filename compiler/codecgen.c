@@ -407,7 +407,7 @@ void encode_member(capnp_ctx_t *ctx, struct str *func, struct field *f,
     str_add(func, tab, -1);
     str_addf(func, "else{\n");
     str_add(func, tab, -1);
-    str_addf(func, "\td->%s.str = \"\";\n", var);
+    str_addf(func, "\td->%s.str = NULL;\n", var);
     str_add(func, tab, -1);
     str_addf(func, "\td->%s.len = 0;\n", var);
     str_add(func, tab, -1);
@@ -424,14 +424,22 @@ void encode_member(capnp_ctx_t *ctx, struct str *func, struct field *f,
       strf(&buf, "n_%s", var2);
     }
     str_add(func, tab, -1);
-    str_addf(func, "if (s->%s != NULL && s->%s > 0) {\n", var2, buf.str);
+    str_addf(func, "if (s->%s != NULL) {\n", var2);
     str_add(func, tab, -1);
     str_addf(func, "\tcapn_list8 list_ = capn_new_list8(cs, s->%s);\n",
              buf.str);
     str_add(func, tab, -1);
-    str_addf(func, "\tcapn_setv8(list_, 0, s->%s, s->%s);\n", var2, buf.str);
+    str_addf(func, "\tif (s->%s > 0) {\n", buf.str);
+    str_add(func, tab, -1);
+    str_addf(func, "\t\tcapn_setv8(list_, 0, s->%s, s->%s);\n", var2, buf.str);
+    str_add(func, tab, -1);
+    str_addf(func, "\t}\n");
     str_add(func, tab, -1);
     str_addf(func, "\td->%s.p = list_.p;\n", var);
+    str_add(func, tab, -1);
+    str_addf(func, "} else {\n");
+    str_add(func, tab, -1);
+    str_addf(func, "\tmemset(&d->%s, 0, sizeof(d->%s));\n", var, var);
     str_add(func, tab, -1);
     str_addf(func, "}\n");
     str_release(&buf);
@@ -721,6 +729,7 @@ void mk_struct_list_encoder(capnp_ctx_t *ctx, struct node *n) {
     str_addf(ctx->SRC, "\tlst = new_%s_list(cs, count);\n", n->name.str);
     str_addf(ctx->SRC, "\tfor(i = 0; i < count; i ++) {\n");
     str_addf(ctx->SRC, "\t\tstruct %s d;\n", n->name.str);
+    str_addf(ctx->SRC, "\t\tmemset(&d, 0, sizeof(d));\n");
     str_addf(ctx->SRC, "\t\tencode_%s(cs, &d, s[i]);\n", n->name.str);
     str_addf(ctx->SRC, "\t\tset_%s(&d, lst, i);\n", n->name.str);
     str_addf(ctx->SRC, "\t}\n");
@@ -752,6 +761,7 @@ void mk_struct_ptr_encoder(capnp_ctx_t *ctx, struct node *n) {
            n->name.str, n->name.str, buf.str);
   str_addf(ctx->SRC, "\t%s_ptr ptr;\n", n->name.str);
   str_addf(ctx->SRC, "\tstruct %s d;\n", n->name.str);
+  str_addf(ctx->SRC, "\tmemset(&d, 0, sizeof(d));\n");
   str_addf(ctx->SRC, "\tptr = new_%s(cs);\n", n->name.str);
   str_addf(ctx->SRC, "\tif (s == NULL) {\n");
   str_addf(ctx->SRC, "\t\tptr.p = capn_null;\n");
