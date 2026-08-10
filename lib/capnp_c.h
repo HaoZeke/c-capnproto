@@ -125,6 +125,10 @@ struct capn {
 	struct capn_segment *seglist, *lastseg;
 	struct capn_segment *copylist;
 	size_t traversal_used;
+	/* Sticky: set when read_ptr fails for OOB, budget, nesting, or a
+	 * broken (non-null) pointer. Not set for a wire-null pointer word.
+	 * Query with capn_ok; clear with capn_clear_err. */
+	int decode_err;
 };
 
 /* Default decode traversal budget (bytes). 0 in traversal_limit means this. */
@@ -252,10 +256,21 @@ CAPN_EXPORT void capn_resolve(capn_ptr *p);
  * Returns 0 if landings are in-segment, nesting stays within
  * nesting_limit (0 means CAPN_NESTING_DEFAULT), the traversal budget
  * is not exceeded, and the graph has no cycles. Returns -1 otherwise.
- * Does not consume traversal_used. Generated accessors still trust a
- * capn_ptr that has already been decoded.
+ * Does not consume traversal_used. A failed hop may set decode_err
+ * (same as getp). Generated accessors still trust a capn_ptr that has
+ * already been decoded and do not check capn_ok.
  */
 CAPN_EXPORT int capn_validate(struct capn *c);
+
+/* capn_ok is 1 if no decode error has been recorded on this session.
+ * read_ptr sets decode_err on OOB, traversal-budget, nesting, or a
+ * broken (non-null) pointer. A legitimate wire-null pointer word does
+ * not. Generated getters still return CAPN_NULL for both cases; check
+ * this flag to tell them apart. capn_init_mem does not walk the graph.
+ * capn_ok(NULL) is 0.
+ */
+CAPN_EXPORT int capn_ok(const struct capn *c);
+CAPN_EXPORT void capn_clear_err(struct capn *c);
 
 /* capn_set_root sets the message root to p (capn_setp(capn_root(c), 0, p)).
  * new_* / write_* only fill a struct in a segment; the message is empty
