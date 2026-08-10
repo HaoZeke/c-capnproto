@@ -15,12 +15,12 @@ canonical pure-C Cap'n home next to
 
 **Upstream lineage:** `jmckaskill` → `opensourcerouting` → **this fork**.
 
-> ## Security warning (inherited)
+> ## Security warning
 
-> The generated code assumes all input to be trusted until bounds-checking is
-> restored. Do **not** feed untrusted Cap'n streams to the generated readers
-> without an explicit validation layer. Tracking work: bounds checks on
-> decode, CI, and tagged releases on this fork.
+> Decode rejects out-of-segment pointer landings (struct/list/far) and applies
+> a 64MiB traversal budget. This is **partial**: there is no full graph
+> validator yet. Do **not** treat generated readers as untrusted-safe. See
+> [SECURITY.md](SECURITY.md).
 
 ## Building (Meson, recommended)
 
