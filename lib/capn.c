@@ -17,11 +17,20 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <limits.h>
 #ifndef _MSC_VER
 #include <sys/param.h>
 #endif
+#define capn_alloc(n) malloc(n)
+#define capn_zalloc(n) calloc(1, (n))
+#define capn_freemem(p) free(p)
 #else /* __KERNEL__ */
 #include <linux/string.h>
+#include <linux/slab.h>
+#include <linux/limits.h>
+#define capn_alloc(n) kmalloc((n), GFP_KERNEL)
+#define capn_zalloc(n) kzalloc((n), GFP_KERNEL)
+#define capn_freemem(p) kfree(p)
 #endif /* __KERNEL__ */
 
 #define STRUCT_PTR 0
@@ -306,6 +315,20 @@ static int charge_traversal(struct capn *c, size_t bytes, int len)
 	return 0;
 }
 
+static int session_nesting(struct capn *c)
+{
+	if (c && c->nesting_limit > 0)
+		return c->nesting_limit;
+	return CAPN_NESTING_DEFAULT;
+}
+
+static int hop_remaining(capn_ptr p)
+{
+	if (p.nesting_valid)
+		return p.nesting;
+	return p.seg ? session_nesting(p.seg->capn) : CAPN_NESTING_DEFAULT;
+}
+
 /* Advance *pd by (signed 30-bit word offset + 1) words from the
  * pointer word. Double-far uses a sentinel one word before s->data. */
 static int apply_offset(struct capn_segment *s, char **pd, uint64_t val)
@@ -442,10 +465,15 @@ static char *struct_ptr(struct capn_segment *s, char *d, int minsz) {
 	return NULL;
 }
 
-static capn_ptr read_ptr(struct capn_segment *s, char *d) {
+/* rem is remaining hops including this one. rem==0 rejects.
+ * rem<0 skips the nesting check (copy path). */
+static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 	capn_ptr ret = {CAPN_NULL};
 	uint64_t val;
 	size_t nbytes = 0;
+
+	if (rem == 0)
+		goto err;
 
 	if (!s || !bounds_ok(s, d, 8))
 		goto err;
@@ -569,6 +597,10 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d) {
 
 	ret.data = d;
 	ret.seg = s;
+	if (rem > 0) {
+		ret.nesting_valid = 1;
+		ret.nesting = rem - 1;
+	}
 	return ret;
 err:
 	memset(&ret, 0, sizeof(ret));
@@ -577,28 +609,333 @@ err:
 
 void capn_resolve(capn_ptr *p) {
 	if (p->type == CAPN_FAR_POINTER) {
-		*p = read_ptr(p->seg, p->data);
+		*p = read_ptr(p->seg, p->data, hop_remaining(*p));
 	}
+}
+
+#define CAPN_V_EMPTY 0
+#define CAPN_V_PATH 1
+#define CAPN_V_DONE 2
+
+struct capn_vslot {
+	struct capn_segment *seg;
+	char *data;
+	unsigned state;
+};
+
+struct capn_vset {
+	struct capn_vslot *tab;
+	size_t cap;
+	size_t n;
+};
+
+struct capn_frame {
+	capn_ptr p;
+	int idx;
+	int nchild;
+};
+
+static size_t vhash(struct capn_segment *s, char *d)
+{
+	uintptr_t a = (uintptr_t) (void *) s;
+	uintptr_t b = (uintptr_t) (void *) d;
+	return (size_t) ((a * (uintptr_t) 11400714819323198485ull)
+			 ^ (b * (uintptr_t) 14029467366897019727ull));
+}
+
+static int vset_init(struct capn_vset *vs)
+{
+	vs->cap = 64;
+	vs->n = 0;
+	vs->tab = (struct capn_vslot *) capn_zalloc(vs->cap * sizeof(*vs->tab));
+	return vs->tab ? 0 : -1;
+}
+
+static void vset_free(struct capn_vset *vs)
+{
+	capn_freemem(vs->tab);
+	vs->tab = NULL;
+	vs->cap = 0;
+	vs->n = 0;
+}
+
+static struct capn_vslot *vset_find(struct capn_vset *vs, struct capn_segment *s,
+				    char *d, int insert)
+{
+	size_t mask, i;
+
+	if (!vs->tab || vs->cap == 0)
+		return NULL;
+	mask = vs->cap - 1;
+	i = vhash(s, d) & mask;
+	for (;;) {
+		struct capn_vslot *sl = &vs->tab[i];
+		if (sl->state == CAPN_V_EMPTY)
+			return insert ? sl : NULL;
+		if (sl->seg == s && sl->data == d)
+			return sl;
+		i = (i + 1) & mask;
+	}
+}
+
+static int vset_grow(struct capn_vset *vs)
+{
+	struct capn_vslot *old = vs->tab;
+	size_t oldcap = vs->cap, i, oldn = vs->n;
+
+	vs->cap *= 2;
+	vs->tab = (struct capn_vslot *) capn_zalloc(vs->cap * sizeof(*vs->tab));
+	if (!vs->tab) {
+		vs->tab = old;
+		vs->cap = oldcap;
+		return -1;
+	}
+	vs->n = 0;
+	for (i = 0; i < oldcap; i++) {
+		if (old[i].state != CAPN_V_EMPTY) {
+			struct capn_vslot *sl = vset_find(vs, old[i].seg, old[i].data, 1);
+			if (!sl) {
+				capn_freemem(vs->tab);
+				vs->tab = old;
+				vs->cap = oldcap;
+				vs->n = oldn;
+				return -1;
+			}
+			*sl = old[i];
+			vs->n++;
+		}
+	}
+	capn_freemem(old);
+	return 0;
+}
+
+/* -1 cycle/oom, 0 newly visiting, 1 already done, 2 skip (null). */
+static int vset_enter(struct capn_vset *vs, capn_ptr p)
+{
+	struct capn_vslot *sl;
+
+	if (p.type == CAPN_NULL || !p.data || !p.seg)
+		return 2;
+	if (vs->n * 3 > vs->cap * 2) {
+		if (vset_grow(vs))
+			return -1;
+	}
+	sl = vset_find(vs, p.seg, p.data, 1);
+	if (!sl)
+		return -1;
+	if (sl->state == CAPN_V_PATH)
+		return -1;
+	if (sl->state == CAPN_V_DONE)
+		return 1;
+	sl->seg = p.seg;
+	sl->data = p.data;
+	sl->state = CAPN_V_PATH;
+	vs->n++;
+	return 0;
+}
+
+static void vset_leave(struct capn_vset *vs, capn_ptr p)
+{
+	struct capn_vslot *sl;
+
+	if (p.type == CAPN_NULL || !p.data || !p.seg)
+		return;
+	sl = vset_find(vs, p.seg, p.data, 0);
+	if (sl)
+		sl->state = CAPN_V_DONE;
+}
+
+static int object_nchild(capn_ptr p)
+{
+	switch (p.type) {
+	case CAPN_STRUCT:
+		return (int) p.ptrs;
+	case CAPN_PTR_LIST:
+		return p.len;
+	case CAPN_LIST:
+		if (p.ptrs > 0 && p.len > 0) {
+			if (p.len > INT_MAX / (int) p.ptrs)
+				return -1;
+			return p.len * (int) p.ptrs;
+		}
+		return 0;
+	default:
+		return 0;
+	}
+}
+
+static int child_slot(capn_ptr p, int idx, struct capn_segment **s, char **d)
+{
+	switch (p.type) {
+	case CAPN_STRUCT:
+		*s = p.seg;
+		*d = p.data + p.datasz + 8 * idx;
+		return 0;
+	case CAPN_PTR_LIST:
+		*s = p.seg;
+		*d = p.data + 8 * idx;
+		return 0;
+	case CAPN_LIST: {
+		int mem, poff;
+		if (p.ptrs <= 0)
+			return -1;
+		mem = idx / (int) p.ptrs;
+		poff = idx % (int) p.ptrs;
+		*s = p.seg;
+		*d = p.data + mem * (p.datasz + 8 * (int) p.ptrs)
+			+ p.datasz + 8 * poff;
+		return 0;
+	}
+	default:
+		return -1;
+	}
+}
+
+static int ptr_word_null(struct capn_segment *s, char *d)
+{
+	if (!s || !bounds_ok(s, d, 8))
+		return -1;
+	return capn_flip64(*(uint64_t *) d) == 0;
+}
+
+int capn_validate(struct capn *c)
+{
+	size_t saved;
+	int rc = -1, limit, nchild, isnull, rem, ent;
+	struct capn_vset vs;
+	struct capn_frame *stack = NULL;
+	size_t sp = 0, sc = 0;
+	capn_ptr root, first, child;
+	struct capn_segment *s;
+	char *d;
+
+	if (!c)
+		return -1;
+	saved = c->traversal_used;
+	memset(&vs, 0, sizeof(vs));
+	limit = session_nesting(c);
+
+	root = capn_root(c);
+	if (!root.seg || !root.data) {
+		rc = 0;
+		goto done;
+	}
+
+	isnull = ptr_word_null(root.seg, root.data);
+	if (isnull < 0)
+		goto done;
+	if (isnull) {
+		rc = 0;
+		goto done;
+	}
+
+	first = read_ptr(root.seg, root.data, limit);
+	if (first.type == CAPN_NULL)
+		goto done;
+
+	if (vset_init(&vs))
+		goto done;
+
+	nchild = object_nchild(first);
+	if (nchild < 0)
+		goto done;
+
+	sc = 64;
+	stack = (struct capn_frame *) capn_alloc(sc * sizeof(*stack));
+	if (!stack)
+		goto done;
+	if (vset_enter(&vs, first) != 0)
+		goto done;
+	stack[0].p = first;
+	stack[0].idx = 0;
+	stack[0].nchild = nchild;
+	sp = 1;
+
+	while (sp) {
+		struct capn_frame *f = &stack[sp - 1];
+
+		if (f->idx >= f->nchild) {
+			vset_leave(&vs, f->p);
+			sp--;
+			continue;
+		}
+
+		if (child_slot(f->p, f->idx, &s, &d))
+			goto done;
+		f->idx++;
+
+		isnull = ptr_word_null(s, d);
+		if (isnull < 0)
+			goto done;
+		if (isnull)
+			continue;
+
+		rem = hop_remaining(f->p);
+		child = read_ptr(s, d, rem);
+		if (child.type == CAPN_NULL)
+			goto done;
+
+		ent = vset_enter(&vs, child);
+		if (ent < 0)
+			goto done;
+		if (ent > 0)
+			continue;
+
+		if ((int) sp >= limit)
+			goto done;
+
+		if (sp == sc) {
+			size_t nsc = sc * 2;
+			struct capn_frame *ns;
+
+			ns = (struct capn_frame *) capn_alloc(nsc * sizeof(*ns));
+			if (!ns)
+				goto done;
+			memcpy(ns, stack, sc * sizeof(*ns));
+			capn_freemem(stack);
+			stack = ns;
+			sc = nsc;
+		}
+		nchild = object_nchild(child);
+		if (nchild < 0)
+			goto done;
+		stack[sp].p = child;
+		stack[sp].idx = 0;
+		stack[sp].nchild = nchild;
+		sp++;
+	}
+
+	rc = 0;
+done:
+	c->traversal_used = saved;
+	capn_freemem(stack);
+	vset_free(&vs);
+	return rc;
 }
 
 /* TODO: should this handle CAPN_BIT_LIST? */
 capn_ptr capn_getp(capn_ptr p, int off, int resolve) {
 	capn_ptr ret = {CAPN_FAR_POINTER};
+	int rem;
+
 	ret.seg = p.seg;
 
 	capn_resolve(&p);
+	rem = hop_remaining(p);
 
 	switch (p.type) {
 	case CAPN_LIST:
 		/* Return an inner pointer */
 		if (off < p.len) {
-			capn_ptr ret = {CAPN_STRUCT};
-			ret.is_list_member = 1;
-			ret.data = p.data + off * (p.datasz + 8*p.ptrs);
-			ret.seg = p.seg;
-			ret.datasz = p.datasz;
-			ret.ptrs = p.ptrs;
-			return ret;
+			capn_ptr inner = {CAPN_STRUCT};
+			inner.is_list_member = 1;
+			inner.data = p.data + off * (p.datasz + 8*p.ptrs);
+			inner.seg = p.seg;
+			inner.datasz = p.datasz;
+			inner.ptrs = p.ptrs;
+			inner.nesting_valid = 1;
+			inner.nesting = rem;
+			return inner;
 		} else {
 			goto err;
 		}
@@ -621,8 +958,10 @@ capn_ptr capn_getp(capn_ptr p, int off, int resolve) {
 		goto err;
 	}
 
+	ret.nesting_valid = 1;
+	ret.nesting = rem;
 	if (resolve) {
-		ret = read_ptr(ret.seg, ret.data);
+		ret = read_ptr(ret.seg, ret.data, rem);
 	}
 
 	return ret;
@@ -1058,7 +1397,7 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 			tc->len--;
 
 		} else { /* CAPN_PTR_LIST */
-			*fn = read_ptr(fc->seg, fc->data);
+			*fn = read_ptr(fc->seg, fc->data, -1);
 
 			if (fn->type && copy_ptr(tc->seg, tc->data, tn, fn, &dep))
 				return -1;
@@ -1183,6 +1522,8 @@ capn_ptr capn_root(struct capn *c) {
 	r.seg = lookup_segment(c, NULL, 0);
 	r.data = r.seg ? r.seg->data : new_data(c, 8, &r.seg);
 	r.len = 1;
+	r.nesting_valid = 1;
+	r.nesting = session_nesting(c);
 
 	if (!r.seg || r.seg->cap < 8) {
 		memset(&r, 0, sizeof(r));

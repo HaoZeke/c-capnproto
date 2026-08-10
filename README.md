@@ -17,10 +17,10 @@ canonical pure-C Cap'n home next to
 
 > ## Security warning
 
-> Decode rejects out-of-segment pointer landings (struct/list/far) and applies
-> a 64MiB traversal budget. This is **partial**: there is no full graph
-> validator yet. Do **not** treat generated readers as untrusted-safe. See
-> [SECURITY.md](SECURITY.md).
+> Decode rejects out-of-segment pointer landings, applies a 64MiB traversal
+> budget, and walks the pointer graph (`capn_validate`, nesting limit 64).
+> This is still **not** C++ `MessageReader` parity. Do **not** treat generated
+> readers as untrusted-safe. See [SECURITY.md](SECURITY.md).
 
 ## Building (Meson, recommended)
 
