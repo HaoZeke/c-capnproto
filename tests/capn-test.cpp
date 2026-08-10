@@ -573,11 +573,11 @@ TEST(WireFormat, ReadPtrRejectsOOBPointerWord) {
   memset(&ctx, 0, sizeof(ctx));
   capn_append_segment(&ctx, &seg);
 
-  p = read_ptr(&seg, seg.data + (ptrdiff_t)seg.len);
+  p = read_ptr(&seg, seg.data + (ptrdiff_t)seg.len, CAPN_NESTING_DEFAULT);
   EXPECT_EQ(CAPN_NULL, p.type);
-  p = read_ptr(&seg, seg.data - 8);
+  p = read_ptr(&seg, seg.data - 8, CAPN_NESTING_DEFAULT);
   EXPECT_EQ(CAPN_NULL, p.type);
-  p = read_ptr(NULL, seg.data);
+  p = read_ptr(NULL, seg.data, CAPN_NESTING_DEFAULT);
   EXPECT_EQ(CAPN_NULL, p.type);
 }
 

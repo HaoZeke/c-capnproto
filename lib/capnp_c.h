@@ -116,6 +116,8 @@ struct capn {
 	void *user;
 	/* 0 = 64MiB default. User may set after init, before decode. */
 	size_t traversal_limit;
+	/* 0 = CAPN_NESTING_DEFAULT (64). User may set after init, before decode. */
+	int nesting_limit;
 	/* zero initialized, user should not modify */
 	uint32_t segnum;
 	struct capn_tree *copy;
@@ -127,6 +129,9 @@ struct capn {
 
 /* Default decode traversal budget (bytes). 0 in traversal_limit means this. */
 #define CAPN_TRAVERSAL_DEFAULT ((size_t) 64u * 1024u * 1024u)
+
+/* Default pointer nesting depth. 0 in nesting_limit means this. */
+#define CAPN_NESTING_DEFAULT 64
 
 /* struct capn_tree is a rb tree header used internally for the segment id
  * lookup and copy tree */
@@ -194,6 +199,10 @@ struct capn_ptr {
 	int len;
 	char *data;
 	struct capn_segment *seg;
+	/* Decode remaining hops. Trailing so positional {type,...,seg}
+	 * initializers in generated constants keep working. 0/0 = unset. */
+	int nesting;
+	unsigned int nesting_valid;
 };
 
 struct capn_text {
@@ -235,6 +244,15 @@ CAPN_EXPORT void capn_append_segment(struct capn*, struct capn_segment*);
 
 CAPN_EXPORT capn_ptr capn_root(struct capn *c);
 CAPN_EXPORT void capn_resolve(capn_ptr *p);
+
+/* capn_validate walks the pointer graph from the message root.
+ * Returns 0 if landings are in-segment, nesting stays within
+ * nesting_limit (0 means CAPN_NESTING_DEFAULT), the traversal budget
+ * is not exceeded, and the graph has no cycles. Returns -1 otherwise.
+ * Does not consume traversal_used. Generated accessors still trust a
+ * capn_ptr that has already been decoded.
+ */
+CAPN_EXPORT int capn_validate(struct capn *c);
 
 /* capn_set_root sets the message root to p (capn_setp(capn_root(c), 0, p)).
  * new_* / write_* only fill a struct in a segment; the message is empty
