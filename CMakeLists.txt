@@ -113,6 +113,7 @@ if(BUILD_TESTING)
       tests/capn-test.cpp
       tests/capn-stream-test.cpp
       tests/example-test.cpp
+      tests/fortran-golden-test.cpp
       tests/addressbook.capnp.c
       compiler/test.capnp.c
       compiler/schema-test.cpp
@@ -122,6 +123,9 @@ if(BUILD_TESTING)
       "${CMAKE_CURRENT_SOURCE_DIR}/lib"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests"
       "${CMAKE_CURRENT_SOURCE_DIR}/compiler"
+    )
+    target_compile_definitions(capn-test PRIVATE
+      "FORTRAN_GOLDEN_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures\""
     )
     target_link_libraries(capn-test PRIVATE
       capnp_c

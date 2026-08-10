@@ -101,6 +101,10 @@ See the unit tests in [`tests/example-test.cpp`](tests/example-test.cpp).
 The example schema file is [`tests/addressbook.capnp`](tests/addressbook.capnp).
 The tests are written in C++, but only use C features.
 
+Encode/decode against the capnp-fortran AddressBook goldens lives in
+[`tests/fortran-golden-test.cpp`](tests/fortran-golden-test.cpp)
+([`tests/fortran-golden.md`](tests/fortran-golden.md)).
+
 Typical write path:
 
 ```c

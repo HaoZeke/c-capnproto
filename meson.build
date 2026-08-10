@@ -101,6 +101,7 @@ if get_option('enable_tests') and not meson.is_subproject()
     'tests' / 'capn-test.cpp',
     'tests' / 'capn-stream-test.cpp',
     'tests' / 'example-test.cpp',
+    'tests' / 'fortran-golden-test.cpp',
     'tests' / 'extraheader-test.cpp',
     'tests' / 'fieldgetset-test.cpp',
     'tests' / 'codegen-defaults-test.cpp',
@@ -117,6 +118,7 @@ if get_option('enable_tests') and not meson.is_subproject()
   extraheader_h = meson.project_source_root() / 'tests' / 'extraheader.capnp.h'
   codegen_defaults_c = meson.project_source_root() / 'tests' / 'codegen-defaults.capnp.c'
   codegen_defaults_h = meson.project_source_root() / 'tests' / 'codegen-defaults.capnp.h'
+  fortran_golden_dir = meson.project_source_root() / 'tests' / 'fixtures'
 
   exe = executable(
     'capn-test',
@@ -128,6 +130,7 @@ if get_option('enable_tests') and not meson.is_subproject()
       '-DEXTRAHEADER_GENERATED_H="' + extraheader_h + '"',
       '-DCODEGEN_DEFAULTS_GENERATED_C="' + codegen_defaults_c + '"',
       '-DCODEGEN_DEFAULTS_GENERATED_H="' + codegen_defaults_h + '"',
+      '-DFORTRAN_GOLDEN_DIR="' + fortran_golden_dir + '"',
     ],
     install: false,
     implicit_include_directories: false,
