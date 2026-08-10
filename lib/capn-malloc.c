@@ -102,10 +102,23 @@ static int read_fp(void *p, size_t sz, FILE *f, struct capn_stream *z, uint8_t* 
 		z->next_out = (uint8_t*) p;
 		z->avail_out = sz;
 
-		while (z->avail_out && capn_inflate(z) == CAPN_NEED_MORE) {
+		/* capn_inflate returns 0 (not CAPN_NEED_MORE) when avail_in
+		 * is 0. Seed the stream from f before treating 0 as done,
+		 * and keep next_in on zbuf after each fread. */
+		while (z->avail_out) {
+			int inf;
 			int r;
-			memmove(zbuf, z->next_in, z->avail_in);
-			r = fread(zbuf+z->avail_in, 1, ZBUF_SZ - z->avail_in, f);
+
+			inf = capn_inflate(z);
+			if (inf != 0 && inf != CAPN_NEED_MORE)
+				return -1;
+			if (!z->avail_out)
+				return 0;
+
+			if (z->avail_in && z->next_in != NULL)
+				memmove(zbuf, z->next_in, z->avail_in);
+			z->next_in = zbuf;
+			r = fread(zbuf + z->avail_in, 1, ZBUF_SZ - z->avail_in, f);
 			if (r <= 0)
 				return -1;
 			z->avail_in += r;
