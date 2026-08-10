@@ -421,6 +421,32 @@ TEST(Stream, WriteFpUnpackedRoundTrip) {
   fclose(f);
 }
 
+TEST(Stream, InitFpPackedFromWriteMem) {
+  const uint64_t val = UINT64_C(0x1011121314151617);
+  uint8_t buf[2048];
+
+  struct capn ctx1, ctx2;
+  capn_init_malloc(&ctx1);
+  fill_one_segment(&ctx1, val);
+  int64_t n = capn_write_mem(&ctx1, buf, sizeof(buf), 1);
+  ASSERT_EQ(14, n);
+
+  FILE *f = tmpfile();
+  ASSERT_TRUE(f != NULL);
+  ASSERT_EQ((size_t)n, fwrite(buf, 1, (size_t)n, f));
+  rewind(f);
+
+  ASSERT_EQ(0, capn_init_fp(&ctx2, f, 1));
+  EXPECT_EQ(1, ctx2.segnum);
+  struct capn_ptr root = capn_root(&ctx2);
+  struct capn_ptr ptr = capn_getp(root, 0, 1);
+  EXPECT_EQ(val, capn_read64(ptr, 0));
+
+  capn_free(&ctx1);
+  capn_free(&ctx2);
+  fclose(f);
+}
+
 TEST(Stream, WriteFpPackedRoundTrip) {
   const uint64_t val = UINT64_C(0x1011121314151617);
   FILE *f = tmpfile();
