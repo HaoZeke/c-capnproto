@@ -7,7 +7,7 @@
 | Clone | `~/Git/Github/Fortran/c-capnproto` |
 | Sibling | `~/Git/Github/Fortran/capnp-fortran` |
 | Remote | `git@github.com:HaoZeke/c-capnproto.git` |
-| Branch | `master` |
+| Branch | `main` |
 
 ## Release checklist
 
@@ -40,4 +40,6 @@ fixes from it; do not switch the canonical remote.
 | Angelo Haller (`szanni`) | AFL `fuzz-mem` / `fuzz-fp` harness |
 | yeger00 | `__KERNEL__` stdlib replacements (`kmalloc`/`kfree`, no `stdio`); sample under `examples/kernel/` |
 
-Not absorbed (tracked as work, not merged): `shen390s` compiler rewrite/codecgen, DKML `dk` wrapper / CMakePresets / GitLab CI / gtest-submodule removal, yeger full in-tree kbuild copy, Degui XOR/MISRA (wire-incompatible), cbrune `const2` (OSR #54 broke the build and was reverted), commaai prefix hack, `aligned(64)` whole-struct ARM hacks (superseded by field `ALIGNED_(8)`).
+Absorbed as ports, not dump-merges: shen390s `$C.codecgen` emitter (`compiler/codecgen.c`) without the `ctx.c` rewrite; Jonah `$C.extraheader` / `$C.extendedattribute`.
+
+Not absorbed: shen390s `ctx.c` compiler rewrite, DKML `dk` wrapper / CMakePresets / GitLab CI / gtest-submodule removal, yeger full in-tree kbuild copy, Degui XOR/MISRA (wire-incompatible), cbrune `const2` (opensourcerouting #54 broke the build and was reverted), commaai prefix hack, `aligned(64)` whole-struct ARM hacks (superseded by field `ALIGNED_(8)`).
