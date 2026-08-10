@@ -19,6 +19,10 @@ jobs:
           - os: macos-latest
             meson_opts: -Denable_tests=true
             run_tests: true
+          # x64 only. No win32 matrix (no validated ILP32 Windows
+          # toolchain). 32-bit: compile-time check_segment_alignment;
+          # optional scripts/smoke-m32.sh when gcc -m32 exists.
+          # See MAINTAINING.md (32-bit / alignment).
           - os: windows-latest
             meson_opts: --vsenv -Denable_tests=false
             run_tests: false
