@@ -114,6 +114,7 @@ if(BUILD_TESTING)
       tests/capn-stream-test.cpp
       tests/example-test.cpp
       tests/fortran-golden-test.cpp
+      tests/interface-test.cpp
       tests/addressbook.capnp.c
       compiler/test.capnp.c
       compiler/schema-test.cpp

@@ -36,6 +36,7 @@
 #define STRUCT_PTR 0
 #define LIST_PTR 1
 #define FAR_PTR 2
+#define OTHER_PTR 3
 #define DOUBLE_PTR 6
 
 #define VOID_LIST 0
@@ -492,6 +493,24 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 		if (!s)
 			goto err;
 		break;
+	}
+
+	/* Capability / other pointer: A=3. No landing object.
+	 * B (bits 2-31) must be 0; C (high 32) is the table index.
+	 * Do not apply_offset or charge_traversal: C is the table
+	 * index, not an object size or list length. */
+	if ((val & 3) == OTHER_PTR) {
+		if ((U32(val) >> 2) != 0)
+			goto err;
+		ret.type = CAPN_INTERFACE;
+		ret.len = (int) U32(val >> 32);
+		ret.seg = s;
+		ret.data = d;
+		if (rem > 0) {
+			ret.nesting_valid = 1;
+			ret.nesting = rem - 1;
+		}
+		return ret;
 	}
 
 	if (!apply_offset(s, &d, val))
@@ -976,6 +995,13 @@ err:
 #define CAPN_PTR_OFF_MAX_WORDS ((int64_t)(1 << 29) - 1)
 
 static int write_ptr_tag(char *d, capn_ptr p, int64_t off) {
+	if (p.type == CAPN_INTERFACE) {
+		/* A=3, B=0, C = capability table index (p.len). */
+		uint64_t cap = OTHER_PTR | (U64((uint32_t) p.len) << 32);
+		*(uint64_t*) d = capn_flip64(cap);
+		return 0;
+	}
+
 	/*
 	lsb                      struct pointer                       msb
 	+-+-----------------------------+---------------+---------------+
@@ -1072,7 +1098,13 @@ static void write_double_far(char *d, struct capn_segment *s, char *tgt) {
 
 static int write_ptr(struct capn_segment *s, char *d, capn_ptr p) {
 	/* note p.seg can be NULL if its a ptr to static data */
-	char *pdata = p.data - 8*p.is_composite_list;
+	char *pdata;
+
+	/* Capability pointers have no object; the whole value is the tag. */
+	if (p.type == CAPN_INTERFACE)
+		return write_ptr_tag(d, p, 0);
+
+	pdata = p.data - 8*p.is_composite_list;
 
 	/* CAPN_NULL, a zeroed pointer field, or a STRUCT with no payload
 	 * (including datasz/ptrs set but data == NULL) encode as a null
@@ -1144,6 +1176,11 @@ static capn_ptr new_clone(struct capn_segment *s, capn_ptr p) {
 		return capn_new_list1(s, p.len).p;
 	case CAPN_LIST:
 		return capn_new_list(s, p.len, p.datasz, p.ptrs);
+	case CAPN_INTERFACE: {
+		capn_ptr n = capn_new_interface(s, p.datasz, p.ptrs);
+		n.len = p.len;
+		return n;
+	}
 	default:
 		return p;
 	}
@@ -1281,6 +1318,9 @@ static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, st
 		if (t->len) {
 			(*dep)++;
 		}
+		return 0;
+
+	case CAPN_INTERFACE:
 		return 0;
 
 	default:
@@ -1544,6 +1584,21 @@ capn_ptr capn_new_struct(struct capn_segment *seg, int datasz, int ptrs) {
 	p.datasz = (datasz + 7) & ~7;
 	p.ptrs = ptrs;
 	new_object(&p, p.datasz + 8*p.ptrs);
+	return p;
+}
+
+capn_ptr capn_new_interface(struct capn_segment *seg, int datasz, int ptrs) {
+	/* Capability pointer: A=3, B=0, C=index. No object body.
+	 * datasz/ptrs are accepted for ABI compatibility with
+	 * capn_new_struct and are not stored. */
+	capn_ptr p;
+	memset(&p, 0, sizeof(p));
+	(void) datasz;
+	(void) ptrs;
+	if (!seg)
+		return p;
+	p.type = CAPN_INTERFACE;
+	p.seg = seg;
 	return p;
 }
 

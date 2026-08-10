@@ -106,6 +106,7 @@ if get_option('enable_tests') and not meson.is_subproject()
     'tests' / 'fieldgetset-test.cpp',
     'tests' / 'codegen-defaults-test.cpp',
     'tests' / 'bounds-test.cpp',
+    'tests' / 'interface-test.cpp',
     'tests' / 'addressbook.capnp.c',
     'tests' / 'extraheader.capnp.c',
     'tests' / 'fieldgetset.capnp.c',
@@ -235,6 +236,32 @@ if get_option('enable_tests') and not meson.is_subproject()
       install: false,
     )
     test('list-decode-srcdest-test', list_decode_srcdest_test)
+
+    interface_field_gen = custom_target(
+      'interface-field-capnp',
+      input: 'tests' / 'interface-field.capnp',
+      output: ['interface-field.capnp.c', 'interface-field.capnp.h'],
+      command: [
+        capnp, 'compile',
+        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-I', meson.current_source_dir() / 'compiler',
+        '--src-prefix', meson.current_source_dir() / 'tests',
+        '@INPUT@',
+      ],
+      depends: [capnpc_c],
+    )
+
+    interface_field_test = executable(
+      'interface-field-test',
+      'tests' / 'interface-field-test.cpp',
+      interface_field_gen,
+      include_directories: include_directories(['lib', 'tests', 'compiler']),
+      dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
+      c_args: codec_c_args,
+      cpp_args: common_cpp_args,
+      install: false,
+    )
+    test('interface-field-test', interface_field_test)
 
     foreach t : ['data-codec', 'empty-list', 'null-text']
       gen = custom_target(
