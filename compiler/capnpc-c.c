@@ -967,9 +967,9 @@ static void do_union(struct strings *s, struct node *n, struct field *first_fiel
 		str_release(&dtag);
 	}
 
-	/* Zero-default slots of one C type. Each field keeps its own
-	 * case so same-type members with different offsets (or distinct
-	 * C union members) do not share the last field's slot. */
+	/* Zero-default slots, one C-type mask at a time. Each field
+	 * keeps its own case and member; do not fold onto the last
+	 * same-type slot. */
 	union_cases(s, n, first_field, (1 << Type__bool));
 	union_cases(s, n, first_field, (1 << Type__enum));
 	union_cases(s, n, first_field, (1 << Type_int8) | (1 << Type_uint8));
