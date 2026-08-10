@@ -882,7 +882,7 @@ static int in_union(struct field *f) {
 }
 
 static void union_cases(struct strings *s, struct node *n, struct field *first_field, int mask) {
-	struct field *f, *u = NULL;
+	struct field *f;
 
 	for (f = first_field; f < n->fields + capn_len(n->n._struct.fields) && in_union(f); f++) {
 
@@ -893,7 +893,6 @@ static void union_cases(struct strings *s, struct node *n, struct field *first_f
 		if ((mask & (1 << f->v.t.which)) == 0)
 			continue;
 
-		u = f;
 		str_addf(&s->set, "%scase %s_%s:\n", s->ftab.str, n->name.str, field_name(f));
 		str_addf(&s->get, "%scase %s_%s:\n", s->ftab.str, n->name.str, field_name(f));
 		if (g_codecgen) {
@@ -902,10 +901,10 @@ static void union_cases(struct strings *s, struct node *n, struct field *first_f
 			str_addf(&s->freeup, "%scase %s_%s:\n", s->ftab.str, n->name.str, field_name(f));
 			codec_union_member(s, f);
 		}
+		/* One block per field: same C type may overlay on the
+		 * wire, but each C union member is a distinct slot. */
+		union_block(s, f);
 	}
-
-	if (u)
-		union_block(s, u);
 }
 
 static void declare_slot(struct strings *s, struct field *f) {
@@ -968,9 +967,9 @@ static void do_union(struct strings *s, struct node *n, struct field *first_fiel
 		str_release(&dtag);
 	}
 
-	/* if we have a bunch of the same C type with zero defaults, we
-	 * only need to emit one switch block as the layout will line up
-	 * in the C union */
+	/* Zero-default slots of one C type. Each field keeps its own
+	 * case so same-type members with different offsets (or distinct
+	 * C union members) do not share the last field's slot. */
 	union_cases(s, n, first_field, (1 << Type__bool));
 	union_cases(s, n, first_field, (1 << Type__enum));
 	union_cases(s, n, first_field, (1 << Type_int8) | (1 << Type_uint8));
