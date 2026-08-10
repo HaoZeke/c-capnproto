@@ -1,0 +1,46 @@
+#+title: Install
+#+options: toc:2 num:nil
+
+* Meson (recommended)
+
+#+begin_src sh
+git clone --recurse-submodules https://github.com/HaoZeke/c-capnproto.git
+cd c-capnproto
+meson setup build
+meson compile -C build
+# plugin: build/capnpc-c   runtime: build/libcapnp.a (or shared)
+meson install -C build   # optional: put capnpc-c on PATH
+#+end_src
+
+* CMake (optional)
+
+Meson is the default. CMake is an install-path alternative (MSVC / IDE /
+packagers). It does not use the DKML =dk= wrapper and does not fetch or
+delete the =gtest/= submodule.
+
+#+begin_src sh
+cmake -S . -B build-cmake
+cmake --build build-cmake
+cmake --install build-cmake
+ctest --test-dir build-cmake  # only if CMake found an installed GTest
+#+end_src
+
+Tests are skipped when GTest is not installed. Use Meson (or autotools
+with the existing =gtest/= submodule) for the full suite.
+
+* Autotools
+
+#+begin_src sh
+git clone --recurse-submodules https://github.com/HaoZeke/c-capnproto.git
+cd c-capnproto
+autoreconf -f -i -s
+./configure
+make
+make check
+#+end_src
+
+* Kernel module
+
+The runtime can be compiled into a kernel module (=__KERNEL__=). This is
+not the default and is not covered by CI. See =KERNEL.md= and
+=examples/kernel=.

@@ -1,0 +1,74 @@
+#+title: c-capnproto
+#+options: toc:nil num:nil title:nil
+
+#+begin_export rst
+c-capnproto
+===========
+
+Pure **C** runtime and ``capnpc-c`` plugin for `Cap'n Proto
+<https://capnproto.org/>`_. Maintained fork of
+``opensourcerouting/c-capnproto`` (itself from ``jmckaskill``).
+#+end_export
+
+This repository is [[https://github.com/HaoZeke/c-capnproto][HaoZeke/c-capnproto]]. It is the canonical pure-C Cap'n
+home next to [[https://capnp-fortran.rgoswami.me][capnp-fortran]] and
+[[https://capnp-janet.rgoswami.me][capnp-janet]].
+
+Wire encode is byte-equivalent with official =capnp= 1.0.2 when objects
+are allocated in schema order. Canonical form and packed of the same
+unpacked bytes match =capnp convert=.
+
+#+begin_export rst
+.. warning::
+
+   Decode rejects out-of-segment pointer landings, applies a 64MiB
+   traversal budget, and walks the pointer graph (``capn_validate``,
+   nesting limit 64). Failed hops are still ``CAPN_NULL``; check
+   ``capn_ok`` to tell them from a missing field. This is still **not**
+   C++ ``MessageReader`` throw-parity. Do **not** treat generated
+   readers as untrusted-safe. See ``SECURITY.md``.
+#+end_export
+
+* New here?
+
+#+begin_export rst
+.. list-table::
+   :header-rows: 1
+   :widths: 55 45
+
+   * - Goal
+     - Go to
+   * - Build with Meson (recommended)
+     - :doc:`install`
+   * - Generate C from a ``.capnp`` schema
+     - :doc:`usage`
+   * - Schema-order encode, packed, canonical
+     - :doc:`wire`
+   * - Fortran / Janet / official CLI goldens
+     - :doc:`interop`
+#+end_export
+
+* What you get
+
+- Runtime: =lib/capn.c=, =capn-malloc.c=, =capn-stream.c=; header =lib/capnp_c.h=
+- Plugin: =capnpc-c= for =capnp compile -oc=
+- =capn_canonicalize=: single-segment preorder rewrite, empty struct B=-1
+- Packed codec matching C++ =0xFF= extra-word heuristic
+- Generated =Foo_has_bar= for pointer fields
+- Live =capnp= CLI gtests when the =capnp= binary is on =PATH=
+
+#+begin_export rst
+.. toctree::
+   :maxdepth: 1
+   :caption: How-to
+
+   install
+   usage
+   interop
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Explanation
+
+   wire
+#+end_export

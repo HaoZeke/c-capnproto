@@ -29,6 +29,9 @@ capn-test
 capnpc-c
 c-capnproto.pc
 
+# Sphinx / ox-rst
+docs/build/
+
 *.tar.gz
 
 subprojects/googletest-*

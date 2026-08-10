@@ -1,0 +1,29 @@
+#+title: Interop
+#+options: toc:2 num:nil
+
+* Official capnp CLI
+
+=tests/capnp-cli-interop-test.cpp= memcmp-equals:
+
+- schema-order encode vs =capnp encode=
+- =capn_canonicalize= vs =capnp convert binary:canonical=
+- packed of those unpacked bytes vs =capnp convert binary:packed=
+
+Needs the =capnp= 1.0.2 binary. Meson registers the gtest only when
+=find_program('capnp')= succeeds.
+
+* capnp-fortran goldens
+
+Encode/decode against the capnp-fortran AddressBook goldens lives in
+=tests/fortran-golden-test.cpp= (=tests/fortran-golden.md=). The C
+runtime is the golden-master peer for
+[[https://capnp-fortran.rgoswami.me][capnp-fortran]] =capnp_cabi= and for
+[[https://capnp-janet.rgoswami.me][capnp-janet]] wire tests.
+
+* Sibling runtimes
+
+| Runtime | Role |
+|---------+------|
+| this library | Pure C + =capnpc-c= |
+| [[https://capnp-fortran.rgoswami.me][capnp-fortran]] | F2018, plugin, RPC, C ABI shim |
+| [[https://capnp-janet.rgoswami.me][capnp-janet]] | Janet module + embeddable C |
