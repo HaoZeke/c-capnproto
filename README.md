@@ -83,7 +83,7 @@ capnp compile -Icompiler -o ./capnpc-c schema.capnp
 
 You **must** call `capn_set_root(c, person.p)` (or `capn_setp(capn_root(c), 0, person.p)`) after `new_*` / `write_*`. Those helpers only fill a struct in a segment; they do not attach it as the message root. Omitting the call writes a valid empty message (`capn_getp(root, 0)` is null; `capnp decode` shows `()`). Empty messages are legal -- they are just not the payload you built.
 
-Zero-init C structs (`struct Person p = {0};` or `memset`) before `write_*` so optional pointer fields (nested structs, lists, text, data) stay unset. A `CAPN_NULL` / NULL `data` pointer is encoded as a wire null; C++ `hasFoo()` is false and this reader returns `CAPN_NULL`. Uninitialized (garbage) pointer fields are not safe.
+Zero-init C structs (`struct Person p = {0};` or `memset`) before `write_*` so optional pointer fields (nested structs, lists, text, data) stay unset. A `CAPN_NULL` / NULL `data` pointer is encoded as a wire null; C++ `hasFoo()` is false and this reader returns `CAPN_NULL`. Uninitialized (garbage) pointer fields are not safe. `capn_new_struct(seg, 0, 0)` is a real empty struct (`struct Empty {}`): A=0 B=-1 C=D=0 (`0xFFFFFFFC`), not null.
 
 If you want accessor functions for struct members, import the C annotations (`/c.capnp`) and use `$C.fieldgetset`:
 
