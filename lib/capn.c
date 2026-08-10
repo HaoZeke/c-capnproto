@@ -1193,6 +1193,8 @@ static capn_ptr new_clone(struct capn_segment *s, capn_ptr p) {
 	case CAPN_BIT_LIST:
 		return capn_new_list1(s, p.len).p;
 	case CAPN_LIST:
+		if (p.is_composite_list)
+			return capn_new_struct_list(s, p.len, p.datasz, p.ptrs);
 		return capn_new_list(s, p.len, p.datasz, p.ptrs);
 	case CAPN_INTERFACE: {
 		capn_ptr n = capn_new_interface(s, p.datasz, p.ptrs);
@@ -1725,21 +1727,32 @@ capn_ptr capn_new_interface(struct capn_segment *seg, int datasz, int ptrs) {
 	return p;
 }
 
+capn_ptr capn_new_struct_list(struct capn_segment *seg, int sz, int datasz, int ptrs) {
+	/* List(Struct) is always C=7 plus a tag, including empty lists
+	 * and 0-pointer / 1-word / 0-word structs. List(Void) stays on
+	 * capn_new_list(seg, n, 0, 0). */
+	capn_ptr p = {CAPN_LIST};
+	p.seg = seg;
+	p.len = sz;
+	p.is_composite_list = 1;
+	p.datasz = (datasz + 7) & ~7;
+	p.ptrs = ptrs;
+	new_object(&p, p.len * (p.datasz + 8*p.ptrs) + 8);
+	if (p.data) {
+		uint64_t hdr = STRUCT_PTR | (U64(p.len) << 2) | (U64(p.datasz/8) << 32) | (U64(p.ptrs) << 48);
+		*(uint64_t*) p.data = capn_flip64(hdr);
+		p.data += 8;
+	}
+	return p;
+}
+
 capn_ptr capn_new_list(struct capn_segment *seg, int sz, int datasz, int ptrs) {
 	capn_ptr p = {CAPN_LIST};
 	p.seg = seg;
 	p.len = sz;
 
 	if (ptrs || datasz > 8) {
-		p.is_composite_list = 1;
-		p.datasz = (datasz + 7) & ~7;
-		p.ptrs = ptrs;
-		new_object(&p, p.len * (p.datasz + 8*p.ptrs) + 8);
-		if (p.data) {
-			uint64_t hdr = STRUCT_PTR | (U64(p.len) << 2) | (U64(p.datasz/8) << 32) | (U64(ptrs) << 48);
-			*(uint64_t*) p.data = capn_flip64(hdr);
-			p.data += 8;
-		}
+		return capn_new_struct_list(seg, sz, datasz, ptrs);
 	} else if (datasz > 4) {
 		p.datasz = 8;
 		new_object(&p, p.len * 8);
