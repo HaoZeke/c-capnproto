@@ -77,7 +77,7 @@ TEST(Examples, RoundTripPerson) {
 
     Person_ptr pp = new_Person(cs);
     write_Person(&p, pp);
-    int setp_ret = capn_setp(capn_root(&c), 0, pp.p);
+    int setp_ret = capn_set_root(&c, pp.p);
     ASSERT_EQ(0, setp_ret);
     sz = capn_write_mem(&c, buf, sizeof(buf), 0 /* packed */);
     capn_free(&c);
@@ -162,4 +162,70 @@ TEST(Examples, PersonWithAccessors) {
   }
 
   capn_free(&c);
+}
+
+TEST(Examples, WriteWithoutSetRootIsEmpty) {
+  uint8_t buf[4096];
+  ssize_t sz = 0;
+
+  {
+    struct capn c;
+    capn_init_malloc(&c);
+    struct capn_segment *cs = capn_root(&c).seg;
+
+    struct Person p = {
+      .id = 17,
+      .name = chars_to_text("nobody"),
+    };
+    Person_ptr pp = new_Person(cs);
+    write_Person(&p, pp);
+    /* No capn_set_root: the root pointer slot stays null. The message
+     * is still a valid empty stream. */
+    sz = capn_write_mem(&c, buf, sizeof(buf), 0 /* packed */);
+    ASSERT_GT(sz, 0);
+    capn_free(&c);
+  }
+
+  {
+    struct capn rc;
+    ASSERT_EQ(0, capn_init_mem(&rc, buf, (size_t)sz, 0));
+    capn_ptr got = capn_getp(capn_root(&rc), 0, 1);
+    EXPECT_EQ(CAPN_NULL, got.type);
+    capn_free(&rc);
+  }
+}
+
+TEST(Examples, WriteWithSetRootHasPayload) {
+  uint8_t buf[4096];
+  ssize_t sz = 0;
+
+  {
+    struct capn c;
+    capn_init_malloc(&c);
+    struct capn_segment *cs = capn_root(&c).seg;
+
+    struct Person p = {
+      .id = 17,
+      .name = chars_to_text("somebody"),
+    };
+    Person_ptr pp = new_Person(cs);
+    write_Person(&p, pp);
+    ASSERT_EQ(0, capn_set_root(&c, pp.p));
+    sz = capn_write_mem(&c, buf, sizeof(buf), 0);
+    ASSERT_GT(sz, 0);
+    capn_free(&c);
+  }
+
+  {
+    struct capn rc;
+    ASSERT_EQ(0, capn_init_mem(&rc, buf, (size_t)sz, 0));
+    Person_ptr rroot;
+    struct Person rp;
+    rroot.p = capn_getp(capn_root(&rc), 0, 1);
+    ASSERT_NE(CAPN_NULL, rroot.p.type);
+    read_Person(&rp, rroot);
+    EXPECT_EQ((uint32_t)17, rp.id);
+    EXPECT_CAPN_TEXT_EQ("somebody", rp.name);
+    capn_free(&rc);
+  }
 }

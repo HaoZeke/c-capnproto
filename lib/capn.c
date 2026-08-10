@@ -1040,6 +1040,10 @@ capn_ptr capn_root(struct capn *c) {
 	return r;
 }
 
+int capn_set_root(struct capn *c, capn_ptr p) {
+	return capn_setp(capn_root(c), 0, p);
+}
+
 capn_ptr capn_new_struct(struct capn_segment *seg, int datasz, int ptrs) {
 	capn_ptr p = {CAPN_STRUCT};
 	p.seg = seg;
