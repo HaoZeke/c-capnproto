@@ -105,6 +105,7 @@ EXTRA_DIST += \
 	tests/group-in-union.h \
 	tests/group-in-union-test.cpp \
 	tests/fieldgetset.capnp \
+	tests/create-min-sz-test.cpp \
 	fuzz/Person.txt \
 	fuzz/read_mem.c \
 	fuzz/read_fp.c
