@@ -23,9 +23,13 @@ pinned as hex arrays in the test so a truncated or swapped `.bin` fails
 `CommittedBinsMatchPinnedHex`.
 
 C encode of the same logical book is checked by decoding the C-written
-bytes and asserting the Alice/Bob fields. Raw C encode layout and
-C-packed bytes of a re-serialized golden are not required to match
-`capnp encode` byte for byte; the Fortran goldens are the decode oracle.
+bytes and asserting the Alice/Bob fields. Schema-order field accessors
+(root first, then each pointer as the C++ text encoder sets it) produce
+bytes identical to `capnp encode`. `capn_canonicalize` matches
+`capnp convert binary:canonical` (272 unframed bytes here). Packed of
+those unpacked bytes matches `capnp convert binary:packed`. Pre-allocating
+nested lists before `set_Person` is still valid wire, but the object
+order differs from the official encoder.
 
 `capn_canonicalize` of a C-encoded Alice/Bob book must match
 `addressbook.canonical.bin` (272 unframed bytes). Alice's mobile phone

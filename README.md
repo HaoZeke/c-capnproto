@@ -119,12 +119,17 @@ Encode/decode against the capnp-fortran AddressBook goldens lives in
 [`tests/fortran-golden-test.cpp`](tests/fortran-golden-test.cpp)
 ([`tests/fortran-golden.md`](tests/fortran-golden.md)).
 
-Official `capnp` CLI interop (C encode then `capnp decode`; `capnp encode`
-of checked-in text then `read_`) lives in
+Official `capnp` CLI interop lives in
 [`tests/capnp-cli-interop-test.cpp`](tests/capnp-cli-interop-test.cpp).
 Meson registers that gtest only when `find_program('capnp')` succeeds.
-Ubuntu CI installs `capnproto` so the tests run there. C encode is not
-required to match `capnp encode` byte for byte.
+Ubuntu CI installs `capnproto` so the tests run there.
+
+Schema-order C encode (root first, then each pointer field as the C++
+text encoder sets it) memcmp-equals `capnp encode`. `capn_canonicalize`
+memcmp-equals `capnp convert binary:canonical`. Packed of the same
+unpacked bytes memcmp-equals `capnp convert binary:packed`. Allocating
+nested objects in a different order is still valid wire, but the bytes
+differ.
 
 Typical write path:
 
