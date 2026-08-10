@@ -1,8 +1,9 @@
 /* capnp-cli-interop-test.cpp
  *
- * Semantic interop with the official `capnp` CLI. C encode is decoded by
- * `capnp decode`; `capnp encode` of checked-in text is read_ back. Bytes
- * from the two encoders are not required to match.
+ * Interop with the official `capnp` CLI. Field-level decode still
+ * runs. Schema-order C encode, canonicalize, and packed must memcmp
+ * the official encoder (encoding.html canonical form; same unpacked
+ * bytes pack identically).
  *
  * Meson registers this binary only when find_program('capnp') succeeds.
  * The tests skip only when the CLI binary is missing at runtime.
@@ -580,4 +581,549 @@ TEST_F(CapnpCli, CapnpEncodeTestAllTypesText_CReadMatches) {
   read_TestAllTypes(&t, root);
   expect_testalltypes(&t, "capnp-encode");
   capn_free(&rc);
+}
+
+static std::string hex_span(const void *p, size_t n, size_t maxn) {
+  const uint8_t *b = (const uint8_t *) p;
+  if (n > maxn) {
+    n = maxn;
+  }
+  std::string s;
+  char tmp[8];
+  for (size_t i = 0; i < n; i++) {
+    snprintf(tmp, sizeof(tmp), "%02x%s", b[i], ((i + 1) % 8) == 0 ? " " : "");
+    s += tmp;
+  }
+  return s;
+}
+
+static void expect_bytes_eq(const void *got, size_t got_n, const void *want,
+                            size_t want_n, const char *label) {
+  const uint8_t *g = (const uint8_t *) got;
+  const uint8_t *w = (const uint8_t *) want;
+  if (got_n == want_n && memcmp(g, w, got_n) == 0) {
+    return;
+  }
+  size_t n = got_n < want_n ? got_n : want_n;
+  size_t first = 0;
+  while (first < n && g[first] == w[first]) {
+    first++;
+  }
+  ADD_FAILURE() << label << ": size got " << got_n << " want " << want_n
+                << " first differ at " << first
+                << "\ngot  " << hex_span(g, got_n, 160)
+                << "\nwant " << hex_span(w, want_n, 160);
+}
+
+static CmdResult capnp_encode_text(const std::string &schema, const char *typ,
+                                   const char *text) {
+  return run_argv(capnp_cmd("encode", schema, typ), text, strlen(text));
+}
+
+static CmdResult capnp_convert(const char *spec, const void *data, size_t len) {
+  std::vector<std::string> argv;
+  argv.push_back(capnp_bin());
+  argv.push_back("convert");
+  argv.push_back(spec);
+  return run_argv(argv, data, len);
+}
+
+static Person_ptr person_at(Person_list l, int i) {
+  Person_ptr p;
+  p.p = capn_getp(l.p, i, 0);
+  return p;
+}
+
+static Person_PhoneNumber_ptr phone_at(Person_PhoneNumber_list l, int i) {
+  Person_PhoneNumber_ptr p;
+  p.p = capn_getp(l.p, i, 0);
+  return p;
+}
+
+static void set_employment_school(Person_ptr p, const char *school) {
+  capn_resolve(&p.p);
+  capn_write16(p.p, 4, (uint16_t) Person_employment_school);
+  capn_set_text(p.p, 3, chars_to_text(school));
+}
+
+static void set_employment_unemployed(Person_ptr p) {
+  capn_resolve(&p.p);
+  capn_write16(p.p, 4, (uint16_t) Person_employment_unemployed);
+}
+
+/* Root first, then each pointer field as the C++ text encoder sets it. */
+static int build_alice_bob_schema_order(struct capn *c) {
+  struct capn_segment *cs = capn_root(c).seg;
+  AddressBook_ptr ab = new_AddressBook(cs);
+  Person_list people = new_Person_list(cs, 2);
+
+  Person_ptr alice = person_at(people, 0);
+  Person_set_id(alice, 123);
+  Person_set_name(alice, chars_to_text("Alice"));
+  Person_set_email(alice, chars_to_text("alice@example.com"));
+  {
+    Person_PhoneNumber_list phones = new_Person_PhoneNumber_list(cs, 1);
+    Person_PhoneNumber_ptr ph = phone_at(phones, 0);
+    Person_PhoneNumber_set_number(ph, chars_to_text("555-1212"));
+    Person_PhoneNumber_set_type(ph, Person_PhoneNumber_Type_mobile);
+    Person_set_phones(alice, phones);
+  }
+  set_employment_school(alice, "MIT");
+
+  Person_ptr bob = person_at(people, 1);
+  Person_set_id(bob, 456);
+  Person_set_name(bob, chars_to_text("Bob"));
+  Person_set_email(bob, chars_to_text("bob@example.com"));
+  {
+    Person_PhoneNumber_list phones = new_Person_PhoneNumber_list(cs, 2);
+    Person_PhoneNumber_ptr ph0 = phone_at(phones, 0);
+    Person_PhoneNumber_set_number(ph0, chars_to_text("555-4567"));
+    Person_PhoneNumber_set_type(ph0, Person_PhoneNumber_Type_home);
+    Person_PhoneNumber_ptr ph1 = phone_at(phones, 1);
+    Person_PhoneNumber_set_number(ph1, chars_to_text("555-7654"));
+    Person_PhoneNumber_set_type(ph1, Person_PhoneNumber_Type_work);
+    Person_set_phones(bob, phones);
+  }
+  set_employment_unemployed(bob);
+
+  AddressBook_set_people(ab, people);
+  return capn_set_root(c, ab.p);
+}
+
+static ssize_t encode_alice_bob_schema_order(uint8_t *buf, size_t cap,
+                                             int packed) {
+  struct capn c;
+  capn_init_malloc(&c);
+  if (build_alice_bob_schema_order(&c) != 0) {
+    capn_free(&c);
+    return -1;
+  }
+  ssize_t sz = capn_write_mem(&c, buf, cap, packed);
+  capn_free(&c);
+  return sz;
+}
+
+static capn_data list8_as_data(capn_list8 l) {
+  capn_data d;
+  d.p = l.p;
+  return d;
+}
+
+static capn_ptr_list ptr_list_of(capn_ptr p) {
+  capn_ptr_list l;
+  l.p = p;
+  return l;
+}
+
+static TestAllTypes_ptr testall_at(TestAllTypes_list l, int i) {
+  TestAllTypes_ptr p;
+  p.p = capn_getp(l.p, i, 0);
+  return p;
+}
+
+static int build_testalltypes_schema_order(struct capn *c) {
+  struct capn_segment *cs = capn_root(c).seg;
+  TestAllTypes_ptr tp = new_TestAllTypes(cs);
+
+  TestAllTypes_set_textField(tp, chars_to_text("hello-cli"));
+
+  {
+    capn_list8 data = capn_new_list8(cs, 4);
+    const uint8_t bytes[] = {0x01, 0x02, 0x03, 0xff};
+    if (capn_setv8(data, 0, bytes, 4) != 4) {
+      return -1;
+    }
+    TestAllTypes_set_dataField(tp, list8_as_data(data));
+  }
+
+  {
+    TestAllTypes_ptr inner = new_TestAllTypes(cs);
+    TestAllTypes_set_textField(inner, chars_to_text("nested"));
+    TestAllTypes_set_structField(tp, inner);
+  }
+
+  TestAllTypes_set_enumField(tp, TestEnum_baz);
+
+  {
+    capn_list1 bl = capn_new_list1(cs, 3);
+    if (capn_set1(bl, 0, 1) || capn_set1(bl, 1, 0) || capn_set1(bl, 2, 1)) {
+      return -1;
+    }
+    TestAllTypes_set_boolList(tp, bl);
+  }
+
+  {
+    capn_list32 il = capn_new_list32(cs, 5);
+    if (capn_set32(il, 0, 1) || capn_set32(il, 1, (uint32_t) -2) ||
+        capn_set32(il, 2, 3) || capn_set32(il, 3, 0) ||
+        capn_set32(il, 4, 42)) {
+      return -1;
+    }
+    TestAllTypes_set_int32List(tp, il);
+  }
+
+  {
+    capn_ptr_list tl = ptr_list_of(capn_new_ptr_list(cs, 2));
+    if (capn_set_text(tl.p, 0, chars_to_text("alpha")) ||
+        capn_set_text(tl.p, 1, chars_to_text("beta"))) {
+      return -1;
+    }
+    TestAllTypes_set_textList(tp, tl);
+  }
+
+  {
+    capn_ptr_list dl = ptr_list_of(capn_new_ptr_list(cs, 2));
+    capn_list8 d0 = capn_new_list8(cs, 1);
+    capn_list8 d1 = capn_new_list8(cs, 2);
+    if (capn_set8(d0, 0, 0xaa) || capn_set8(d1, 0, 0xbb) ||
+        capn_set8(d1, 1, 0xcc) || capn_setp(dl.p, 0, d0.p) ||
+        capn_setp(dl.p, 1, d1.p)) {
+      return -1;
+    }
+    TestAllTypes_set_dataList(tp, dl);
+  }
+
+  {
+    TestAllTypes_list sl = new_TestAllTypes_list(cs, 2);
+    TestAllTypes_set_textField(testall_at(sl, 0), chars_to_text("s0"));
+    TestAllTypes_set_textField(testall_at(sl, 1), chars_to_text("s1"));
+    TestAllTypes_set_structList(tp, sl);
+  }
+
+  {
+    capn_list16 el = capn_new_list16(cs, 2);
+    if (capn_set16(el, 0, (uint16_t) TestEnum_foo) ||
+        capn_set16(el, 1, (uint16_t) TestEnum_bar)) {
+      return -1;
+    }
+    TestAllTypes_set_enumList(tp, el);
+  }
+
+  return capn_set_root(c, tp.p);
+}
+
+static ssize_t encode_testalltypes_schema_order(uint8_t *buf, size_t cap) {
+  struct capn c;
+  capn_init_malloc(&c);
+  if (build_testalltypes_schema_order(&c) != 0) {
+    capn_free(&c);
+    return -1;
+  }
+  ssize_t sz = capn_write_mem(&c, buf, cap, 0);
+  capn_free(&c);
+  return sz;
+}
+
+static std::string canonicalize_unframed(struct capn *src) {
+  struct capn dst;
+  capn_init_malloc(&dst);
+  if (capn_canonicalize(src, &dst) != 0 || dst.segnum != 1 ||
+      dst.seglist == NULL) {
+    capn_free(&dst);
+    return "";
+  }
+  std::string out(dst.seglist->data, dst.seglist->len);
+  capn_free(&dst);
+  return out;
+}
+
+static std::string encode_then_canonicalize(int (*build)(struct capn *)) {
+  struct capn src;
+  capn_init_malloc(&src);
+  std::string out;
+  if (build(&src) == 0) {
+    out = canonicalize_unframed(&src);
+  }
+  capn_free(&src);
+  return out;
+}
+
+TEST_F(CapnpCli, OfficialAddressBookEncodeMatchesCommittedFlat) {
+  std::string text = read_file_text(fixture_path("addressbook.txt"));
+  ASSERT_FALSE(text.empty());
+  CmdResult r = capnp_encode_text(addressbook_schema(), "AddressBook",
+                                  text.c_str());
+  ASSERT_EQ(0, r.status) << r.err;
+  std::string committed = read_file_text(fixture_path("addressbook.bin"));
+  ASSERT_FALSE(committed.empty());
+  expect_bytes_eq(r.out.data(), r.out.size(), committed.data(),
+                  committed.size(), "official-vs-committed-flat");
+}
+
+TEST_F(CapnpCli, SchemaOrderAddressBookMatchesCapnpEncode) {
+  std::string text = read_file_text(fixture_path("addressbook.txt"));
+  ASSERT_FALSE(text.empty());
+  CmdResult want = capnp_encode_text(addressbook_schema(), "AddressBook",
+                                     text.c_str());
+  ASSERT_EQ(0, want.status) << want.err;
+
+  uint8_t buf[4096];
+  ssize_t sz = encode_alice_bob_schema_order(buf, sizeof(buf), 0);
+  ASSERT_GT(sz, 0);
+  expect_bytes_eq(buf, (size_t) sz, want.out.data(), want.out.size(),
+                  "addressbook-schema-order");
+}
+
+TEST_F(CapnpCli, SchemaOrderAddressBookPackedMatchesConvert) {
+  uint8_t buf[4096];
+  ssize_t sz = encode_alice_bob_schema_order(buf, sizeof(buf), 0);
+  ASSERT_GT(sz, 0);
+
+  CmdResult want = capnp_convert("binary:packed", buf, (size_t) sz);
+  ASSERT_EQ(0, want.status) << want.err;
+
+  uint8_t packed[4096];
+  ssize_t psz = encode_alice_bob_schema_order(packed, sizeof(packed), 1);
+  ASSERT_GT(psz, 0);
+  expect_bytes_eq(packed, (size_t) psz, want.out.data(), want.out.size(),
+                  "addressbook-packed");
+}
+
+TEST_F(CapnpCli, InitMemThenPackedMatchesConvert) {
+  std::string text = read_file_text(fixture_path("addressbook.txt"));
+  ASSERT_FALSE(text.empty());
+  CmdResult enc = capnp_encode_text(addressbook_schema(), "AddressBook",
+                                    text.c_str());
+  ASSERT_EQ(0, enc.status) << enc.err;
+
+  CmdResult want = capnp_convert("binary:packed", enc.out.data(),
+                                 enc.out.size());
+  ASSERT_EQ(0, want.status) << want.err;
+
+  struct capn c;
+  ASSERT_EQ(0, capn_init_mem(&c, (const uint8_t *) enc.out.data(),
+                             enc.out.size(), 0));
+  uint8_t packed[4096];
+  ssize_t psz = capn_write_mem(&c, packed, sizeof(packed), 1);
+  capn_free(&c);
+  ASSERT_GT(psz, 0);
+  expect_bytes_eq(packed, (size_t) psz, want.out.data(), want.out.size(),
+                  "init-mem-packed");
+}
+
+TEST_F(CapnpCli, CanonicalizeAddressBookMatchesConvert) {
+  std::string text = read_file_text(fixture_path("addressbook.txt"));
+  ASSERT_FALSE(text.empty());
+  CmdResult enc = capnp_encode_text(addressbook_schema(), "AddressBook",
+                                    text.c_str());
+  ASSERT_EQ(0, enc.status) << enc.err;
+
+  CmdResult want = capnp_convert("binary:canonical", enc.out.data(),
+                                 enc.out.size());
+  ASSERT_EQ(0, want.status) << want.err;
+
+  std::string from_c = encode_then_canonicalize(build_alice_bob_schema_order);
+  ASSERT_FALSE(from_c.empty());
+  expect_bytes_eq(from_c.data(), from_c.size(), want.out.data(),
+                  want.out.size(), "addressbook-canonical-from-c");
+
+  struct capn official;
+  ASSERT_EQ(0, capn_init_mem(&official, (const uint8_t *) enc.out.data(),
+                             enc.out.size(), 0));
+  std::string from_off = canonicalize_unframed(&official);
+  capn_free(&official);
+  ASSERT_FALSE(from_off.empty());
+  expect_bytes_eq(from_off.data(), from_off.size(), want.out.data(),
+                  want.out.size(), "addressbook-canonical-from-official");
+}
+
+TEST_F(CapnpCli, SchemaOrderTestAllTypesMatchesCapnpEncode) {
+  std::string text = read_file_text(fixture_path("testalltypes.txt"));
+  ASSERT_FALSE(text.empty());
+  CmdResult want = capnp_encode_text(testalltypes_schema(), "TestAllTypes",
+                                     text.c_str());
+  ASSERT_EQ(0, want.status) << want.err;
+
+  uint8_t buf[8192];
+  ssize_t sz = encode_testalltypes_schema_order(buf, sizeof(buf));
+  ASSERT_GT(sz, 0);
+  expect_bytes_eq(buf, (size_t) sz, want.out.data(), want.out.size(),
+                  "testalltypes-schema-order");
+}
+
+TEST_F(CapnpCli, CanonicalizeTestAllTypesMatchesConvert) {
+  std::string text = read_file_text(fixture_path("testalltypes.txt"));
+  ASSERT_FALSE(text.empty());
+  CmdResult enc = capnp_encode_text(testalltypes_schema(), "TestAllTypes",
+                                    text.c_str());
+  ASSERT_EQ(0, enc.status) << enc.err;
+
+  CmdResult want = capnp_convert("binary:canonical", enc.out.data(),
+                                 enc.out.size());
+  ASSERT_EQ(0, want.status) << want.err;
+
+  std::string from_c = encode_then_canonicalize(build_testalltypes_schema_order);
+  ASSERT_FALSE(from_c.empty());
+  expect_bytes_eq(from_c.data(), from_c.size(), want.out.data(),
+                  want.out.size(), "testalltypes-canonical-from-c");
+
+  struct capn official;
+  ASSERT_EQ(0, capn_init_mem(&official, (const uint8_t *) enc.out.data(),
+                             enc.out.size(), 0));
+  std::string from_off = canonicalize_unframed(&official);
+  capn_free(&official);
+  ASSERT_FALSE(from_off.empty());
+  expect_bytes_eq(from_off.data(), from_off.size(), want.out.data(),
+                  want.out.size(), "testalltypes-canonical-from-official");
+}
+
+static ssize_t write_root(struct capn *c, capn_ptr root, uint8_t *buf,
+                          size_t cap) {
+  if (capn_set_root(c, root) != 0) {
+    return -1;
+  }
+  return capn_write_mem(c, buf, cap, 0);
+}
+
+TEST_F(CapnpCli, EmptyStructMatchesEncode) {
+  CmdResult want = capnp_encode_text(testalltypes_schema(), "TestEmptyStruct",
+                                     "()");
+  ASSERT_EQ(0, want.status) << want.err;
+
+  struct capn c;
+  capn_init_malloc(&c);
+  TestEmptyStruct_ptr p = new_TestEmptyStruct(capn_root(&c).seg);
+  uint8_t buf[64];
+  ssize_t sz = write_root(&c, p.p, buf, sizeof(buf));
+  capn_free(&c);
+  ASSERT_GT(sz, 0);
+  expect_bytes_eq(buf, (size_t) sz, want.out.data(), want.out.size(),
+                  "empty-struct");
+}
+
+TEST_F(CapnpCli, Int32OnlyMatchesEncode) {
+  CmdResult want = capnp_encode_text(testalltypes_schema(), "TestAllTypes",
+                                     "(int32Field = 42)");
+  ASSERT_EQ(0, want.status) << want.err;
+
+  struct capn c;
+  capn_init_malloc(&c);
+  TestAllTypes_ptr tp = new_TestAllTypes(capn_root(&c).seg);
+  TestAllTypes_set_int32Field(tp, 42);
+  uint8_t buf[512];
+  ssize_t sz = write_root(&c, tp.p, buf, sizeof(buf));
+  capn_free(&c);
+  ASSERT_GT(sz, 0);
+  expect_bytes_eq(buf, (size_t) sz, want.out.data(), want.out.size(),
+                  "int32-only");
+}
+
+TEST_F(CapnpCli, TextOnlyMatchesEncode) {
+  CmdResult want = capnp_encode_text(testalltypes_schema(), "TestAllTypes",
+                                     "(textField = \"hi\")");
+  ASSERT_EQ(0, want.status) << want.err;
+
+  struct capn c;
+  capn_init_malloc(&c);
+  TestAllTypes_ptr tp = new_TestAllTypes(capn_root(&c).seg);
+  TestAllTypes_set_textField(tp, chars_to_text("hi"));
+  uint8_t buf[512];
+  ssize_t sz = write_root(&c, tp.p, buf, sizeof(buf));
+  capn_free(&c);
+  ASSERT_GT(sz, 0);
+  expect_bytes_eq(buf, (size_t) sz, want.out.data(), want.out.size(),
+                  "text-only");
+}
+
+TEST_F(CapnpCli, DataOnlyMatchesEncode) {
+  CmdResult want = capnp_encode_text(testalltypes_schema(), "TestAllTypes",
+                                     "(dataField = 0x\"01 02\")");
+  ASSERT_EQ(0, want.status) << want.err;
+
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *cs = capn_root(&c).seg;
+  TestAllTypes_ptr tp = new_TestAllTypes(cs);
+  capn_list8 d = capn_new_list8(cs, 2);
+  ASSERT_EQ(0, capn_set8(d, 0, 0x01));
+  ASSERT_EQ(0, capn_set8(d, 1, 0x02));
+  TestAllTypes_set_dataField(tp, list8_as_data(d));
+  uint8_t buf[512];
+  ssize_t sz = write_root(&c, tp.p, buf, sizeof(buf));
+  capn_free(&c);
+  ASSERT_GT(sz, 0);
+  expect_bytes_eq(buf, (size_t) sz, want.out.data(), want.out.size(),
+                  "data-only");
+}
+
+TEST_F(CapnpCli, Int32ListOnlyMatchesEncode) {
+  CmdResult want = capnp_encode_text(testalltypes_schema(), "TestAllTypes",
+                                     "(int32List = [1, 2, 3])");
+  ASSERT_EQ(0, want.status) << want.err;
+
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *cs = capn_root(&c).seg;
+  TestAllTypes_ptr tp = new_TestAllTypes(cs);
+  capn_list32 il = capn_new_list32(cs, 3);
+  ASSERT_EQ(0, capn_set32(il, 0, 1));
+  ASSERT_EQ(0, capn_set32(il, 1, 2));
+  ASSERT_EQ(0, capn_set32(il, 2, 3));
+  TestAllTypes_set_int32List(tp, il);
+  uint8_t buf[512];
+  ssize_t sz = write_root(&c, tp.p, buf, sizeof(buf));
+  capn_free(&c);
+  ASSERT_GT(sz, 0);
+  expect_bytes_eq(buf, (size_t) sz, want.out.data(), want.out.size(),
+                  "int32list-only");
+}
+
+TEST_F(CapnpCli, VoidListOnlyMatchesEncode) {
+  CmdResult want = capnp_encode_text(testalltypes_schema(), "TestAllTypes",
+                                     "(voidList = [void, void])");
+  ASSERT_EQ(0, want.status) << want.err;
+
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *cs = capn_root(&c).seg;
+  TestAllTypes_ptr tp = new_TestAllTypes(cs);
+  capn_ptr vl = capn_new_list(cs, 2, 0, 0);
+  TestAllTypes_set_voidList(tp, vl);
+  uint8_t buf[512];
+  ssize_t sz = write_root(&c, tp.p, buf, sizeof(buf));
+  capn_free(&c);
+  ASSERT_GT(sz, 0);
+  expect_bytes_eq(buf, (size_t) sz, want.out.data(), want.out.size(),
+                  "voidlist-only");
+}
+
+TEST_F(CapnpCli, BoolListOnlyMatchesEncode) {
+  CmdResult want = capnp_encode_text(testalltypes_schema(), "TestAllTypes",
+                                     "(boolList = [true, false, true])");
+  ASSERT_EQ(0, want.status) << want.err;
+
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *cs = capn_root(&c).seg;
+  TestAllTypes_ptr tp = new_TestAllTypes(cs);
+  capn_list1 bl = capn_new_list1(cs, 3);
+  ASSERT_EQ(0, capn_set1(bl, 0, 1));
+  ASSERT_EQ(0, capn_set1(bl, 1, 0));
+  ASSERT_EQ(0, capn_set1(bl, 2, 1));
+  TestAllTypes_set_boolList(tp, bl);
+  uint8_t buf[512];
+  ssize_t sz = write_root(&c, tp.p, buf, sizeof(buf));
+  capn_free(&c);
+  ASSERT_GT(sz, 0);
+  expect_bytes_eq(buf, (size_t) sz, want.out.data(), want.out.size(),
+                  "boollist-only");
+}
+
+TEST_F(CapnpCli, EmptyPeopleListMatchesEncode) {
+  CmdResult want = capnp_encode_text(addressbook_schema(), "AddressBook",
+                                     "(people = [])");
+  ASSERT_EQ(0, want.status) << want.err;
+
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *cs = capn_root(&c).seg;
+  AddressBook_ptr ab = new_AddressBook(cs);
+  Person_list people = new_Person_list(cs, 0);
+  AddressBook_set_people(ab, people);
+  uint8_t buf[128];
+  ssize_t sz = write_root(&c, ab.p, buf, sizeof(buf));
+  capn_free(&c);
+  ASSERT_GT(sz, 0);
+  expect_bytes_eq(buf, (size_t) sz, want.out.data(), want.out.size(),
+                  "empty-people");
 }
