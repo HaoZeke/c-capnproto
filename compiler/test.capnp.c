@@ -2718,26 +2718,38 @@ void read_TestUnion(struct TestUnion *s capnp_unused, TestUnion_ptr p) {
 	s->union0_which = (enum TestUnion_union0_which)(int) capn_read16(p.p, 0);
 	switch (s->union0_which) {
 	case TestUnion_union0_u0f0s1:
+		s->union0.u0f0s1 = (capn_read8(p.p, 8) & 1) != 0;
+		break;
 	case TestUnion_union0_u0f1s1:
 		s->union0.u0f1s1 = (capn_read8(p.p, 8) & 1) != 0;
 		break;
 	case TestUnion_union0_u0f0s8:
+		s->union0.u0f0s8 = (int8_t) ((int8_t)capn_read8(p.p, 8));
+		break;
 	case TestUnion_union0_u0f1s8:
 		s->union0.u0f1s8 = (int8_t) ((int8_t)capn_read8(p.p, 8));
 		break;
 	case TestUnion_union0_u0f0s16:
+		s->union0.u0f0s16 = (int16_t) ((int16_t)capn_read16(p.p, 8));
+		break;
 	case TestUnion_union0_u0f1s16:
 		s->union0.u0f1s16 = (int16_t) ((int16_t)capn_read16(p.p, 8));
 		break;
 	case TestUnion_union0_u0f0s32:
+		s->union0.u0f0s32 = (int32_t) ((int32_t)capn_read32(p.p, 8));
+		break;
 	case TestUnion_union0_u0f1s32:
 		s->union0.u0f1s32 = (int32_t) ((int32_t)capn_read32(p.p, 8));
 		break;
 	case TestUnion_union0_u0f0s64:
+		s->union0.u0f0s64 = (int64_t) ((int64_t)(capn_read64(p.p, 8)));
+		break;
 	case TestUnion_union0_u0f1s64:
 		s->union0.u0f1s64 = (int64_t) ((int64_t)(capn_read64(p.p, 8)));
 		break;
 	case TestUnion_union0_u0f0sp:
+		s->union0.u0f0sp = capn_get_text(p.p, 0, capn_val0);
+		break;
 	case TestUnion_union0_u0f1sp:
 		s->union0.u0f1sp = capn_get_text(p.p, 0, capn_val0);
 		break;
@@ -2748,32 +2760,56 @@ void read_TestUnion(struct TestUnion *s capnp_unused, TestUnion_ptr p) {
 	s->union1_which = (enum TestUnion_union1_which)(int) capn_read16(p.p, 2);
 	switch (s->union1_which) {
 	case TestUnion_union1_u1f0s1:
+		s->union1.u1f0s1 = (capn_read8(p.p, 16) & 2) != 0;
+		break;
 	case TestUnion_union1_u1f1s1:
+		s->union1.u1f1s1 = (capn_read8(p.p, 16) & 2) != 0;
+		break;
 	case TestUnion_union1_u1f2s1:
 		s->union1.u1f2s1 = (capn_read8(p.p, 16) & 2) != 0;
 		break;
 	case TestUnion_union1_u1f0s8:
+		s->union1.u1f0s8 = (int8_t) ((int8_t)capn_read8(p.p, 17));
+		break;
 	case TestUnion_union1_u1f1s8:
+		s->union1.u1f1s8 = (int8_t) ((int8_t)capn_read8(p.p, 17));
+		break;
 	case TestUnion_union1_u1f2s8:
 		s->union1.u1f2s8 = (int8_t) ((int8_t)capn_read8(p.p, 17));
 		break;
 	case TestUnion_union1_u1f0s16:
+		s->union1.u1f0s16 = (int16_t) ((int16_t)capn_read16(p.p, 18));
+		break;
 	case TestUnion_union1_u1f1s16:
+		s->union1.u1f1s16 = (int16_t) ((int16_t)capn_read16(p.p, 18));
+		break;
 	case TestUnion_union1_u1f2s16:
 		s->union1.u1f2s16 = (int16_t) ((int16_t)capn_read16(p.p, 18));
 		break;
 	case TestUnion_union1_u1f0s32:
+		s->union1.u1f0s32 = (int32_t) ((int32_t)capn_read32(p.p, 20));
+		break;
 	case TestUnion_union1_u1f1s32:
+		s->union1.u1f1s32 = (int32_t) ((int32_t)capn_read32(p.p, 20));
+		break;
 	case TestUnion_union1_u1f2s32:
 		s->union1.u1f2s32 = (int32_t) ((int32_t)capn_read32(p.p, 20));
 		break;
 	case TestUnion_union1_u1f0s64:
+		s->union1.u1f0s64 = (int64_t) ((int64_t)(capn_read64(p.p, 24)));
+		break;
 	case TestUnion_union1_u1f1s64:
+		s->union1.u1f1s64 = (int64_t) ((int64_t)(capn_read64(p.p, 24)));
+		break;
 	case TestUnion_union1_u1f2s64:
 		s->union1.u1f2s64 = (int64_t) ((int64_t)(capn_read64(p.p, 24)));
 		break;
 	case TestUnion_union1_u1f0sp:
+		s->union1.u1f0sp = capn_get_text(p.p, 1, capn_val0);
+		break;
 	case TestUnion_union1_u1f1sp:
+		s->union1.u1f1sp = capn_get_text(p.p, 1, capn_val0);
+		break;
 	case TestUnion_union1_u1f2sp:
 		s->union1.u1f2sp = capn_get_text(p.p, 1, capn_val0);
 		break;
@@ -2834,26 +2870,38 @@ void write_TestUnion(const struct TestUnion *s capnp_unused, TestUnion_ptr p) {
 	capn_write16(p.p, 0, s->union0_which);
 	switch (s->union0_which) {
 	case TestUnion_union0_u0f0s1:
+		capn_write1(p.p, 64, s->union0.u0f0s1 != 0);
+		break;
 	case TestUnion_union0_u0f1s1:
 		capn_write1(p.p, 64, s->union0.u0f1s1 != 0);
 		break;
 	case TestUnion_union0_u0f0s8:
+		capn_write8(p.p, 8, (uint8_t) (s->union0.u0f0s8));
+		break;
 	case TestUnion_union0_u0f1s8:
 		capn_write8(p.p, 8, (uint8_t) (s->union0.u0f1s8));
 		break;
 	case TestUnion_union0_u0f0s16:
+		capn_write16(p.p, 8, (uint16_t) (s->union0.u0f0s16));
+		break;
 	case TestUnion_union0_u0f1s16:
 		capn_write16(p.p, 8, (uint16_t) (s->union0.u0f1s16));
 		break;
 	case TestUnion_union0_u0f0s32:
+		capn_write32(p.p, 8, (uint32_t) (s->union0.u0f0s32));
+		break;
 	case TestUnion_union0_u0f1s32:
 		capn_write32(p.p, 8, (uint32_t) (s->union0.u0f1s32));
 		break;
 	case TestUnion_union0_u0f0s64:
+		capn_write64(p.p, 8, (uint64_t) (s->union0.u0f0s64));
+		break;
 	case TestUnion_union0_u0f1s64:
 		capn_write64(p.p, 8, (uint64_t) (s->union0.u0f1s64));
 		break;
 	case TestUnion_union0_u0f0sp:
+		capn_set_text(p.p, 0, s->union0.u0f0sp);
+		break;
 	case TestUnion_union0_u0f1sp:
 		capn_set_text(p.p, 0, s->union0.u0f1sp);
 		break;
@@ -2864,32 +2912,56 @@ void write_TestUnion(const struct TestUnion *s capnp_unused, TestUnion_ptr p) {
 	capn_write16(p.p, 2, s->union1_which);
 	switch (s->union1_which) {
 	case TestUnion_union1_u1f0s1:
+		capn_write1(p.p, 129, s->union1.u1f0s1 != 0);
+		break;
 	case TestUnion_union1_u1f1s1:
+		capn_write1(p.p, 129, s->union1.u1f1s1 != 0);
+		break;
 	case TestUnion_union1_u1f2s1:
 		capn_write1(p.p, 129, s->union1.u1f2s1 != 0);
 		break;
 	case TestUnion_union1_u1f0s8:
+		capn_write8(p.p, 17, (uint8_t) (s->union1.u1f0s8));
+		break;
 	case TestUnion_union1_u1f1s8:
+		capn_write8(p.p, 17, (uint8_t) (s->union1.u1f1s8));
+		break;
 	case TestUnion_union1_u1f2s8:
 		capn_write8(p.p, 17, (uint8_t) (s->union1.u1f2s8));
 		break;
 	case TestUnion_union1_u1f0s16:
+		capn_write16(p.p, 18, (uint16_t) (s->union1.u1f0s16));
+		break;
 	case TestUnion_union1_u1f1s16:
+		capn_write16(p.p, 18, (uint16_t) (s->union1.u1f1s16));
+		break;
 	case TestUnion_union1_u1f2s16:
 		capn_write16(p.p, 18, (uint16_t) (s->union1.u1f2s16));
 		break;
 	case TestUnion_union1_u1f0s32:
+		capn_write32(p.p, 20, (uint32_t) (s->union1.u1f0s32));
+		break;
 	case TestUnion_union1_u1f1s32:
+		capn_write32(p.p, 20, (uint32_t) (s->union1.u1f1s32));
+		break;
 	case TestUnion_union1_u1f2s32:
 		capn_write32(p.p, 20, (uint32_t) (s->union1.u1f2s32));
 		break;
 	case TestUnion_union1_u1f0s64:
+		capn_write64(p.p, 24, (uint64_t) (s->union1.u1f0s64));
+		break;
 	case TestUnion_union1_u1f1s64:
+		capn_write64(p.p, 24, (uint64_t) (s->union1.u1f1s64));
+		break;
 	case TestUnion_union1_u1f2s64:
 		capn_write64(p.p, 24, (uint64_t) (s->union1.u1f2s64));
 		break;
 	case TestUnion_union1_u1f0sp:
+		capn_set_text(p.p, 1, s->union1.u1f0sp);
+		break;
 	case TestUnion_union1_u1f1sp:
+		capn_set_text(p.p, 1, s->union1.u1f1sp);
+		break;
 	case TestUnion_union1_u1f2sp:
 		capn_set_text(p.p, 1, s->union1.u1f2sp);
 		break;
@@ -3160,6 +3232,8 @@ void read_TestUnionInUnion(struct TestUnionInUnion *s capnp_unused, TestUnionInU
 		s->outer.inner.which = (enum TestUnionInUnion_outer_inner_which)(int) capn_read16(p.p, 4);
 		switch (s->outer.inner.which) {
 		case TestUnionInUnion_outer_inner_foo:
+			s->outer.inner.foo = (int32_t) ((int32_t)capn_read32(p.p, 0));
+			break;
 		case TestUnionInUnion_outer_inner_bar:
 			s->outer.inner.bar = (int32_t) ((int32_t)capn_read32(p.p, 0));
 			break;
@@ -3183,6 +3257,8 @@ void write_TestUnionInUnion(const struct TestUnionInUnion *s capnp_unused, TestU
 		capn_write16(p.p, 4, s->outer.inner.which);
 		switch (s->outer.inner.which) {
 		case TestUnionInUnion_outer_inner_foo:
+			capn_write32(p.p, 0, (uint32_t) (s->outer.inner.foo));
+			break;
 		case TestUnionInUnion_outer_inner_bar:
 			capn_write32(p.p, 0, (uint32_t) (s->outer.inner.bar));
 			break;
@@ -5067,6 +5143,8 @@ void read_TestStructUnion(struct TestStructUnion *s capnp_unused, TestStructUnio
 	s->un_which = (enum TestStructUnion_un_which)(int) capn_read16(p.p, 0);
 	switch (s->un_which) {
 	case TestStructUnion_un__struct:
+		s->un._struct.p = capn_getp(p.p, 0, 0);
+		break;
 	case TestStructUnion_un_object:
 		s->un.object.p = capn_getp(p.p, 0, 0);
 		break;
@@ -5080,6 +5158,8 @@ void write_TestStructUnion(const struct TestStructUnion *s capnp_unused, TestStr
 	capn_write16(p.p, 0, s->un_which);
 	switch (s->un_which) {
 	case TestStructUnion_un__struct:
+		capn_setp(p.p, 0, (s->un._struct.p.type != CAPN_NULL) ? s->un._struct.p : capn_null);
+		break;
 	case TestStructUnion_un_object:
 		capn_setp(p.p, 0, (s->un.object.p.type != CAPN_NULL) ? s->un.object.p : capn_null);
 		break;
