@@ -173,3 +173,28 @@ if get_option('enable_tests') and not meson.is_subproject()
     test('group-in-union-test', group_in_union_test)
   endif
 endif
+
+if get_option('fuzz')
+  fuzz_inc = include_directories(['lib', 'tests', 'compiler'])
+  # read_mem.c uses lstat; strict c99 hides POSIX declarations.
+  executable(
+    'fuzz-mem',
+    ['fuzz' / 'read_mem.c', 'tests' / 'addressbook.capnp.c'],
+    include_directories: fuzz_inc,
+    dependencies: [libcapnp_dep],
+    c_args: common_c_args,
+    override_options: ['c_std=gnu99'],
+    install: false,
+    implicit_include_directories: false,
+  )
+  executable(
+    'fuzz-fp',
+    ['fuzz' / 'read_fp.c', 'tests' / 'addressbook.capnp.c'],
+    include_directories: fuzz_inc,
+    dependencies: [libcapnp_dep],
+    c_args: common_c_args,
+    override_options: ['c_std=gnu99'],
+    install: false,
+    implicit_include_directories: false,
+  )
+endif
