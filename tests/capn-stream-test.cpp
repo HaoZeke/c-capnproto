@@ -384,6 +384,52 @@ static void fill_one_segment(struct capn *c, uint64_t val) {
   EXPECT_EQ(0, capn_write64(ptr, 0, val));
 }
 
+/* Dense List(UInt8): every byte nonzero so packing expands. A 4096-byte
+ * segment becomes 4098 packed and does not fit a one-shot 4 KiB buffer. */
+static const int kDenseBytes = 4096;
+
+static void fill_dense_list8(struct capn *c, uint8_t *bytes, int nbyte) {
+  struct capn_ptr root = capn_root(c);
+  capn_list8 data = capn_new_list8(root.seg, nbyte);
+  EXPECT_EQ(CAPN_LIST, data.p.type);
+  memset(bytes, 0xFF, (size_t)nbyte);
+  EXPECT_EQ(nbyte, capn_setv8(data, 0, bytes, nbyte));
+  EXPECT_EQ(0, capn_setp(root, 0, data.p));
+}
+
+static size_t max_segment_len(struct capn *c) {
+  size_t max_len = 0;
+  struct capn_segment *s;
+  for (s = c->seglist; s; s = s->next) {
+    if (s->len > max_len)
+      max_len = s->len;
+  }
+  return max_len;
+}
+
+static void expect_dense_list8(struct capn *c, const uint8_t *bytes, int nbyte) {
+  uint8_t got[4096];
+  capn_list8 out;
+  EXPECT_LE(nbyte, (int)sizeof(got));
+  out.p = capn_getp(capn_root(c), 0, 1);
+  EXPECT_EQ(CAPN_LIST, out.p.type);
+  EXPECT_EQ(nbyte, out.p.len);
+  EXPECT_EQ(nbyte, capn_getv8(out, 0, got, nbyte));
+  EXPECT_EQ(0, memcmp(got, bytes, (size_t)nbyte));
+}
+
+static uint8_t g_fd_out[16384];
+static size_t g_fd_out_len;
+
+static ssize_t collect_fd_write(int fd, const void *p, size_t count) {
+  (void)fd;
+  if (g_fd_out_len + count > sizeof(g_fd_out))
+    return -1;
+  memcpy(g_fd_out + g_fd_out_len, p, count);
+  g_fd_out_len += count;
+  return (ssize_t)count;
+}
+
 TEST(Stream, WriteFpRejectsEmptyAndNull) {
   FILE *f = tmpfile();
   ASSERT_TRUE(f != NULL);
@@ -936,4 +982,63 @@ TEST(Stream, InitMemPackedRejectsIncompleteTag) {
   /* Tag 0x51 needs three data bytes; only one follows. */
   const uint8_t cut_sparse[] = {0x51, 0x08};
   EXPECT_NE(0, capn_init_mem(&ctx, cut_sparse, sizeof(cut_sparse), 1));
+}
+
+TEST(Stream, WriteFpPackedDenseSegmentRoundTrip) {
+  uint8_t bytes[4096];
+  uint8_t mem[16384];
+  uint8_t from_fp[16384];
+  FILE *f = tmpfile();
+  ASSERT_TRUE(f != NULL);
+
+  struct capn ctx1, ctx2;
+  capn_init_malloc(&ctx1);
+  fill_dense_list8(&ctx1, bytes, kDenseBytes);
+  ASSERT_GE(max_segment_len(&ctx1), (size_t)kDenseBytes);
+
+  int64_t nmem = capn_write_mem(&ctx1, mem, sizeof(mem), 1);
+  ASSERT_GT(nmem, 0);
+
+  int n = capn_write_fp(&ctx1, f, 1);
+  EXPECT_GT(n, 0);
+  EXPECT_EQ(nmem, n);
+
+  rewind(f);
+  size_t nr = fread(from_fp, 1, sizeof(from_fp), f);
+  EXPECT_EQ((size_t)nmem, nr);
+  EXPECT_EQ(0, memcmp(mem, from_fp, (size_t)nmem));
+
+  rewind(f);
+  ASSERT_EQ(0, capn_init_fp(&ctx2, f, 1));
+  expect_dense_list8(&ctx2, bytes, kDenseBytes);
+
+  capn_free(&ctx1);
+  capn_free(&ctx2);
+  fclose(f);
+}
+
+TEST(Stream, WriteFdPackedDenseSegmentRoundTrip) {
+  uint8_t bytes[4096];
+  uint8_t mem[16384];
+
+  struct capn ctx1, ctx2;
+  capn_init_malloc(&ctx1);
+  fill_dense_list8(&ctx1, bytes, kDenseBytes);
+  ASSERT_GE(max_segment_len(&ctx1), (size_t)kDenseBytes);
+
+  int64_t nmem = capn_write_mem(&ctx1, mem, sizeof(mem), 1);
+  ASSERT_GT(nmem, 0);
+
+  g_fd_out_len = 0;
+  int n = capn_write_fd(&ctx1, collect_fd_write, 0, 1);
+  EXPECT_GT(n, 0);
+  EXPECT_EQ(nmem, n);
+  EXPECT_EQ((size_t)nmem, g_fd_out_len);
+  EXPECT_EQ(0, memcmp(mem, g_fd_out, (size_t)nmem));
+
+  ASSERT_EQ(0, capn_init_mem(&ctx2, g_fd_out, g_fd_out_len, 1));
+  expect_dense_list8(&ctx2, bytes, kDenseBytes);
+
+  capn_free(&ctx1);
+  capn_free(&ctx2);
 }
