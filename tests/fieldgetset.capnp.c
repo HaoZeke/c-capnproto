@@ -42,6 +42,7 @@ void set_Leaf(const struct Leaf *s, Leaf_list l, int i) {
 
 int32_t Leaf_get_value(Leaf_ptr p)
 {
+	capn_resolve(&p.p);
 	int32_t value;
 	value = (int32_t) ((int32_t)capn_read32(p.p, 0));
 	return value;
@@ -49,6 +50,7 @@ int32_t Leaf_get_value(Leaf_ptr p)
 
 void Leaf_set_value(Leaf_ptr p, int32_t value)
 {
+	capn_resolve(&p.p);
 	capn_write32(p.p, 0, (uint32_t) (value));
 }
 
@@ -87,25 +89,29 @@ void set_Inner(const struct Inner *s, Inner_list l, int i) {
 
 TreeNode_ptr Inner_get_left(Inner_ptr p)
 {
+	capn_resolve(&p.p);
 	TreeNode_ptr left;
-	left.p = capn_getp(p.p, 0, 0);
+	left.p = capn_getp(p.p, 0, 1);
 	return left;
 }
 
 TreeNode_ptr Inner_get_right(Inner_ptr p)
 {
+	capn_resolve(&p.p);
 	TreeNode_ptr right;
-	right.p = capn_getp(p.p, 1, 0);
+	right.p = capn_getp(p.p, 1, 1);
 	return right;
 }
 
 void Inner_set_left(Inner_ptr p, TreeNode_ptr left)
 {
+	capn_resolve(&p.p);
 	capn_setp(p.p, 0, left.p);
 }
 
 void Inner_set_right(Inner_ptr p, TreeNode_ptr right)
 {
+	capn_resolve(&p.p);
 	capn_setp(p.p, 1, right.p);
 }
 
@@ -146,6 +152,7 @@ void set_TreeNode(const struct TreeNode *s, TreeNode_list l, int i) {
 
 int32_t TreeNode_get_nodeType(TreeNode_ptr p)
 {
+	capn_resolve(&p.p);
 	int32_t nodeType;
 	nodeType = (int32_t) ((int32_t)capn_read32(p.p, 0));
 	return nodeType;
@@ -153,29 +160,34 @@ int32_t TreeNode_get_nodeType(TreeNode_ptr p)
 
 Leaf_ptr TreeNode_get_leaf(TreeNode_ptr p)
 {
+	capn_resolve(&p.p);
 	Leaf_ptr leaf;
-	leaf.p = capn_getp(p.p, 0, 0);
+	leaf.p = capn_getp(p.p, 0, 1);
 	return leaf;
 }
 
 Inner_ptr TreeNode_get_inner(TreeNode_ptr p)
 {
+	capn_resolve(&p.p);
 	Inner_ptr inner;
-	inner.p = capn_getp(p.p, 1, 0);
+	inner.p = capn_getp(p.p, 1, 1);
 	return inner;
 }
 
 void TreeNode_set_nodeType(TreeNode_ptr p, int32_t nodeType)
 {
+	capn_resolve(&p.p);
 	capn_write32(p.p, 0, (uint32_t) (nodeType));
 }
 
 void TreeNode_set_leaf(TreeNode_ptr p, Leaf_ptr leaf)
 {
+	capn_resolve(&p.p);
 	capn_setp(p.p, 0, leaf.p);
 }
 
 void TreeNode_set_inner(TreeNode_ptr p, Inner_ptr inner)
 {
+	capn_resolve(&p.p);
 	capn_setp(p.p, 1, inner.p);
 }

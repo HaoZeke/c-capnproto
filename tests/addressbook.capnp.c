@@ -1,5 +1,13 @@
 #include "addressbook.capnp.h"
 /* AUTO GENERATED - DO NOT EDIT */
+#ifdef __GNUC__
+# define capnp_unused __attribute__((unused))
+# define capnp_use(x) (void) (x);
+#else
+# define capnp_unused
+# define capnp_use(x)
+#endif
+
 static const capn_text capn_val0 = {0,"",0};
 
 Person_ptr new_Person(struct capn_segment *s) {
@@ -12,8 +20,9 @@ Person_list new_Person_list(struct capn_segment *s, int len) {
 	p.p = capn_new_list(s, len, 8, 4);
 	return p;
 }
-void read_Person(struct Person *s, Person_ptr p) {
+void read_Person(struct Person *s capnp_unused, Person_ptr p) {
 	capn_resolve(&p.p);
+	capnp_use(s);
 	s->id = capn_read32(p.p, 0);
 	s->name = capn_get_text(p.p, 0, capn_val0);
 	s->email = capn_get_text(p.p, 1, capn_val0);
@@ -28,8 +37,9 @@ void read_Person(struct Person *s, Person_ptr p) {
 		break;
 	}
 }
-void write_Person(const struct Person *s, Person_ptr p) {
+void write_Person(const struct Person *s capnp_unused, Person_ptr p) {
 	capn_resolve(&p.p);
+	capnp_use(s);
 	capn_write32(p.p, 0, s->id);
 	capn_set_text(p.p, 0, s->name);
 	capn_set_text(p.p, 1, s->email);
@@ -57,6 +67,7 @@ void set_Person(const struct Person *s, Person_list l, int i) {
 
 uint32_t Person_get_id(Person_ptr p)
 {
+	capn_resolve(&p.p);
 	uint32_t id;
 	id = capn_read32(p.p, 0);
 	return id;
@@ -64,6 +75,7 @@ uint32_t Person_get_id(Person_ptr p)
 
 capn_text Person_get_name(Person_ptr p)
 {
+	capn_resolve(&p.p);
 	capn_text name;
 	name = capn_get_text(p.p, 0, capn_val0);
 	return name;
@@ -71,6 +83,7 @@ capn_text Person_get_name(Person_ptr p)
 
 capn_text Person_get_email(Person_ptr p)
 {
+	capn_resolve(&p.p);
 	capn_text email;
 	email = capn_get_text(p.p, 1, capn_val0);
 	return email;
@@ -78,28 +91,33 @@ capn_text Person_get_email(Person_ptr p)
 
 Person_PhoneNumber_list Person_get_phones(Person_ptr p)
 {
+	capn_resolve(&p.p);
 	Person_PhoneNumber_list phones;
-	phones.p = capn_getp(p.p, 2, 0);
+	phones.p = capn_getp(p.p, 2, 1);
 	return phones;
 }
 
 void Person_set_id(Person_ptr p, uint32_t id)
 {
+	capn_resolve(&p.p);
 	capn_write32(p.p, 0, id);
 }
 
 void Person_set_name(Person_ptr p, capn_text name)
 {
+	capn_resolve(&p.p);
 	capn_set_text(p.p, 0, name);
 }
 
 void Person_set_email(Person_ptr p, capn_text email)
 {
+	capn_resolve(&p.p);
 	capn_set_text(p.p, 1, email);
 }
 
 void Person_set_phones(Person_ptr p, Person_PhoneNumber_list phones)
 {
+	capn_resolve(&p.p);
 	capn_setp(p.p, 2, phones.p);
 }
 
@@ -113,13 +131,15 @@ Person_PhoneNumber_list new_Person_PhoneNumber_list(struct capn_segment *s, int 
 	p.p = capn_new_list(s, len, 8, 1);
 	return p;
 }
-void read_Person_PhoneNumber(struct Person_PhoneNumber *s, Person_PhoneNumber_ptr p) {
+void read_Person_PhoneNumber(struct Person_PhoneNumber *s capnp_unused, Person_PhoneNumber_ptr p) {
 	capn_resolve(&p.p);
+	capnp_use(s);
 	s->number = capn_get_text(p.p, 0, capn_val0);
 	s->type = (enum Person_PhoneNumber_Type)(int) capn_read16(p.p, 0);
 }
-void write_Person_PhoneNumber(const struct Person_PhoneNumber *s, Person_PhoneNumber_ptr p) {
+void write_Person_PhoneNumber(const struct Person_PhoneNumber *s capnp_unused, Person_PhoneNumber_ptr p) {
 	capn_resolve(&p.p);
+	capnp_use(s);
 	capn_set_text(p.p, 0, s->number);
 	capn_write16(p.p, 0, (uint16_t) (s->type));
 }
@@ -136,6 +156,7 @@ void set_Person_PhoneNumber(const struct Person_PhoneNumber *s, Person_PhoneNumb
 
 capn_text Person_PhoneNumber_get_number(Person_PhoneNumber_ptr p)
 {
+	capn_resolve(&p.p);
 	capn_text number;
 	number = capn_get_text(p.p, 0, capn_val0);
 	return number;
@@ -143,6 +164,7 @@ capn_text Person_PhoneNumber_get_number(Person_PhoneNumber_ptr p)
 
 enum Person_PhoneNumber_Type Person_PhoneNumber_get_type(Person_PhoneNumber_ptr p)
 {
+	capn_resolve(&p.p);
 	enum Person_PhoneNumber_Type type;
 	type = (enum Person_PhoneNumber_Type)(int) capn_read16(p.p, 0);
 	return type;
@@ -150,11 +172,13 @@ enum Person_PhoneNumber_Type Person_PhoneNumber_get_type(Person_PhoneNumber_ptr 
 
 void Person_PhoneNumber_set_number(Person_PhoneNumber_ptr p, capn_text number)
 {
+	capn_resolve(&p.p);
 	capn_set_text(p.p, 0, number);
 }
 
 void Person_PhoneNumber_set_type(Person_PhoneNumber_ptr p, enum Person_PhoneNumber_Type type)
 {
+	capn_resolve(&p.p);
 	capn_write16(p.p, 0, (uint16_t) (type));
 }
 
@@ -168,12 +192,14 @@ AddressBook_list new_AddressBook_list(struct capn_segment *s, int len) {
 	p.p = capn_new_list(s, len, 0, 1);
 	return p;
 }
-void read_AddressBook(struct AddressBook *s, AddressBook_ptr p) {
+void read_AddressBook(struct AddressBook *s capnp_unused, AddressBook_ptr p) {
 	capn_resolve(&p.p);
+	capnp_use(s);
 	s->people.p = capn_getp(p.p, 0, 0);
 }
-void write_AddressBook(const struct AddressBook *s, AddressBook_ptr p) {
+void write_AddressBook(const struct AddressBook *s capnp_unused, AddressBook_ptr p) {
 	capn_resolve(&p.p);
+	capnp_use(s);
 	capn_setp(p.p, 0, s->people.p);
 }
 void get_AddressBook(struct AddressBook *s, AddressBook_list l, int i) {
@@ -189,12 +215,14 @@ void set_AddressBook(const struct AddressBook *s, AddressBook_list l, int i) {
 
 Person_list AddressBook_get_people(AddressBook_ptr p)
 {
+	capn_resolve(&p.p);
 	Person_list people;
-	people.p = capn_getp(p.p, 0, 0);
+	people.p = capn_getp(p.p, 0, 1);
 	return people;
 }
 
 void AddressBook_set_people(AddressBook_ptr p, Person_list people)
 {
+	capn_resolve(&p.p);
 	capn_setp(p.p, 0, people.p);
 }

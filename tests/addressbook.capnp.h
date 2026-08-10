@@ -7,7 +7,14 @@
 #error "version mismatch between capnp_c.h and generated code"
 #endif
 
-#include "c.capnp.h"
+#ifndef capnp_nowarn
+# ifdef __GNUC__
+#  define capnp_nowarn __extension__
+# else
+#  define capnp_nowarn
+# endif
+#endif
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,7 +50,7 @@ struct Person {
 	capn_text email;
 	Person_PhoneNumber_list phones;
 	enum Person_employment_which employment_which;
-	union {
+	capnp_nowarn union {
 		capn_text employer;
 		capn_text school;
 	} employment;
@@ -54,6 +61,7 @@ static const size_t Person_word_count = 1;
 static const size_t Person_pointer_count = 4;
 
 static const size_t Person_struct_bytes_count = 40;
+
 
 uint32_t Person_get_id(Person_ptr p);
 
@@ -82,6 +90,7 @@ static const size_t Person_PhoneNumber_pointer_count = 1;
 
 static const size_t Person_PhoneNumber_struct_bytes_count = 16;
 
+
 capn_text Person_PhoneNumber_get_number(Person_PhoneNumber_ptr p);
 
 enum Person_PhoneNumber_Type Person_PhoneNumber_get_type(Person_PhoneNumber_ptr p);
@@ -99,6 +108,7 @@ static const size_t AddressBook_word_count = 0;
 static const size_t AddressBook_pointer_count = 1;
 
 static const size_t AddressBook_struct_bytes_count = 8;
+
 
 Person_list AddressBook_get_people(AddressBook_ptr p);
 

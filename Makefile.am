@@ -77,19 +77,15 @@ capn_test_SOURCES = \
 noinst_HEADERS += \
 	compiler/test.capnp.h \
 	tests/addressbook.capnp.h \
-<<<<<<< HEAD
 	tests/extraheader.capnp.h \
-	tests/extraheader-probe.h
-=======
+	tests/extraheader-probe.h \
 	tests/fieldgetset.capnp.h
->>>>>>> 961a364 (test: cover nested fieldgetset pointer get-after-set)
 EXTRA_DIST += \
 	compiler/c.capnp \
 	compiler/c++.capnp \
 	compiler/schema.capnp \
 	compiler/test.capnp \
 	tests/addressbook.capnp \
-<<<<<<< HEAD
 	tests/extraheader.capnp \
 	tests/codec-roundtrip.capnp \
 	tests/codec-roundtrip.h \
@@ -97,9 +93,7 @@ EXTRA_DIST += \
 	tests/group-in-union.capnp \
 	tests/group-in-union.h \
 	tests/group-in-union-test.cpp \
-=======
 	tests/fieldgetset.capnp \
->>>>>>> 961a364 (test: cover nested fieldgetset pointer get-after-set)
 	fuzz/Person.txt \
 	fuzz/read_mem.c \
 	fuzz/read_fp.c
