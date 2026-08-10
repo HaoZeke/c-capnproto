@@ -17,6 +17,8 @@ When `__KERNEL__` is set:
   `kcalloc` / `kmalloc` / `kfree` with `GFP_KERNEL`
 - `FILE*` inflate/read paths (`fread`) are compiled out;
   `capn_init_mem` still works
+- `FILE*` write (`capn_write_fp` / `fwrite`) is a no-op that
+  returns -1; `capn_write_mem` and `capn_write_fd` still work
 - `EAGAIN` / `EINTR` retries in `capn_write_fd` are compiled out
 - float converters (`capn_to_f32` and friends) are omitted
 
@@ -26,7 +28,8 @@ unchanged.
 
 `printk` is not used in the library; the sample module uses it.
 
-Some runtime functions keep 4k stack buffers (`init_fp`, `capn_write_fd`).
+Some runtime functions keep 4k stack buffers (`init_fp`, `capn_write_fd`,
+`capn_write_fp`).
 kbuild may warn `-Wframe-larger-than=2048` on those paths. The sample
 heap-allocates its encode buffer; a production module should do the same
 or raise the frame limit.
@@ -44,8 +47,9 @@ dmesg | tail
 sudo rmmod capnp_addressbook
 ```
 
-`capn_init_fp` is userspace-only. Kernel consumers should use
-`capn_init_malloc` + `capn_write_mem` / `capn_init_mem`.
+`capn_init_fp` and `capn_write_fp` are userspace-only. Kernel
+consumers should use `capn_init_malloc` + `capn_write_mem` /
+`capn_write_fd` / `capn_init_mem`.
 
 ## Out-of-tree kbuild
 
