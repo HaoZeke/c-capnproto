@@ -192,6 +192,215 @@ TEST(DecodeBounds, ValidStructStillReads) {
 	capn_free(&c);
 }
 
+/* N structs (0 data / 1 ptr) chained from the root pointer. Word i
+ * (i < n) is a struct pointer to word i+1; word n is null. */
+static int init_struct_chain(struct capn *c, int n, uint8_t *seg,
+			     size_t seg_cap, uint8_t *framed, size_t framed_cap) {
+	size_t segsz;
+	int i;
+
+	if (n < 1)
+		return -1;
+	segsz = (size_t) (n + 1) * 8;
+	if (seg_cap < segsz)
+		return -1;
+	memset(seg, 0, segsz);
+	for (i = 0; i < n; i++)
+		wr64(seg + (size_t) i * 8, UINT64_C(1) << 48);
+	return init_one_seg(c, seg, segsz, framed, framed_cap);
+}
+
+static capn_ptr follow_ptrs(capn_ptr p, int hops) {
+	int i;
+	for (i = 0; i < hops; i++)
+		p = capn_getp(p, 0, 1);
+	return p;
+}
+
+static int init_two_seg(struct capn *c,
+			const uint8_t *s0, size_t z0,
+			const uint8_t *s1, size_t z1,
+			uint8_t *framed, size_t framed_cap) {
+	size_t need = 16 + z0 + z1;
+	if (z0 % 8 != 0 || z1 % 8 != 0 || framed_cap < need)
+		return -1;
+	wr32(framed + 0, 1);
+	wr32(framed + 4, (uint32_t) (z0 / 8));
+	wr32(framed + 8, (uint32_t) (z1 / 8));
+	wr32(framed + 12, 0);
+	memcpy(framed + 16, s0, z0);
+	memcpy(framed + 16 + z0, s1, z1);
+	return capn_init_mem(c, framed, need, 0);
+}
+
+TEST(DecodeGraph, OverDeepNestingGetpIsNull) {
+	uint8_t seg[64];
+	uint8_t framed[72];
+	struct capn c;
+	capn_ptr p;
+
+	ASSERT_EQ(0, init_struct_chain(&c, 5, seg, sizeof(seg), framed, sizeof(framed)));
+	c.nesting_limit = 3;
+	p = root_getp(&c);
+	EXPECT_EQ(CAPN_STRUCT, p.type);
+	p = follow_ptrs(p, 2);
+	EXPECT_EQ(CAPN_STRUCT, p.type);
+	p = capn_getp(p, 0, 1);
+	EXPECT_EQ(CAPN_NULL, p.type);
+	capn_free(&c);
+}
+
+TEST(DecodeGraph, OverDeepNestingValidateFails) {
+	uint8_t seg[64];
+	uint8_t framed[72];
+	struct capn c;
+
+	ASSERT_EQ(0, init_struct_chain(&c, 5, seg, sizeof(seg), framed, sizeof(framed)));
+	c.nesting_limit = 3;
+	EXPECT_NE(0, capn_validate(&c));
+	capn_free(&c);
+}
+
+TEST(DecodeGraph, NestingAtLimitValidateOk) {
+	uint8_t seg[64];
+	uint8_t framed[72];
+	struct capn c;
+	capn_ptr p;
+
+	ASSERT_EQ(0, init_struct_chain(&c, 3, seg, sizeof(seg), framed, sizeof(framed)));
+	c.nesting_limit = 3;
+	EXPECT_EQ(0, capn_validate(&c));
+	p = follow_ptrs(root_getp(&c), 2);
+	EXPECT_EQ(CAPN_STRUCT, p.type);
+	p = capn_getp(p, 0, 1);
+	EXPECT_EQ(CAPN_NULL, p.type);
+	capn_free(&c);
+}
+
+TEST(DecodeGraph, DefaultNestingAllows64Rejects65) {
+	uint8_t seg[600];
+	uint8_t framed[616];
+	struct capn c;
+	capn_ptr p;
+
+	ASSERT_EQ(0, init_struct_chain(&c, 65, seg, sizeof(seg), framed, sizeof(framed)));
+	EXPECT_EQ(0, c.nesting_limit);
+	p = follow_ptrs(root_getp(&c), 63);
+	EXPECT_EQ(CAPN_STRUCT, p.type);
+	p = capn_getp(p, 0, 1);
+	EXPECT_EQ(CAPN_NULL, p.type);
+	EXPECT_NE(0, capn_validate(&c));
+	capn_free(&c);
+
+	ASSERT_EQ(0, init_struct_chain(&c, 64, seg, sizeof(seg), framed, sizeof(framed)));
+	p = follow_ptrs(root_getp(&c), 63);
+	EXPECT_EQ(CAPN_STRUCT, p.type);
+	EXPECT_EQ(0, capn_validate(&c));
+	capn_free(&c);
+}
+
+TEST(DecodeGraph, CyclicStructsValidateFails) {
+	/* A (word 1) -> B (word 2) -> A. Offset from word 2 to word 1 is -2. */
+	uint8_t seg[24];
+	uint8_t framed[32];
+	struct capn c;
+	uint32_t neg;
+	capn_ptr p;
+	int i;
+
+	memset(seg, 0, sizeof(seg));
+	wr64(seg + 0, UINT64_C(1) << 48);
+	wr64(seg + 8, UINT64_C(1) << 48);
+	neg = 1u + ~(2u << 2);
+	wr64(seg + 16, (uint64_t) neg | (UINT64_C(1) << 48));
+	ASSERT_EQ(0, init_one_seg(&c, seg, sizeof(seg), framed, sizeof(framed)));
+	EXPECT_NE(0, capn_validate(&c));
+
+	p = root_getp(&c);
+	EXPECT_EQ(CAPN_STRUCT, p.type);
+	for (i = 0; i < 100; i++) {
+		p = capn_getp(p, 0, 1);
+		if (p.type == CAPN_NULL)
+			break;
+	}
+	EXPECT_EQ(CAPN_NULL, p.type);
+	EXPECT_LT(i, 100);
+	capn_free(&c);
+}
+
+TEST(DecodeGraph, CyclicFarPointersValidateFails) {
+	/* Seg0 A.ptr is far to seg1 word 0 (B). Seg1 B.ptr is far to
+	 * seg0 word 0 (A). */
+	uint8_t s0[16];
+	uint8_t s1[16];
+	uint8_t framed[48];
+	struct capn c;
+	capn_ptr p;
+	int i;
+
+	memset(s0, 0, sizeof(s0));
+	memset(s1, 0, sizeof(s1));
+	wr64(s0 + 0, UINT64_C(1) << 48);
+	wr64(s0 + 8, UINT64_C(2) | (UINT64_C(1) << 32));
+	wr64(s1 + 0, UINT64_C(1) << 48);
+	wr64(s1 + 8, UINT64_C(2));
+	ASSERT_EQ(0, init_two_seg(&c, s0, sizeof(s0), s1, sizeof(s1),
+				 framed, sizeof(framed)));
+	EXPECT_NE(0, capn_validate(&c));
+
+	p = root_getp(&c);
+	EXPECT_EQ(CAPN_STRUCT, p.type);
+	for (i = 0; i < 100; i++) {
+		p = capn_getp(p, 0, 1);
+		if (p.type == CAPN_NULL)
+			break;
+	}
+	EXPECT_EQ(CAPN_NULL, p.type);
+	EXPECT_LT(i, 100);
+	capn_free(&c);
+}
+
+TEST(DecodeGraph, VoidListAmplificationValidateFails) {
+	uint8_t seg[8];
+	uint8_t framed[16];
+	struct capn c;
+	uint64_t val;
+
+	memset(seg, 0, sizeof(seg));
+	val = UINT64_C(1) | (UINT64_C(100000000) << 35);
+	wr64(seg, val);
+	ASSERT_EQ(0, init_one_seg(&c, seg, sizeof(seg), framed, sizeof(framed)));
+	EXPECT_EQ(CAPN_NULL, root_getp(&c).type);
+	c.traversal_used = 0;
+	EXPECT_NE(0, capn_validate(&c));
+	capn_free(&c);
+}
+
+TEST(DecodeGraph, NullRootValidateOk) {
+	uint8_t seg[8];
+	uint8_t framed[16];
+	struct capn c;
+
+	memset(seg, 0, sizeof(seg));
+	ASSERT_EQ(0, init_one_seg(&c, seg, sizeof(seg), framed, sizeof(framed)));
+	EXPECT_EQ(0, capn_validate(&c));
+	capn_free(&c);
+}
+
+TEST(DecodeGraph, ValidStructValidateOk) {
+	uint8_t seg[16];
+	uint8_t framed[24];
+	struct capn c;
+
+	memset(seg, 0, sizeof(seg));
+	wr64(seg, UINT64_C(1) << 32);
+	wr64(seg + 8, UINT64_C(0xefcdab8967452301));
+	ASSERT_EQ(0, init_one_seg(&c, seg, sizeof(seg), framed, sizeof(framed)));
+	EXPECT_EQ(0, capn_validate(&c));
+	EXPECT_EQ(CAPN_STRUCT, root_getp(&c).type);
+	capn_free(&c);
+}
+
 TEST(DecodeBounds, AddressBookRoundTrip) {
 	uint8_t buf[4096];
 	ssize_t sz = 0;
@@ -239,6 +448,7 @@ TEST(DecodeBounds, AddressBookRoundTrip) {
 		struct Person rp;
 		struct Person_PhoneNumber rpn;
 		ASSERT_EQ(0, capn_init_mem(&rc, buf, (size_t) sz, 0));
+		EXPECT_EQ(0, capn_validate(&rc));
 		rroot.p = capn_getp(capn_root(&rc), 0, 1);
 		ASSERT_EQ(CAPN_STRUCT, rroot.p.type);
 		read_AddressBook(&rb, rroot);
