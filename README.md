@@ -33,6 +33,22 @@ meson compile -C build
 meson install -C build   # optional: put capnpc-c on PATH
 ```
 
+## Building (CMake, optional)
+
+Meson is the recommended build. CMake is an install-path alternative
+(MSVC / IDE / packagers) and is not the default. It does not use the
+DKML `dk` wrapper and does not fetch or delete the `gtest/` submodule.
+
+```sh
+cmake -S . -B build-cmake
+cmake --build build-cmake
+cmake --install build-cmake   # optional: libcapnp_c, capnpc-c, header, c.capnp, pc
+ctest --test-dir build-cmake  # only if CMake found an installed GTest
+```
+
+Tests are skipped when GTest is not installed. Use meson (or autotools
+with the existing `gtest/` submodule) for the full suite.
+
 ## Building (autotools)
 
 ```sh
@@ -101,6 +117,12 @@ The project [`quagga-capnproto`](https://github.com/opensourcerouting/quagga-cap
 
 * Serialization in function [`bgp_notify_send()`](https://github.com/opensourcerouting/quagga-capnproto/blob/27061648f3418fac0d217b16a46add534343e841/bgpd/bgp_zmq.c#L81-L96) in file `quagga-capnproto/bgpd/bgp_zmq.c`
 * Deserialization in function [`qzc_callback()`](https://github.com/opensourcerouting/quagga-capnproto/blob/27061648f3418fac0d217b16a46add534343e841/lib/qzc.c#L249-L257) in file `quagga-capnproto/lib/qzc.c`
+
+## Linux kernel (optional)
+
+The runtime can be compiled into a kernel module (`__KERNEL__`). This is
+not the default and is not covered by CI. See [KERNEL.md](KERNEL.md) and
+the sample in [`examples/kernel`](examples/kernel).
 
 ## Fuzzing (AFL)
 
