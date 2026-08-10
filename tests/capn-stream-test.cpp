@@ -9,6 +9,8 @@
 
 #include "capn-stream.c"
 #include <gtest/gtest.h>
+#include <stdio.h>
+#include <string.h>
 
 template <int wordCount>
 union AlignedData {
@@ -370,4 +372,156 @@ TEST(Stream, WriteThreeSegmentsPacked) {
 
   capn_free(&ctx1);
   capn_free(&ctx2);
+}
+
+static void fill_one_segment(struct capn *c, uint64_t val) {
+  struct capn_ptr root = capn_root(c);
+  struct capn_ptr ptr = capn_new_struct(root.seg, 8, 0);
+  EXPECT_EQ(0, capn_setp(root, 0, ptr));
+  EXPECT_EQ(0, capn_write64(ptr, 0, val));
+}
+
+TEST(Stream, WriteFpRejectsEmptyAndNull) {
+  FILE *f = tmpfile();
+  ASSERT_TRUE(f != NULL);
+
+  struct capn ctx;
+  capn_init_malloc(&ctx);
+  EXPECT_EQ(-1, capn_write_fp(&ctx, f, 0));
+  EXPECT_EQ(-1, capn_write_fp(&ctx, f, 1));
+  capn_root(&ctx);
+  EXPECT_EQ(-1, capn_write_fp(&ctx, NULL, 0));
+  EXPECT_EQ(-1, capn_write_fp(&ctx, NULL, 1));
+
+  capn_free(&ctx);
+  fclose(f);
+}
+
+TEST(Stream, WriteFpUnpackedRoundTrip) {
+  const uint64_t val = UINT64_C(0x1011121314151617);
+  FILE *f = tmpfile();
+  ASSERT_TRUE(f != NULL);
+
+  struct capn ctx1, ctx2;
+  capn_init_malloc(&ctx1);
+  fill_one_segment(&ctx1, val);
+
+  int n = capn_write_fp(&ctx1, f, 0);
+  EXPECT_EQ(3 * 8, n);
+
+  rewind(f);
+  ASSERT_EQ(0, capn_init_fp(&ctx2, f, 0));
+  EXPECT_EQ(1, ctx2.segnum);
+  struct capn_ptr root = capn_root(&ctx2);
+  struct capn_ptr ptr = capn_getp(root, 0, 1);
+  EXPECT_EQ(val, capn_read64(ptr, 0));
+
+  capn_free(&ctx1);
+  capn_free(&ctx2);
+  fclose(f);
+}
+
+TEST(Stream, InitFpPackedFromWriteMem) {
+  const uint64_t val = UINT64_C(0x1011121314151617);
+  uint8_t buf[2048];
+
+  struct capn ctx1, ctx2;
+  capn_init_malloc(&ctx1);
+  fill_one_segment(&ctx1, val);
+  int64_t n = capn_write_mem(&ctx1, buf, sizeof(buf), 1);
+  ASSERT_EQ(14, n);
+
+  FILE *f = tmpfile();
+  ASSERT_TRUE(f != NULL);
+  ASSERT_EQ((size_t)n, fwrite(buf, 1, (size_t)n, f));
+  rewind(f);
+
+  ASSERT_EQ(0, capn_init_fp(&ctx2, f, 1));
+  EXPECT_EQ(1, ctx2.segnum);
+  struct capn_ptr root = capn_root(&ctx2);
+  struct capn_ptr ptr = capn_getp(root, 0, 1);
+  EXPECT_EQ(val, capn_read64(ptr, 0));
+
+  capn_free(&ctx1);
+  capn_free(&ctx2);
+  fclose(f);
+}
+
+TEST(Stream, WriteFpPackedRoundTrip) {
+  const uint64_t val = UINT64_C(0x1011121314151617);
+  FILE *f = tmpfile();
+  ASSERT_TRUE(f != NULL);
+
+  struct capn ctx1, ctx2;
+  capn_init_malloc(&ctx1);
+  fill_one_segment(&ctx1, val);
+
+  int n = capn_write_fp(&ctx1, f, 1);
+  EXPECT_EQ(14, n);
+
+  rewind(f);
+  ASSERT_EQ(0, capn_init_fp(&ctx2, f, 1));
+  EXPECT_EQ(1, ctx2.segnum);
+  struct capn_ptr root = capn_root(&ctx2);
+  struct capn_ptr ptr = capn_getp(root, 0, 1);
+  EXPECT_EQ(val, capn_read64(ptr, 0));
+
+  capn_free(&ctx1);
+  capn_free(&ctx2);
+  fclose(f);
+}
+
+TEST(Stream, WriteFpMatchesWriteMem) {
+  const uint64_t val = UINT64_C(0xfffefdfcfbfaf9f8);
+  uint8_t mem[2048];
+  uint8_t from_fp[2048];
+
+  struct capn ctx;
+  capn_init_malloc(&ctx);
+  fill_one_segment(&ctx, val);
+
+  for (int packed = 0; packed <= 1; packed++) {
+    int64_t nmem = capn_write_mem(&ctx, mem, sizeof(mem), packed);
+    ASSERT_GT(nmem, 0);
+
+    FILE *f = tmpfile();
+    ASSERT_TRUE(f != NULL);
+    int nfp = capn_write_fp(&ctx, f, packed);
+    EXPECT_EQ(nmem, nfp) << "packed=" << packed;
+
+    rewind(f);
+    size_t nr = fread(from_fp, 1, sizeof(from_fp), f);
+    EXPECT_EQ((size_t)nmem, nr);
+    EXPECT_EQ(0, memcmp(mem, from_fp, (size_t)nmem)) << "packed=" << packed;
+    fclose(f);
+  }
+
+  capn_free(&ctx);
+}
+
+TEST(Stream, WriteFpTwoSegmentsPackedRoundTrip) {
+  FILE *f = tmpfile();
+  ASSERT_TRUE(f != NULL);
+
+  struct capn ctx1, ctx2;
+  capn_init_malloc(&ctx1);
+  ctx1.create = &CreateSmallSegment;
+  struct capn_ptr root = capn_root(&ctx1);
+  struct capn_ptr ptr1 = capn_new_struct(root.seg, 8, 0);
+  EXPECT_EQ(0, capn_setp(root, 0, ptr1));
+  EXPECT_EQ(0, capn_write64(ptr1, 0, UINT64_C(0xfffefdfcfbfaf9f8)));
+  EXPECT_EQ(2, ctx1.segnum);
+
+  int n = capn_write_fp(&ctx1, f, 1);
+  EXPECT_EQ(20, n);
+
+  rewind(f);
+  ASSERT_EQ(0, capn_init_fp(&ctx2, f, 1));
+  root = capn_root(&ctx2);
+  ptr1 = capn_getp(root, 0, 1);
+  EXPECT_EQ(UINT64_C(0xfffefdfcfbfaf9f8), capn_read64(ptr1, 0));
+
+  capn_free(&ctx1);
+  capn_free(&ctx2);
+  fclose(f);
 }
