@@ -67,8 +67,10 @@ capn_test_SOURCES = \
 	tests/capn-stream-test.cpp \
 	tests/example-test.cpp \
 	tests/extraheader-test.cpp \
+	tests/fieldgetset-test.cpp \
 	tests/addressbook.capnp.c \
 	tests/extraheader.capnp.c \
+	tests/fieldgetset.capnp.c \
 	compiler/test.capnp.c \
 	compiler/schema-test.cpp \
 	compiler/schema.capnp.c
@@ -76,7 +78,8 @@ noinst_HEADERS += \
 	compiler/test.capnp.h \
 	tests/addressbook.capnp.h \
 	tests/extraheader.capnp.h \
-	tests/extraheader-probe.h
+	tests/extraheader-probe.h \
+	tests/fieldgetset.capnp.h
 EXTRA_DIST += \
 	compiler/c.capnp \
 	compiler/c++.capnp \
@@ -90,6 +93,7 @@ EXTRA_DIST += \
 	tests/group-in-union.capnp \
 	tests/group-in-union.h \
 	tests/group-in-union-test.cpp \
+	tests/fieldgetset.capnp \
 	fuzz/Person.txt \
 	fuzz/read_mem.c \
 	fuzz/read_fp.c

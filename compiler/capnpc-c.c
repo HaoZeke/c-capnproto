@@ -660,7 +660,7 @@ static void set_member(struct str *func, struct field *f, const char *ptr, const
 	}
 }
 
-static void get_member(struct str *func, struct field *f, const char *ptr, const char *tab, const char *var) {
+static void get_member(struct str *func, struct field *f, const char *ptr, const char *tab, const char *var, int resolve) {
 	const char *xor = xor_member(f);
 	const char *pvar = ptr_member(f, var);
 
@@ -720,7 +720,7 @@ static void get_member(struct str *func, struct field *f, const char *ptr, const
 	case Type__interface:
 	case Type_anyPointer:
 	case Type__list:
-		str_addf(func, "%s = capn_getp(%s, %d, 0);\n", pvar, ptr, f->f.slot.offset);
+		str_addf(func, "%s = capn_getp(%s, %d, %d);\n", pvar, ptr, f->f.slot.offset, resolve);
 		break;
 	default:
 		return;
@@ -798,7 +798,7 @@ static void union_block(struct strings *s, struct field *f) {
 	static struct str buf = STR_INIT;
 	str_add(&s->ftab, "\t", -1);
 	set_member(&s->set, f, "p.p", s->ftab.str, strf(&buf, "%s%s", s->var.str, field_name(f)));
-	get_member(&s->get, f, "p.p", s->ftab.str, strf(&buf, "%s%s", s->var.str, field_name(f)));
+	get_member(&s->get, f, "p.p", s->ftab.str, strf(&buf, "%s%s", s->var.str, field_name(f)), 0);
 	str_addf(&s->set, "%sbreak;\n", s->ftab.str);
 	str_addf(&s->get, "%sbreak;\n", s->ftab.str);
 	str_setlen(&s->ftab, s->ftab.len-1);
@@ -1018,7 +1018,7 @@ static void define_field(struct strings *s, struct field *f, const char *extattr
 	case Field_slot:
 		declare_slot(s, f);
 		set_member(&s->set, f, "p.p", s->ftab.str, strf(&buf, "%s%s", s->var.str, field_name(f)));
-		get_member(&s->get, f, "p.p", s->ftab.str, strf(&buf, "%s%s", s->var.str, field_name(f)));
+		get_member(&s->get, f, "p.p", s->ftab.str, strf(&buf, "%s%s", s->var.str, field_name(f)), 0);
 		if (g_codecgen) {
 			struct str codec_var = STR_INIT;
 			const char *mapname = get_mapname(f->f.annotations);
@@ -1078,8 +1078,9 @@ static void define_getter_functions(struct node* node, struct field* field,
                  field->v.tname, node->name.str,
                  field_name(field), node->name.str);
         struct str getter_body = STR_INIT;
-        get_member(&getter_body, field, "p.p", "", field_name(field));
+        get_member(&getter_body, field, "p.p", "", field_name(field), 1);
 		str_addf(&s->pub_get, "{\n");
+        str_addf(&s->pub_get, "%scapn_resolve(&p.p);\n", s->ftab.str);
         str_addf(&s->pub_get, "%s%s %s;\n", s->ftab.str, field->v.tname, field_name(field));
         str_addf(&s->pub_get, "%s%s", s->ftab.str,
                  getter_body.str);
@@ -1103,7 +1104,10 @@ static void define_setter_functions(struct node* node, struct field* field,
                  field_name(field));
         struct str setter_body = STR_INIT;
         set_member(&setter_body, field, "p.p", s->ftab.str, field_name(field));
-        str_addf(&s->pub_set, "{\n%s}\n", setter_body.str);
+        str_addf(&s->pub_set, "{\n");
+        str_addf(&s->pub_set, "%scapn_resolve(&p.p);\n", s->ftab.str);
+        str_add(&s->pub_set, setter_body.str, setter_body.len);
+        str_addf(&s->pub_set, "}\n");
         str_release(&setter_body);
 }
 
