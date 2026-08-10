@@ -199,5 +199,7 @@ TEST(Schema, ReadSimple) {
   read_CodeGeneratorRequest(&req, root);
   for (int i = 0; i < req.nodes.p.len; i++) {
   }
+
+  capn_free(&ctx);
 }
 

@@ -81,9 +81,11 @@ TEST(Stream, ReadStream_Even) {
 }
 
 static struct capn_segment *CreateSmallSegment(void *u, uint32_t id, int sz) {
-  struct capn_segment *s = (struct capn_segment*) calloc(1, sizeof(*s));
-  s->data = (char*) calloc(1, sz);
-  s->cap = sz;
+  sz += sizeof(struct capn_segment);
+  struct capn_segment *s = (struct capn_segment*) calloc(1, sz);
+  s->data = (char*) (s+1);
+  s->cap = sz - sizeof(*s);
+  s->user = s;
   return s;
 }
 

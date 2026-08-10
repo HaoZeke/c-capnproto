@@ -215,14 +215,18 @@ static void header_calc(struct capn *c, uint32_t *headerlen, size_t *headersz)
 static int header_render(struct capn *c, struct capn_segment *seg, uint32_t *header, uint32_t headerlen, size_t *datasz)
 {
 	size_t i;
+	uint32_t val;
 
-	header[0] = capn_flip32(c->segnum - 1);
-	header[headerlen-1] = 0; /* Zero out the spare position in the header sizes */
+	val = capn_flip32(c->segnum - 1);
+	memcpy(&header[0], &val, sizeof(val));
+	val = 0;
+	memcpy(&header[headerlen-1], &val, sizeof(val)); /* Zero out the spare position in the header sizes */
 	for (i = 0; i < c->segnum; i++, seg = seg->next) {
 		if (0 == seg)
 			return -1;
 		*datasz += seg->len;
-		header[1 + i] = capn_flip32(seg->len / 8);
+		val = capn_flip32(seg->len / 8);
+		memcpy(&header[1 + i], &val, sizeof(val));
 	}
 	if (0 != seg)
 		return -1;
