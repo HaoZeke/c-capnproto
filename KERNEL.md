@@ -17,6 +17,8 @@ When `__KERNEL__` is set:
   `kcalloc` / `kmalloc` / `kfree` with `GFP_KERNEL`
 - `FILE*` inflate/read paths (`fread`) are compiled out;
   `capn_init_mem` still works
+- `capn_init_fd` is a no-op that returns -1 (callback read is
+  userspace-only; use `capn_init_mem`)
 - `FILE*` write (`capn_write_fp` / `fwrite`) is a no-op that
   returns -1; `capn_write_mem` and `capn_write_fd` still work
 - `EAGAIN` / `EINTR` retries in `capn_write_fd` are compiled out
@@ -47,9 +49,9 @@ dmesg | tail
 sudo rmmod capnp_addressbook
 ```
 
-`capn_init_fp` and `capn_write_fp` are userspace-only. Kernel
-consumers should use `capn_init_malloc` + `capn_write_mem` /
-`capn_write_fd` / `capn_init_mem`.
+`capn_init_fp`, `capn_init_fd`, and `capn_write_fp` are
+userspace-only. Kernel consumers should use `capn_init_malloc` +
+`capn_write_mem` / `capn_write_fd` / `capn_init_mem`.
 
 ## Out-of-tree kbuild
 
