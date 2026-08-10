@@ -999,6 +999,21 @@ capn_ptr capn_getp(capn_ptr p, int off, int resolve) {
 		if (off >= p.len) {
 			goto err;
 		}
+		if (!resolve) {
+			/* List(Struct) upgrade: C=6 is 0 data words + 1
+			 * pointer per element (encoding.html). get_Foo uses
+			 * resolve=0 then read_Foo. List(Text) / List(Data) /
+			 * List(AnyPointer) use resolve=1 and keep chasing. */
+			capn_ptr inner = {CAPN_STRUCT};
+			inner.is_list_member = 1;
+			inner.data = p.data + 8 * off;
+			inner.seg = p.seg;
+			inner.datasz = 0;
+			inner.ptrs = 1;
+			inner.nesting_valid = 1;
+			inner.nesting = rem;
+			return inner;
+		}
 		ret.data = p.data + 8*off;
 		break;
 
