@@ -28,7 +28,11 @@ libcapnp_c = library(
   install: true,
 )
 
-install_headers('lib' / 'capnp_c.h')
+# Generated user headers #include "c.capnp.h"; ship it next to capnp_c.h.
+install_headers(
+  'lib' / 'capnp_c.h',
+  'compiler' / 'c.capnp.h',
+)
 
 libcapnp_dep = declare_dependency(
   link_with: libcapnp_c,

@@ -43,14 +43,14 @@ capnpc_c_SOURCES = \
 	compiler/str.c
 capnpc_c_LDADD = libcapnp_c.la
 include_HEADERS += \
-	lib/capnp_c.h
+	lib/capnp_c.h \
+	compiler/c.capnp.h
 
 noinst_HEADERS += \
 	lib/capnp_priv.h \
 	compiler/str.h \
 	compiler/codecgen.h \
 	compiler/schema.capnp.h \
-	compiler/c.capnp.h \
 	compiler/c++.capnp.h
 
 # Don't try to generate any *.capnp files. Otherwise make wants to compile them
