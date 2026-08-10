@@ -46,6 +46,7 @@ pkg.generate(
 
 capnpc_src = [
   'compiler' / 'capnpc-c.c',
+  'compiler' / 'codecgen.c',
   'compiler' / 'schema.capnp.c',
   'compiler' / 'str.c',
 ]
@@ -53,7 +54,7 @@ capnpc_src = [
 capnpc_c = executable(
   'capnpc-c',
   capnpc_src,
-  include_directories: include_directories(['lib']),
+  include_directories: include_directories(['lib', 'compiler']),
   dependencies: [libcapnp_dep],
   c_args: common_c_args,
   install: true,

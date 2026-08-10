@@ -55,3 +55,15 @@ annotation extraheader @0xbadb496d09cf4612 (file): Text;
 
 annotation extendedattribute @0xd187bca5c6844c24 (file): Text;
 # add an extended attribute to each generated function
+
+annotation codecgen @0xcccaac86283e2609 (file): Void;
+# generate codec (encode/decode/free) for each type
+
+annotation mapname @0xb9edf6fc2d8972b8 (*): Text;
+# the mapped type or field name used by codec encode/decode
+
+annotation maplistcount @0xb6ea49eb8a9b0f9e (field): Text;
+# the mapped list count field used by codec encode/decode
+
+annotation mapuniontag @0xdce06d41858f91ac (union, struct): Text;
+# the mapped tag (which) of a union used by codec encode/decode
