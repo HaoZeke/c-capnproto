@@ -1124,13 +1124,16 @@ static int write_ptr(struct capn_segment *s, char *d, capn_ptr p) {
 
 	pdata = p.data - 8*p.is_composite_list;
 
-	/* CAPN_NULL, a zeroed pointer field, or a STRUCT with no payload
-	 * (including datasz/ptrs set but data == NULL) encode as a null
-	 * pointer. Zero-init C structs (`= {0}` / memset) to omit optional
-	 * pointer fields. */
-	if (p.type == CAPN_NULL || p.data == NULL
-	    || (p.type == CAPN_STRUCT && p.datasz == 0 && p.ptrs == 0)) {
+	/* CAPN_NULL or data == NULL encode as a null pointer (all-zero).
+	 * Zero-init C structs (`= {0}` / memset) omit optional pointer
+	 * fields. A STRUCT with datasz==0 && ptrs==0 and allocated data
+	 * is a real empty struct: A=0 B=-1 C=D=0 (0xFFFFFFFC). Offset 0
+	 * with C=D=0 is indistinguishable from null. */
+	if (p.type == CAPN_NULL || p.data == NULL) {
 		return write_ptr_tag(d, p, 0);
+
+	} else if (p.type == CAPN_STRUCT && p.datasz == 0 && p.ptrs == 0) {
+		return write_ptr_tag(d, p, -8);
 
 	} else if (!p.seg || p.seg->capn != s->capn || p.is_list_member) {
 		return NEED_TO_COPY;

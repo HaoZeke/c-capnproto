@@ -338,6 +338,9 @@ CAPN_EXPORT int capn_setv64(capn_list64 p, int off, const uint64_t *data, int sz
  *   - capn_new_list(seg, n, 0, 1) is List of 0-data/1-pointer *structs*
  *     (composite), not List(Text). capn_set_text on that list returns -1;
  *     use capn_new_ptr_list for List(Text).
+ *   - capn_new_struct(seg, 0, 0) is a real empty struct (A=0 B=-1
+ *     C=D=0, 0xFFFFFFFC), not a null pointer. Null is CAPN_NULL or
+ *     data == NULL (all-zero word).
  *   - capn_new_interface(seg, datasz, ptrs) is a capability pointer
  *     (A=3, B=0). datasz/ptrs are unused (ABI match with capn_new_struct);
  *     there is no object body. The table index is capn_ptr.len (0 on create).
