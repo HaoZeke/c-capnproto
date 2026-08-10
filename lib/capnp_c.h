@@ -178,6 +178,15 @@ typedef struct {capn_ptr p;} capn_list16;
 typedef struct {capn_ptr p;} capn_list32;
 typedef struct {capn_ptr p;} capn_list64;
 
+/* capnp_data_t is the decoded representation of a Data field.
+ * Used by codec-generated encode/decode functions to represent
+ * variable-length byte blobs in user structs.
+ */
+typedef struct {
+	uint8_t *data;
+	int len;
+} capnp_data_t;
+
 struct capn_msg {
 	struct capn_segment *seg;
 	uint64_t iface;

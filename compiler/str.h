@@ -7,6 +7,9 @@
  * of the MIT license.  See the LICENSE file for details.
  */
 
+#ifndef CAPNPC_STR_H
+#define CAPNPC_STR_H
+
 #include <capnp_c.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -57,5 +60,7 @@ void str_add(struct str *v, const char *str, int sz);
 int str_vaddf(struct str *v, const char *format, va_list ap) ATTR(2,0);
 int str_addf(struct str *v, const char *format, ...) ATTR(2,3);
 char *strf(struct str *v, const char *format, ...) ATTR(2,3);
+
+#endif /* CAPNPC_STR_H */
 
 

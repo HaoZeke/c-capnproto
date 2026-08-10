@@ -9,6 +9,7 @@
 
 #include "schema.capnp.h"
 #include "str.h"
+#include "codecgen.h"
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,30 +19,6 @@
 #include <io.h>
 #include <fcntl.h>
 #endif
-
-struct value {
-	struct Type t;
-	const char *tname;
-	struct str tname_buf;
-	struct Value v;
-	capn_ptr ptrval;
-	int64_t intval;
-};
-
-struct field {
-	struct Field f;
-	struct value v;
-	struct node *group;
-};
-
-struct node {
-	struct capn_tree hdr;
-	struct Node n;
-	struct node *next;
-	struct node *file_nodes, *next_file_node;
-	struct str name;
-	struct field *fields;
-};
 
 struct id_bst {
 	uint64_t id;
@@ -62,6 +39,17 @@ static int g_valc;
 static int g_val0used, g_nullused;
 
 static int g_fieldgetset = 0;
+static int g_codecgen = 0;
+static capnp_ctx_t g_ctx;
+
+static void bind_codec_ctx(void) {
+	g_ctx.HDR = &HDR;
+	g_ctx.SRC = &SRC;
+	g_ctx.g_nullused = &g_nullused;
+	g_ctx.g_val0used = &g_val0used;
+	g_ctx.g_codecgen = &g_codecgen;
+	g_ctx.g_fieldgetset = &g_fieldgetset;
+}
 
 static struct capn_tree *g_node_tree;
 
@@ -73,7 +61,7 @@ static struct node *find_node_mayfail(uint64_t id) {
 	return s;
 }
 
-static struct node *find_node(uint64_t id)
+struct node *find_node(uint64_t id)
 {
 	struct node *s = find_node_mayfail(id);
 	if (s == NULL) {
@@ -750,6 +738,9 @@ struct strings {
 	struct str dtab;
 	struct str get;
 	struct str set;
+	struct str encoder;
+	struct str decoder;
+	struct str freeup;
 	struct str enums;
 	struct str decl;
 	struct str var;
@@ -813,6 +804,31 @@ static void union_block(struct strings *s, struct field *f) {
 	str_setlen(&s->ftab, s->ftab.len-1);
 }
 
+static void codec_union_member(struct strings *s, struct field *f) {
+	struct str var1 = STR_INIT;
+	struct str var2 = STR_INIT;
+	const char *mapname = get_mapname(f->f.annotations);
+	const char *prefix = s->var.str + 3; /* strip "s->" */
+	const char *fname = field_name(f);
+
+	if (mapname == NULL)
+		mapname = fname;
+
+	strf(&var1, "%s%s", prefix, fname);
+	strf(&var2, "%s%s", prefix, mapname);
+
+	str_add(&s->ftab, "\t", -1);
+	encode_member(&g_ctx, &s->encoder, f, s->ftab.str, var1.str, var2.str);
+	str_addf(&s->encoder, "%sbreak;\n", s->ftab.str);
+	decode_member(&g_ctx, &s->decoder, f, s->ftab.str, var1.str, var2.str);
+	str_addf(&s->decoder, "%sbreak;\n", s->ftab.str);
+	free_member(&g_ctx, &s->freeup, f, s->ftab.str, var1.str, var2.str);
+	str_addf(&s->freeup, "%sbreak;\n", s->ftab.str);
+	str_setlen(&s->ftab, s->ftab.len-1);
+	str_release(&var1);
+	str_release(&var2);
+}
+
 static int in_union(struct field *f) {
 	return f->f.discriminantValue != 0xFFFF;
 }
@@ -832,6 +848,12 @@ static void union_cases(struct strings *s, struct node *n, struct field *first_f
 		u = f;
 		str_addf(&s->set, "%scase %s_%s:\n", s->ftab.str, n->name.str, field_name(f));
 		str_addf(&s->get, "%scase %s_%s:\n", s->ftab.str, n->name.str, field_name(f));
+		if (g_codecgen) {
+			str_addf(&s->encoder, "%scase %s_%s:\n", s->ftab.str, n->name.str, field_name(f));
+			str_addf(&s->decoder, "%scase %s_%s:\n", s->ftab.str, n->name.str, field_name(f));
+			str_addf(&s->freeup, "%scase %s_%s:\n", s->ftab.str, n->name.str, field_name(f));
+			codec_union_member(s, f);
+		}
 	}
 
 	if (u)
@@ -852,10 +874,10 @@ static void declare_slot(struct strings *s, struct field *f) {
 }
 
 static void define_group(struct strings *s, struct node *n, const char *group_name, bool enclose_unions,
-		const char *extattr, const char *extattr_space);
+		const char *extattr, const char *extattr_space, const char *uniontag);
 
 static void do_union(struct strings *s, struct node *n, struct field *first_field, const char *union_name,
-		const char *extattr, const char *extattr_space) {
+		const char *extattr, const char *extattr_space, const char *uniontag) {
 	int tagoff = 2 * n->n._struct.discriminantOffset;
 	struct field *f;
 	static struct str tag = STR_INIT;
@@ -880,6 +902,23 @@ static void do_union(struct strings *s, struct node *n, struct field *first_fiel
 	str_addf(&s->set, "%scapn_write16(p.p, %d, %s);\n", s->ftab.str, tagoff, tag.str);
 	str_addf(&s->set, "%sswitch (%s) {\n", s->ftab.str, tag.str);
 	str_addf(&s->get, "%sswitch (%s) {\n", s->ftab.str, tag.str);
+
+	if (g_codecgen) {
+		struct str dtag = STR_INIT;
+		char *p = strstr(tag.str, "->");
+		if (p == NULL) {
+			fprintf(stderr, "bad variable\n");
+			exit(2);
+		}
+		strf(&dtag, "d%s", p);
+		str_addf(&s->encoder, "%sswitch (%s) {\n", s->ftab.str, dtag.str);
+		str_addf(&s->decoder, "%sswitch (%s) {\n", s->ftab.str, tag.str);
+		if (uniontag && uniontag[0])
+			str_addf(&s->freeup, "%sswitch (%s) {\n", s->ftab.str, uniontag);
+		else
+			str_addf(&s->freeup, "%sswitch (%s) {\n", s->ftab.str, dtag.str);
+		str_release(&dtag);
+	}
 
 	/* if we have a bunch of the same C type with zero defaults, we
 	 * only need to emit one switch block as the layout will line up
@@ -909,13 +948,23 @@ static void do_union(struct strings *s, struct node *n, struct field *first_fiel
 		case Field_group:
 			str_addf(&s->get, "%scase %s_%s:\n", s->ftab.str, n->name.str, field_name(f));
 			str_addf(&s->set, "%scase %s_%s:\n", s->ftab.str, n->name.str, field_name(f));
+			if (g_codecgen) {
+				str_addf(&s->encoder, "%scase %s_%s:\n", s->ftab.str, n->name.str, field_name(f));
+				str_addf(&s->decoder, "%scase %s_%s:\n", s->ftab.str, n->name.str, field_name(f));
+				str_addf(&s->freeup, "%scase %s_%s:\n", s->ftab.str, n->name.str, field_name(f));
+			}
 			str_add(&s->ftab, "\t", -1);
 			// When we add a union inside a union, we need to enclose it in its
 			// own struct so that its members do not overwrite its own
 			// discriminant.
-			define_group(s, f->group, field_name(f), true, extattr, extattr_space);
+			define_group(s, f->group, field_name(f), true, extattr, extattr_space, uniontag);
 			str_addf(&s->get, "%sbreak;\n", s->ftab.str);
 			str_addf(&s->set, "%sbreak;\n", s->ftab.str);
+			if (g_codecgen) {
+				str_addf(&s->encoder, "%sbreak;\n", s->ftab.str);
+				str_addf(&s->decoder, "%sbreak;\n", s->ftab.str);
+				str_addf(&s->freeup, "%sbreak;\n", s->ftab.str);
+			}
 			str_setlen(&s->ftab, s->ftab.len-1);
 			break;
 
@@ -924,7 +973,14 @@ static void do_union(struct strings *s, struct node *n, struct field *first_fiel
 			if (f->v.ptrval.type || f->v.intval) {
 				str_addf(&s->get, "%scase %s_%s:\n", s->ftab.str, n->name.str, field_name(f));
 				str_addf(&s->set, "%scase %s_%s:\n", s->ftab.str, n->name.str, field_name(f));
+				if (g_codecgen) {
+					str_addf(&s->encoder, "%scase %s_%s:\n", s->ftab.str, n->name.str, field_name(f));
+					str_addf(&s->decoder, "%scase %s_%s:\n", s->ftab.str, n->name.str, field_name(f));
+					str_addf(&s->freeup, "%scase %s_%s:\n", s->ftab.str, n->name.str, field_name(f));
+				}
 				union_block(s, f);
+				if (g_codecgen)
+					codec_union_member(s, f);
 			}
 			break;
 
@@ -944,6 +1000,12 @@ static void do_union(struct strings *s, struct node *n, struct field *first_fiel
 	str_addf(&s->get, "%sdefault:\n%s\tbreak;\n%s}\n", s->ftab.str, s->ftab.str, s->ftab.str);
 	str_addf(&s->set, "%sdefault:\n%s\tbreak;\n%s}\n", s->ftab.str, s->ftab.str, s->ftab.str);
 
+	if (g_codecgen) {
+		str_addf(&s->encoder, "%sdefault:\n%s\tbreak;\n%s}\n", s->ftab.str, s->ftab.str, s->ftab.str);
+		str_addf(&s->decoder, "%sdefault:\n%s\tbreak;\n%s}\n", s->ftab.str, s->ftab.str, s->ftab.str);
+		str_addf(&s->freeup, "%sdefault:\n%s\tbreak;\n%s}\n", s->ftab.str, s->ftab.str, s->ftab.str);
+	}
+
 	str_addf(&enums, "\n};\n");
 	str_add(&s->enums, enums.str, enums.len);
 	str_release(&enums);
@@ -957,10 +1019,46 @@ static void define_field(struct strings *s, struct field *f, const char *extattr
 		declare_slot(s, f);
 		set_member(&s->set, f, "p.p", s->ftab.str, strf(&buf, "%s%s", s->var.str, field_name(f)));
 		get_member(&s->get, f, "p.p", s->ftab.str, strf(&buf, "%s%s", s->var.str, field_name(f)));
+		if (g_codecgen) {
+			struct str codec_var = STR_INIT;
+			const char *mapname = get_mapname(f->f.annotations);
+			/* s->var.str is "s->prefix.", strip "s->" to get the group path */
+			const char *group_prefix = s->var.str + 3;
+			strf(&codec_var, "%s%s", group_prefix, field_name(f));
+			encode_member(&g_ctx, &s->encoder, f, s->ftab.str, codec_var.str, mapname);
+			decode_member(&g_ctx, &s->decoder, f, s->ftab.str, codec_var.str, mapname);
+			free_member(&g_ctx, &s->freeup, f, s->ftab.str, codec_var.str, mapname);
+			str_release(&codec_var);
+		}
 		break;
 
 	case Field_group:
-		define_group(s, f->group, field_name(f), false, extattr, extattr_space);
+		if (g_codecgen) {
+			struct str uniontagvar = STR_INIT;
+			struct str gnamebuf = STR_INIT;
+			strf(&gnamebuf, "%s", field_name(f));
+			if (f->group != NULL) {
+				int flen = capn_len(f->group->n._struct.fields);
+				int ulen = f->group->n._struct.discriminantCount;
+				if ((ulen == flen) && (ulen > 0) && gnamebuf.str != NULL) {
+					char *uniontag = (char *)get_mapuniontag(f->f.annotations);
+					struct str tbuf = STR_INIT;
+					if (uniontag != NULL)
+						str_add(&tbuf, uniontag, -1);
+					else
+						strf(&tbuf, "%s_which", gnamebuf.str);
+					str_addf(&s->encoder, "\td->%s_which = s->%s;\n", gnamebuf.str, tbuf.str);
+					str_addf(&s->decoder, "\td->%s = s->%s_which;\n", tbuf.str, gnamebuf.str);
+					strf(&uniontagvar, "d->%s", tbuf.str);
+					str_release(&tbuf);
+				}
+			}
+			define_group(s, f->group, gnamebuf.str, false, extattr, extattr_space, uniontagvar.str);
+			str_release(&uniontagvar);
+			str_release(&gnamebuf);
+		} else {
+			define_group(s, f->group, field_name(f), false, extattr, extattr_space, NULL);
+		}
 		break;
 	}
 }
@@ -1010,7 +1108,7 @@ static void define_setter_functions(struct node* node, struct field* field,
 }
 
 static void define_group(struct strings *s, struct node *n, const char *group_name, bool enclose_unions,
-		const char *extattr, const char *extattr_space) {
+		const char *extattr, const char *extattr_space, const char *uniontag) {
 	struct field *f;
 	int flen = capn_len(n->n._struct.fields);
 	int ulen = n->n._struct.discriminantCount;
@@ -1074,7 +1172,7 @@ static void define_group(struct strings *s, struct node *n, const char *group_na
 
 		const bool keep_union_name = named_union && !enclose_unions;
 
-		do_union(s, n, f, keep_union_name ? group_name : NULL, extattr, extattr_space);
+		do_union(s, n, f, keep_union_name ? group_name : NULL, extattr, extattr_space, uniontag);
 
 		while (f < n->fields + flen && in_union(f))
 			f++;
@@ -1109,6 +1207,9 @@ static void define_struct(struct node *n, const char *extattr, const char *extat
 	str_reset(&s.ftab);
 	str_reset(&s.get);
 	str_reset(&s.set);
+	str_reset(&s.encoder);
+	str_reset(&s.decoder);
+	str_reset(&s.freeup);
 	str_reset(&s.enums);
 	str_reset(&s.decl);
 	str_reset(&s.var);
@@ -1121,7 +1222,16 @@ static void define_struct(struct node *n, const char *extattr, const char *extat
 	str_add(&s.ftab, "\t", -1);
 	str_add(&s.var, "s->", -1);
 
-	define_group(&s, n, NULL, false, extattr, extattr_space);
+	if (g_codecgen) {
+		if (n->n._struct.discriminantCount > 0) {
+			const char *uniontag = get_mapuniontag(n->n.annotations);
+			const char *tagname = uniontag ? uniontag : "which";
+			str_addf(&s.encoder, "\td->which = s->%s;\n", tagname);
+			str_addf(&s.decoder, "\td->%s = s->which;\n", tagname);
+		}
+	}
+
+	define_group(&s, n, NULL, false, extattr, extattr_space, NULL);
 
 	str_add(&HDR, s.enums.str, s.enums.len);
 
@@ -1188,6 +1298,29 @@ static void define_struct(struct node *n, const char *extattr, const char *extat
 	str_addf(&SRC, "\tp.p = capn_getp(l.p, i, 0);\n");
 	str_addf(&SRC, "\twrite_%s(s, p);\n", n->name.str);
 	str_addf(&SRC, "}\n");
+
+	if (g_codecgen) {
+		const char *mapname = get_mapname(n->n.annotations);
+		struct str buf = STR_INIT;
+
+		if (mapname == NULL)
+			strf(&buf, "struct %s_", n->name.str);
+		else
+			str_add(&buf, mapname, -1);
+
+		str_addf(&SRC, "\nvoid encode_%s(struct capn_segment *cs,struct %s *d, %s *s) {\n",
+			 n->name.str, n->name.str, buf.str);
+		str_addf(&SRC, "%s\n", s.encoder.str);
+		str_addf(&SRC, "}\n");
+		str_addf(&SRC, "\nvoid decode_%s(%s *d, struct %s *s) {\n",
+			 n->name.str, buf.str, n->name.str);
+		str_addf(&SRC, "%s\n", s.decoder.str);
+		str_addf(&SRC, "}\n");
+		str_addf(&SRC, "\nvoid free_%s(%s *d) {\n", n->name.str, buf.str);
+		str_addf(&SRC, "%s\n", s.freeup.str);
+		str_addf(&SRC, "}\n");
+		str_release(&buf);
+	}
 
 	str_add(&SRC, s.pub_get.str, s.pub_get.len);
 	str_add(&SRC, s.pub_set.str, s.pub_set.len);
@@ -1393,6 +1526,8 @@ int main() {
 	uint64_t total_len=0;
 	struct capn_segment *current_seg;
 
+	bind_codec_ctx();
+
 #ifdef _WIN32
     /* schemas need to be read in binary mode, not default text mode */
 	if(_setmode(_fileno( stdin ), _O_BINARY)==-1) {
@@ -1531,6 +1666,7 @@ int main() {
 		g_valseg.len = 0;
 		g_val0used = 0;
 		g_nullused = 0;
+		g_codecgen = 0;
 		capn_init_malloc(&g_valcapn);
 		capn_append_segment(&g_valcapn, &g_valseg);
 
@@ -1561,6 +1697,9 @@ int main() {
 				break;
 			case 0xf72bc690355d66deUL:	/* $C::fieldgetset */
 				g_fieldgetset = 1;
+				break;
+			case ANNOTATION_CODECGEN:	/* $C::codecgen */
+				g_codecgen = 1;
 				break;
 			case 0x8c99797357b357e9UL:	/* $C::donotinclude */
 				if (v.which != Value_uint64)
@@ -1624,6 +1763,11 @@ int main() {
 			}
 		}
 		str_addf(&HDR, "\n");
+		if (g_codecgen) {
+			str_addf(&HDR, "#ifndef STRING_DUP\n"
+					"#define STRING_DUP strdup\n"
+					"#endif\n\n");
+		}
 		str_addf(&HDR, "#if CAPN_VERSION != 1\n");
 		str_addf(&HDR, "#error \"version mismatch between capnp_c.h and generated code\"\n");
 		str_addf(&HDR, "#endif\n\n");
@@ -1681,6 +1825,14 @@ int main() {
 		for (n = file_node->file_nodes; n != NULL; n = n->next_file_node) {
 			if (n->n.which == Node__struct && !n->n._struct.isGroup) {
 				define_struct(n, extattr, extattr_space);
+				if (g_codecgen) {
+					mk_struct_list_encoder(&g_ctx, n);
+					mk_struct_ptr_encoder(&g_ctx, n);
+					mk_struct_list_decoder(&g_ctx, n);
+					mk_struct_ptr_decoder(&g_ctx, n);
+					mk_struct_list_free(&g_ctx, n);
+					mk_struct_ptr_free(&g_ctx, n);
+				}
 			}
 		}
 
@@ -1690,6 +1842,9 @@ int main() {
 		declare_ext(file_node, "%s%svoid write_%s(const struct %s*, %s_ptr);\n", 3, extattr, extattr_space);
 		declare_ext(file_node, "%s%svoid get_%s(struct %s*, %s_list, int i);\n", 3, extattr, extattr_space);
 		declare_ext(file_node, "%s%svoid set_%s(const struct %s*, %s_list, int i);\n", 3, extattr, extattr_space);
+
+		if (g_codecgen)
+			declare_codec(&g_ctx, file_node);
 
 		str_addf(&HDR, "\n#ifdef __cplusplus\n}\n#endif\n#endif\n");
 
@@ -1721,6 +1876,10 @@ int main() {
 				"# define capnp_use(x)\n"
 				"#endif\n\n");
 
+		if (g_codecgen) {
+			fprintf(srcf, "#include <stdlib.h>\n"
+					"#include <string.h>\n");
+		}
 
 		if (g_val0used)
 			fprintf(srcf, "static const capn_text capn_val0 = {0,\"\",0};\n");

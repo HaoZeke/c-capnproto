@@ -33,6 +33,7 @@ EXTRA_DIST += \
 bin_PROGRAMS += capnpc-c
 capnpc_c_SOURCES = \
 	compiler/capnpc-c.c \
+	compiler/codecgen.c \
 	compiler/schema.capnp.c \
 	compiler/str.c
 capnpc_c_LDADD = libcapnp_c.la
@@ -42,6 +43,7 @@ include_HEADERS += \
 noinst_HEADERS += \
 	lib/capnp_priv.h \
 	compiler/str.h \
+	compiler/codecgen.h \
 	compiler/schema.capnp.h \
 	compiler/c.capnp.h \
 	compiler/c++.capnp.h
@@ -82,6 +84,12 @@ EXTRA_DIST += \
 	compiler/test.capnp \
 	tests/addressbook.capnp \
 	tests/extraheader.capnp \
+	tests/codec-roundtrip.capnp \
+	tests/codec-roundtrip.h \
+	tests/codec-roundtrip-test.cpp \
+	tests/group-in-union.capnp \
+	tests/group-in-union.h \
+	tests/group-in-union-test.cpp \
 	fuzz/Person.txt \
 	fuzz/read_mem.c \
 	fuzz/read_fp.c

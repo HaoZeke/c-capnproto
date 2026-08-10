@@ -46,6 +46,7 @@ pkg.generate(
 
 capnpc_src = [
   'compiler' / 'capnpc-c.c',
+  'compiler' / 'codecgen.c',
   'compiler' / 'schema.capnp.c',
   'compiler' / 'str.c',
 ]
@@ -53,7 +54,7 @@ capnpc_src = [
 capnpc_c = executable(
   'capnpc-c',
   capnpc_src,
-  include_directories: include_directories(['lib']),
+  include_directories: include_directories(['lib', 'compiler']),
   dependencies: [libcapnp_dep],
   c_args: common_c_args,
   install: true,
@@ -107,4 +108,62 @@ if get_option('enable_tests') and not meson.is_subproject()
     implicit_include_directories: false,
   )
   test('capn-test', exe)
+
+  capnp = find_program('capnp', required: false)
+  if capnp.found()
+    gtest_main_dep = gtest_proj.get_variable('gtest_main_dep')
+    codec_c_args = common_c_args + ['-D_POSIX_C_SOURCE=200809L']
+
+    codec_roundtrip_gen = custom_target(
+      'codec-roundtrip-capnp',
+      input: 'tests' / 'codec-roundtrip.capnp',
+      output: ['codec-roundtrip.capnp.c', 'codec-roundtrip.capnp.h'],
+      command: [
+        capnp, 'compile',
+        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-I', meson.current_source_dir() / 'compiler',
+        '--src-prefix', meson.current_source_dir() / 'tests',
+        '@INPUT@',
+      ],
+      depends: [capnpc_c],
+    )
+
+    codec_roundtrip_test = executable(
+      'codec-roundtrip-test',
+      'tests' / 'codec-roundtrip-test.cpp',
+      codec_roundtrip_gen,
+      include_directories: include_directories(['lib', 'tests', 'compiler']),
+      dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
+      c_args: codec_c_args + ['-include', meson.current_source_dir() / 'tests' / 'codec-roundtrip.h'],
+      cpp_args: common_cpp_args,
+      install: false,
+    )
+    test('codec-roundtrip-test', codec_roundtrip_test)
+
+    group_in_union_gen = custom_target(
+      'group-in-union-capnp',
+      input: 'tests' / 'group-in-union.capnp',
+      output: ['group-in-union.capnp.c', 'group-in-union.capnp.h'],
+      command: [
+        capnp, 'compile',
+        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-I', meson.current_source_dir() / 'compiler',
+        '--src-prefix', meson.current_source_dir() / 'tests',
+        '@INPUT@',
+      ],
+      depends: [capnpc_c],
+    )
+
+    group_in_union_test = executable(
+      'group-in-union-test',
+      'tests' / 'group-in-union-test.cpp',
+      group_in_union_gen,
+      include_directories: include_directories(['lib', 'tests', 'compiler']),
+      dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
+      c_args: codec_c_args + ['-include', meson.current_source_dir() / 'tests' / 'group-in-union.h'],
+      cpp_args: common_cpp_args,
+      install: false,
+    )
+    test('group-in-union-test', group_in_union_test)
+  endif
 endif
