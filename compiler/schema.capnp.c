@@ -18,7 +18,7 @@ Node_ptr new_Node(struct capn_segment *s) {
 }
 Node_list new_Node_list(struct capn_segment *s, int len) {
 	Node_list p;
-	p.p = capn_new_list(s, len, 40, 6);
+	p.p = capn_new_struct_list(s, len, 40, 6);
 	return p;
 }
 void read_Node(struct Node *s capnp_unused, Node_ptr p) {
@@ -255,7 +255,7 @@ Node_Parameter_ptr new_Node_Parameter(struct capn_segment *s) {
 }
 Node_Parameter_list new_Node_Parameter_list(struct capn_segment *s, int len) {
 	Node_Parameter_list p;
-	p.p = capn_new_list(s, len, 0, 1);
+	p.p = capn_new_struct_list(s, len, 0, 1);
 	return p;
 }
 void read_Node_Parameter(struct Node_Parameter *s capnp_unused, Node_Parameter_ptr p) {
@@ -300,7 +300,7 @@ Node_NestedNode_ptr new_Node_NestedNode(struct capn_segment *s) {
 }
 Node_NestedNode_list new_Node_NestedNode_list(struct capn_segment *s, int len) {
 	Node_NestedNode_list p;
-	p.p = capn_new_list(s, len, 8, 1);
+	p.p = capn_new_struct_list(s, len, 8, 1);
 	return p;
 }
 void read_Node_NestedNode(struct Node_NestedNode *s capnp_unused, Node_NestedNode_ptr p) {
@@ -361,7 +361,7 @@ Field_ptr new_Field(struct capn_segment *s) {
 }
 Field_list new_Field_list(struct capn_segment *s, int len) {
 	Field_list p;
-	p.p = capn_new_list(s, len, 24, 4);
+	p.p = capn_new_struct_list(s, len, 24, 4);
 	return p;
 }
 void read_Field(struct Field *s capnp_unused, Field_ptr p) {
@@ -498,7 +498,7 @@ Enumerant_ptr new_Enumerant(struct capn_segment *s) {
 }
 Enumerant_list new_Enumerant_list(struct capn_segment *s, int len) {
 	Enumerant_list p;
-	p.p = capn_new_list(s, len, 8, 2);
+	p.p = capn_new_struct_list(s, len, 8, 2);
 	return p;
 }
 void read_Enumerant(struct Enumerant *s capnp_unused, Enumerant_ptr p) {
@@ -575,7 +575,7 @@ Superclass_ptr new_Superclass(struct capn_segment *s) {
 }
 Superclass_list new_Superclass_list(struct capn_segment *s, int len) {
 	Superclass_list p;
-	p.p = capn_new_list(s, len, 8, 1);
+	p.p = capn_new_struct_list(s, len, 8, 1);
 	return p;
 }
 void read_Superclass(struct Superclass *s capnp_unused, Superclass_ptr p) {
@@ -636,7 +636,7 @@ Method_ptr new_Method(struct capn_segment *s) {
 }
 Method_list new_Method_list(struct capn_segment *s, int len) {
 	Method_list p;
-	p.p = capn_new_list(s, len, 24, 5);
+	p.p = capn_new_struct_list(s, len, 24, 5);
 	return p;
 }
 void read_Method(struct Method *s capnp_unused, Method_ptr p) {
@@ -793,7 +793,7 @@ Type_ptr new_Type(struct capn_segment *s) {
 }
 Type_list new_Type_list(struct capn_segment *s, int len) {
 	Type_list p;
-	p.p = capn_new_list(s, len, 24, 1);
+	p.p = capn_new_struct_list(s, len, 24, 1);
 	return p;
 }
 void read_Type(struct Type *s capnp_unused, Type_ptr p) {
@@ -890,7 +890,7 @@ Brand_ptr new_Brand(struct capn_segment *s) {
 }
 Brand_list new_Brand_list(struct capn_segment *s, int len) {
 	Brand_list p;
-	p.p = capn_new_list(s, len, 0, 1);
+	p.p = capn_new_struct_list(s, len, 0, 1);
 	return p;
 }
 void read_Brand(struct Brand *s capnp_unused, Brand_ptr p) {
@@ -935,7 +935,7 @@ Brand_Scope_ptr new_Brand_Scope(struct capn_segment *s) {
 }
 Brand_Scope_list new_Brand_Scope_list(struct capn_segment *s, int len) {
 	Brand_Scope_list p;
-	p.p = capn_new_list(s, len, 16, 1);
+	p.p = capn_new_struct_list(s, len, 16, 1);
 	return p;
 }
 void read_Brand_Scope(struct Brand_Scope *s capnp_unused, Brand_Scope_ptr p) {
@@ -996,7 +996,7 @@ Brand_Binding_ptr new_Brand_Binding(struct capn_segment *s) {
 }
 Brand_Binding_list new_Brand_Binding_list(struct capn_segment *s, int len) {
 	Brand_Binding_list p;
-	p.p = capn_new_list(s, len, 8, 1);
+	p.p = capn_new_struct_list(s, len, 8, 1);
 	return p;
 }
 void read_Brand_Binding(struct Brand_Binding *s capnp_unused, Brand_Binding_ptr p) {
@@ -1041,7 +1041,7 @@ Value_ptr new_Value(struct capn_segment *s) {
 }
 Value_list new_Value_list(struct capn_segment *s, int len) {
 	Value_list p;
-	p.p = capn_new_list(s, len, 16, 1);
+	p.p = capn_new_struct_list(s, len, 16, 1);
 	return p;
 }
 void read_Value(struct Value *s capnp_unused, Value_ptr p) {
@@ -1146,7 +1146,7 @@ Annotation_ptr new_Annotation(struct capn_segment *s) {
 }
 Annotation_list new_Annotation_list(struct capn_segment *s, int len) {
 	Annotation_list p;
-	p.p = capn_new_list(s, len, 8, 2);
+	p.p = capn_new_struct_list(s, len, 8, 2);
 	return p;
 }
 void read_Annotation(struct Annotation *s capnp_unused, Annotation_ptr p) {
@@ -1223,7 +1223,7 @@ CodeGeneratorRequest_ptr new_CodeGeneratorRequest(struct capn_segment *s) {
 }
 CodeGeneratorRequest_list new_CodeGeneratorRequest_list(struct capn_segment *s, int len) {
 	CodeGeneratorRequest_list p;
-	p.p = capn_new_list(s, len, 0, 2);
+	p.p = capn_new_struct_list(s, len, 0, 2);
 	return p;
 }
 void read_CodeGeneratorRequest(struct CodeGeneratorRequest *s capnp_unused, CodeGeneratorRequest_ptr p) {
@@ -1284,7 +1284,7 @@ CodeGeneratorRequest_RequestedFile_ptr new_CodeGeneratorRequest_RequestedFile(st
 }
 CodeGeneratorRequest_RequestedFile_list new_CodeGeneratorRequest_RequestedFile_list(struct capn_segment *s, int len) {
 	CodeGeneratorRequest_RequestedFile_list p;
-	p.p = capn_new_list(s, len, 8, 2);
+	p.p = capn_new_struct_list(s, len, 8, 2);
 	return p;
 }
 void read_CodeGeneratorRequest_RequestedFile(struct CodeGeneratorRequest_RequestedFile *s capnp_unused, CodeGeneratorRequest_RequestedFile_ptr p) {
@@ -1361,7 +1361,7 @@ CodeGeneratorRequest_RequestedFile_Import_ptr new_CodeGeneratorRequest_Requested
 }
 CodeGeneratorRequest_RequestedFile_Import_list new_CodeGeneratorRequest_RequestedFile_Import_list(struct capn_segment *s, int len) {
 	CodeGeneratorRequest_RequestedFile_Import_list p;
-	p.p = capn_new_list(s, len, 8, 1);
+	p.p = capn_new_struct_list(s, len, 8, 1);
 	return p;
 }
 void read_CodeGeneratorRequest_RequestedFile_Import(struct CodeGeneratorRequest_RequestedFile_Import *s capnp_unused, CodeGeneratorRequest_RequestedFile_Import_ptr p) {

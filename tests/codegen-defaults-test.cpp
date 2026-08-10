@@ -71,6 +71,21 @@ TEST(CodegenDefaults, EmptyDataGeneratedCOmitsUndeclaredCapnBuf) {
   }
 }
 
+TEST(CodegenDefaults, StructListUsesNewStructList) {
+  const char *candidates[] = {
+    CODEGEN_DEFAULTS_GENERATED_C,
+    "codegen-defaults.capnp.c",
+    "tests/codegen-defaults.capnp.c",
+    "../tests/codegen-defaults.capnp.c",
+  };
+  std::string body = read_generated(candidates, sizeof(candidates) / sizeof(candidates[0]));
+  ASSERT_FALSE(body.empty()) << "could not read generated codegen-defaults.capnp.c";
+  EXPECT_NE(std::string::npos, body.find("capn_new_struct_list(s, len,"))
+      << "generated new_*_list must call capn_new_struct_list";
+  EXPECT_EQ(std::string::npos, body.find("capn_new_list(s, len,"))
+      << "generated new_*_list must not call size-based capn_new_list";
+}
+
 TEST(CodegenDefaults, EmptyDataDefaultRoundTrip) {
   struct capn c;
   capn_init_malloc(&c);

@@ -26,7 +26,7 @@ Rec_ptr new_Rec(struct capn_segment *s) {
 }
 Rec_list new_Rec_list(struct capn_segment *s, int len) {
 	Rec_list p;
-	p.p = capn_new_list(s, len, 0, 2);
+	p.p = capn_new_struct_list(s, len, 0, 2);
 	return p;
 }
 void read_Rec(struct Rec *s capnp_unused, Rec_ptr p) {
@@ -95,7 +95,7 @@ Event_ptr new_Event(struct capn_segment *s) {
 }
 Event_list new_Event_list(struct capn_segment *s, int len) {
 	Event_list p;
-	p.p = capn_new_list(s, len, 0, 1);
+	p.p = capn_new_struct_list(s, len, 0, 1);
 	return p;
 }
 void read_Event(struct Event *s capnp_unused, Event_ptr p) {

@@ -349,7 +349,14 @@ CAPN_EXPORT int capn_setv64(capn_list64 p, int off, const uint64_t *data, int sz
  *     Generated type is capn_ptr_list (has .p) so capn_len works.
  *     Use capn_new_ptr_list(seg, n). Then capn_set_text / capn_setp per index.
  *   - List(Struct): composite list, element size C=7. Use
- *     capn_new_list(seg, n, struct_datasz_bytes, struct_ptrs).
+ *     capn_new_struct_list(seg, n, struct_datasz_bytes, struct_ptrs).
+ *     Always C=7 plus a tag word (B = n), including empty lists and
+ *     0-pointer / 1-word / 0-word structs. Generated new_Foo_list
+ *     calls this.
+ *   - capn_new_list(seg, n, datasz, ptrs) is the size-based helper:
+ *     composite when ptrs || datasz > 8, else a primitive list
+ *     (C=0/2/3/4/5). List(Void) is capn_new_list(seg, n, 0, 0) (C=0).
+ *     Do not use it for 1-word or empty struct lists.
  *   - capn_new_list(seg, n, 0, 1) is List of 0-data/1-pointer *structs*
  *     (composite), not List(Text). capn_set_text on that list returns -1;
  *     use capn_new_ptr_list for List(Text).
@@ -369,6 +376,7 @@ CAPN_EXPORT capn_ptr capn_new_ptr_list(struct capn_segment *seg, int sz);
 /* Alias for List(Text) / List(Data) / List(AnyPointer) (wire C=6). */
 #define capn_new_text_list(seg, sz) capn_new_ptr_list((seg), (sz))
 CAPN_EXPORT capn_ptr capn_new_list(struct capn_segment *seg, int sz, int datasz, int ptrs);
+CAPN_EXPORT capn_ptr capn_new_struct_list(struct capn_segment *seg, int sz, int datasz, int ptrs);
 CAPN_EXPORT capn_list1 capn_new_list1(struct capn_segment *seg, int sz);
 CAPN_EXPORT capn_list8 capn_new_list8(struct capn_segment *seg, int sz);
 CAPN_EXPORT capn_list16 capn_new_list16(struct capn_segment *seg, int sz);

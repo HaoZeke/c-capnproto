@@ -4,6 +4,9 @@
  *
  * TreeNode_set_leaf then Leaf_get_value(TreeNode_get_leaf(n)) must
  * return the value written on the Leaf, not 0.
+ *
+ * new_Leaf_list is List of a 1-word 0-pointer struct. Spec requires
+ * C=7 plus a tag word (B = element count), including the empty list.
  */
 
 #include <gtest/gtest.h>
@@ -11,6 +14,10 @@
 
 #include "capnp_c.h"
 #include "fieldgetset.capnp.h"
+
+static uint64_t holder_ptr_word(capn_ptr holder) {
+  return capn_flip64(*(uint64_t *)(holder.data + holder.datasz));
+}
 
 TEST(FieldGetSet, NestedLeafGetAfterSet) {
   struct capn c;
@@ -50,4 +57,118 @@ TEST(FieldGetSet, NestedInnerGetAfterSet) {
   EXPECT_EQ(7, Leaf_get_value(TreeNode_get_leaf(Inner_get_left(TreeNode_get_inner(root)))));
 
   capn_free(&c);
+}
+
+TEST(FieldGetSet, LeafListEncodesCompositeC7) {
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *cs = capn_root(&c).seg;
+
+  capn_ptr holder = capn_new_struct(cs, 0, 1);
+  ASSERT_EQ(CAPN_STRUCT, holder.type);
+
+  Leaf_list leaves = new_Leaf_list(cs, 3);
+  ASSERT_EQ(CAPN_LIST, leaves.p.type);
+  struct Leaf item;
+  item.value = 1;
+  set_Leaf(&item, leaves, 0);
+  item.value = 2;
+  set_Leaf(&item, leaves, 1);
+  item.value = 3;
+  set_Leaf(&item, leaves, 2);
+
+  ASSERT_EQ(0, capn_setp(holder, 0, leaves.p));
+  ASSERT_EQ(0, capn_set_root(&c, holder));
+
+  uint64_t word = holder_ptr_word(holder);
+  EXPECT_EQ(UINT64_C(1), word & 3u);
+  EXPECT_EQ(UINT64_C(7), (word >> 32) & 7u);
+
+  ASSERT_EQ(1, leaves.p.is_composite_list);
+  ASSERT_NE(static_cast<char *>(NULL), leaves.p.data);
+  uint64_t tag = capn_flip64(*(uint64_t *)(leaves.p.data - 8));
+  EXPECT_EQ(UINT64_C(0), tag & 3u);
+  EXPECT_EQ(UINT64_C(3), (tag >> 2) & UINT64_C(0x3fffffff));
+  EXPECT_EQ(UINT64_C(1), (tag >> 32) & 0xffffu);
+  EXPECT_EQ(UINT64_C(0), tag >> 48);
+
+  struct Leaf got;
+  get_Leaf(&got, leaves, 0);
+  EXPECT_EQ(1, got.value);
+  get_Leaf(&got, leaves, 1);
+  EXPECT_EQ(2, got.value);
+  get_Leaf(&got, leaves, 2);
+  EXPECT_EQ(3, got.value);
+
+  capn_free(&c);
+}
+
+TEST(FieldGetSet, EmptyLeafListEncodesCompositeC7) {
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *cs = capn_root(&c).seg;
+
+  capn_ptr holder = capn_new_struct(cs, 0, 1);
+  Leaf_list leaves = new_Leaf_list(cs, 0);
+  ASSERT_EQ(CAPN_LIST, leaves.p.type);
+  ASSERT_EQ(0, capn_setp(holder, 0, leaves.p));
+  ASSERT_EQ(0, capn_set_root(&c, holder));
+
+  uint64_t word = holder_ptr_word(holder);
+  EXPECT_EQ(UINT64_C(1), word & 3u);
+  EXPECT_EQ(UINT64_C(7), (word >> 32) & 7u);
+  EXPECT_EQ(UINT64_C(0), word >> 35);
+
+  ASSERT_EQ(1, leaves.p.is_composite_list);
+  ASSERT_NE(static_cast<char *>(NULL), leaves.p.data);
+  uint64_t tag = capn_flip64(*(uint64_t *)(leaves.p.data - 8));
+  EXPECT_EQ(UINT64_C(0), tag & 3u);
+  EXPECT_EQ(UINT64_C(0), (tag >> 2) & UINT64_C(0x3fffffff));
+  EXPECT_EQ(UINT64_C(1), (tag >> 32) & 0xffffu);
+  EXPECT_EQ(UINT64_C(0), tag >> 48);
+
+  capn_free(&c);
+}
+
+TEST(FieldGetSet, LeafListCopyKeepsCompositeC7) {
+  struct capn src, dst;
+  capn_init_malloc(&src);
+  capn_init_malloc(&dst);
+
+  capn_ptr src_holder = capn_new_struct(capn_root(&src).seg, 0, 1);
+  Leaf_list leaves = new_Leaf_list(src_holder.seg, 2);
+  struct Leaf item;
+  item.value = 9;
+  set_Leaf(&item, leaves, 0);
+  item.value = 8;
+  set_Leaf(&item, leaves, 1);
+  ASSERT_EQ(0, capn_setp(src_holder, 0, leaves.p));
+  ASSERT_EQ(0, capn_set_root(&src, src_holder));
+
+  capn_ptr dst_root = capn_root(&dst);
+  ASSERT_EQ(0, capn_setp(dst_root, 0, capn_getp(capn_root(&src), 0, 1)));
+  capn_ptr got_holder = capn_getp(dst_root, 0, 1);
+  ASSERT_EQ(CAPN_STRUCT, got_holder.type);
+  capn_ptr got_list = capn_getp(got_holder, 0, 1);
+  EXPECT_EQ(CAPN_LIST, got_list.type);
+  EXPECT_EQ(1, got_list.is_composite_list);
+  EXPECT_EQ(2, got_list.len);
+
+  uint64_t word = holder_ptr_word(got_holder);
+  EXPECT_EQ(UINT64_C(1), word & 3u);
+  EXPECT_EQ(UINT64_C(7), (word >> 32) & 7u);
+  ASSERT_NE(static_cast<char *>(NULL), got_list.data);
+  uint64_t tag = capn_flip64(*(uint64_t *)(got_list.data - 8));
+  EXPECT_EQ(UINT64_C(2), (tag >> 2) & UINT64_C(0x3fffffff));
+  EXPECT_EQ(UINT64_C(1), (tag >> 32) & 0xffffu);
+
+  Leaf_list copied = {got_list};
+  struct Leaf got;
+  get_Leaf(&got, copied, 0);
+  EXPECT_EQ(9, got.value);
+  get_Leaf(&got, copied, 1);
+  EXPECT_EQ(8, got.value);
+
+  capn_free(&src);
+  capn_free(&dst);
 }

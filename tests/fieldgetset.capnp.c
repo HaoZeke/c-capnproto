@@ -16,7 +16,7 @@ Leaf_ptr new_Leaf(struct capn_segment *s) {
 }
 Leaf_list new_Leaf_list(struct capn_segment *s, int len) {
 	Leaf_list p;
-	p.p = capn_new_list(s, len, 8, 0);
+	p.p = capn_new_struct_list(s, len, 8, 0);
 	return p;
 }
 void read_Leaf(struct Leaf *s capnp_unused, Leaf_ptr p) {
@@ -61,7 +61,7 @@ Inner_ptr new_Inner(struct capn_segment *s) {
 }
 Inner_list new_Inner_list(struct capn_segment *s, int len) {
 	Inner_list p;
-	p.p = capn_new_list(s, len, 0, 2);
+	p.p = capn_new_struct_list(s, len, 0, 2);
 	return p;
 }
 void read_Inner(struct Inner *s capnp_unused, Inner_ptr p) {
@@ -122,7 +122,7 @@ TreeNode_ptr new_TreeNode(struct capn_segment *s) {
 }
 TreeNode_list new_TreeNode_list(struct capn_segment *s, int len) {
 	TreeNode_list p;
-	p.p = capn_new_list(s, len, 8, 2);
+	p.p = capn_new_struct_list(s, len, 8, 2);
 	return p;
 }
 void read_TreeNode(struct TreeNode *s capnp_unused, TreeNode_ptr p) {
