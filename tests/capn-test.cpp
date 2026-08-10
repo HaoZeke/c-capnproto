@@ -16,6 +16,7 @@ static int g_AddTag = 1;
 
 #include "capn.c"
 #include "capn-malloc.c"
+#include "test.capnp.h"
 
 template <int wordCount>
 union AlignedData {
@@ -826,6 +827,74 @@ TEST(WireFormat, Get1Set1OnCompositeList) {
   EXPECT_EQ(0, capn_set1(as_bits, 1, 1));
   EXPECT_EQ(1, capn_get1(as_bits, 1));
   EXPECT_EQ(1, capn_read8(capn_getp(list, 1, 0), 0) & 1);
+}
+
+static uint64_t list_ptr_word(capn_ptr holder) {
+  return capn_flip64(*(uint64_t *)(holder.data + holder.datasz));
+}
+
+static void expect_list_c(capn_ptr holder, uint64_t c) {
+  uint64_t word = list_ptr_word(holder);
+  EXPECT_EQ(UINT64_C(1), word & 3u);
+  EXPECT_EQ(c, (word >> 32) & 7u);
+}
+
+TEST(WireFormat, EmptyStructListEncodesCompositeC7) {
+  Session ctx;
+  capn_ptr root = capn_root(&ctx.capn);
+  capn_ptr holder = capn_new_struct(root.seg, 0, 1);
+  TestLists_Struct0_list list = new_TestLists_Struct0_list(holder.seg, 4);
+  ASSERT_EQ(CAPN_LIST, list.p.type);
+  ASSERT_EQ(0, capn_setp(holder, 0, list.p));
+  ASSERT_EQ(0, capn_set_root(&ctx.capn, holder));
+
+  expect_list_c(holder, 7);
+  ASSERT_EQ(1, list.p.is_composite_list);
+  ASSERT_NE(static_cast<char *>(NULL), list.p.data);
+  uint64_t tag = capn_flip64(*(uint64_t *)(list.p.data - 8));
+  EXPECT_EQ(UINT64_C(0), tag & 3u);
+  EXPECT_EQ(UINT64_C(4), (tag >> 2) & UINT64_C(0x3fffffff));
+  EXPECT_EQ(UINT64_C(0), (tag >> 32) & 0xffffu);
+  EXPECT_EQ(UINT64_C(0), tag >> 48);
+}
+
+TEST(WireFormat, VoidListStaysC0) {
+  Session ctx;
+  capn_ptr root = capn_root(&ctx.capn);
+  capn_ptr holder = capn_new_struct(root.seg, 0, 1);
+  capn_ptr list = capn_new_list(holder.seg, 5, 0, 0);
+  ASSERT_EQ(CAPN_LIST, list.type);
+  EXPECT_EQ(0, list.is_composite_list);
+  ASSERT_EQ(0, capn_setp(holder, 0, list));
+  expect_list_c(holder, 0);
+  uint64_t word = list_ptr_word(holder);
+  EXPECT_EQ(UINT64_C(5), word >> 35);
+}
+
+TEST(WireFormat, PrimitiveListHelpersKeepElementSize) {
+  Session ctx;
+  capn_ptr root = capn_root(&ctx.capn);
+  capn_ptr holder = capn_new_struct(root.seg, 0, 1);
+
+  capn_list1 bits = capn_new_list1(holder.seg, 10);
+  ASSERT_EQ(0, capn_setp(holder, 0, bits.p));
+  expect_list_c(holder, 1);
+
+  capn_list8 b8 = capn_new_list8(holder.seg, 3);
+  ASSERT_EQ(0, capn_setp(holder, 0, b8.p));
+  expect_list_c(holder, 2);
+
+  capn_list16 b16 = capn_new_list16(holder.seg, 3);
+  ASSERT_EQ(0, capn_setp(holder, 0, b16.p));
+  expect_list_c(holder, 3);
+
+  capn_list32 b32 = capn_new_list32(holder.seg, 3);
+  ASSERT_EQ(0, capn_setp(holder, 0, b32.p));
+  expect_list_c(holder, 4);
+
+  capn_list64 b64 = capn_new_list64(holder.seg, 3);
+  ASSERT_EQ(0, capn_setp(holder, 0, b64.p));
+  expect_list_c(holder, 5);
 }
 
 TEST(WireFormat, Get1Set1OnPtrListOfStructs) {
