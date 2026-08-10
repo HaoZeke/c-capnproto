@@ -170,6 +170,9 @@ typedef struct {capn_ptr p;} TestJoinResult_list;
 typedef struct {capn_ptr p;} TestNameAnnotation_list;
 typedef struct {capn_ptr p;} TestNameAnnotation_NestedStruct_list;
 
+typedef struct {capn_ptr p;} TestInterface_ptr;
+typedef struct {capn_ptr p;} TestInterface_list;
+
 enum TestEnum {
 	TestEnum_foo = 0,
 	TestEnum_bar = 1,
@@ -278,6 +281,7 @@ struct TestAllTypes {
 	capn_data dataField;
 	TestAllTypes_ptr structField;
 	enum TestEnum enumField;
+	TestInterface_ptr interfaceField;
 	capn_ptr voidList;
 	capn_list1 boolList;
 	capn_list8 int8List;
@@ -294,14 +298,14 @@ struct TestAllTypes {
 	capn_ptr_list dataList;
 	TestAllTypes_list structList;
 	capn_list16 enumList;
-	capn_ptr interfaceList;
+	TestInterface_list interfaceList;
 };
 
 static const size_t TestAllTypes_word_count = 6;
 
-static const size_t TestAllTypes_pointer_count = 20;
+static const size_t TestAllTypes_pointer_count = 21;
 
-static const size_t TestAllTypes_struct_bytes_count = 208;
+static const size_t TestAllTypes_struct_bytes_count = 216;
 
 
 unsigned TestAllTypes_get_boolField(TestAllTypes_ptr p);
@@ -333,6 +337,8 @@ capn_data TestAllTypes_get_dataField(TestAllTypes_ptr p);
 TestAllTypes_ptr TestAllTypes_get_structField(TestAllTypes_ptr p);
 
 enum TestEnum TestAllTypes_get_enumField(TestAllTypes_ptr p);
+
+TestInterface_ptr TestAllTypes_get_interfaceField(TestAllTypes_ptr p);
 
 capn_ptr TestAllTypes_get_voidList(TestAllTypes_ptr p);
 
@@ -366,7 +372,7 @@ TestAllTypes_list TestAllTypes_get_structList(TestAllTypes_ptr p);
 
 capn_list16 TestAllTypes_get_enumList(TestAllTypes_ptr p);
 
-capn_ptr TestAllTypes_get_interfaceList(TestAllTypes_ptr p);
+TestInterface_list TestAllTypes_get_interfaceList(TestAllTypes_ptr p);
 
 void TestAllTypes_set_boolField(TestAllTypes_ptr p, unsigned boolField);
 
@@ -397,6 +403,8 @@ void TestAllTypes_set_dataField(TestAllTypes_ptr p, capn_data dataField);
 void TestAllTypes_set_structField(TestAllTypes_ptr p, TestAllTypes_ptr structField);
 
 void TestAllTypes_set_enumField(TestAllTypes_ptr p, enum TestEnum enumField);
+
+void TestAllTypes_set_interfaceField(TestAllTypes_ptr p, TestInterface_ptr interfaceField);
 
 void TestAllTypes_set_voidList(TestAllTypes_ptr p, capn_ptr voidList);
 
@@ -430,7 +438,7 @@ void TestAllTypes_set_structList(TestAllTypes_ptr p, TestAllTypes_list structLis
 
 void TestAllTypes_set_enumList(TestAllTypes_ptr p, capn_list16 enumList);
 
-void TestAllTypes_set_interfaceList(TestAllTypes_ptr p, capn_ptr interfaceList);
+void TestAllTypes_set_interfaceList(TestAllTypes_ptr p, TestInterface_list interfaceList);
 
 struct TestDefaults {
 	unsigned boolField : 1;
@@ -448,6 +456,7 @@ struct TestDefaults {
 	capn_data dataField;
 	TestAllTypes_ptr structField;
 	enum TestEnum enumField;
+	TestInterface_ptr interfaceField;
 	capn_ptr voidList;
 	capn_list1 boolList;
 	capn_list8 int8List;
@@ -464,14 +473,14 @@ struct TestDefaults {
 	capn_ptr_list dataList;
 	TestAllTypes_list structList;
 	capn_list16 enumList;
-	capn_ptr interfaceList;
+	TestInterface_list interfaceList;
 };
 
 static const size_t TestDefaults_word_count = 6;
 
-static const size_t TestDefaults_pointer_count = 20;
+static const size_t TestDefaults_pointer_count = 21;
 
-static const size_t TestDefaults_struct_bytes_count = 208;
+static const size_t TestDefaults_struct_bytes_count = 216;
 
 
 unsigned TestDefaults_get_boolField(TestDefaults_ptr p);
@@ -503,6 +512,8 @@ capn_data TestDefaults_get_dataField(TestDefaults_ptr p);
 TestAllTypes_ptr TestDefaults_get_structField(TestDefaults_ptr p);
 
 enum TestEnum TestDefaults_get_enumField(TestDefaults_ptr p);
+
+TestInterface_ptr TestDefaults_get_interfaceField(TestDefaults_ptr p);
 
 capn_ptr TestDefaults_get_voidList(TestDefaults_ptr p);
 
@@ -536,7 +547,7 @@ TestAllTypes_list TestDefaults_get_structList(TestDefaults_ptr p);
 
 capn_list16 TestDefaults_get_enumList(TestDefaults_ptr p);
 
-capn_ptr TestDefaults_get_interfaceList(TestDefaults_ptr p);
+TestInterface_list TestDefaults_get_interfaceList(TestDefaults_ptr p);
 
 void TestDefaults_set_boolField(TestDefaults_ptr p, unsigned boolField);
 
@@ -567,6 +578,8 @@ void TestDefaults_set_dataField(TestDefaults_ptr p, capn_data dataField);
 void TestDefaults_set_structField(TestDefaults_ptr p, TestAllTypes_ptr structField);
 
 void TestDefaults_set_enumField(TestDefaults_ptr p, enum TestEnum enumField);
+
+void TestDefaults_set_interfaceField(TestDefaults_ptr p, TestInterface_ptr interfaceField);
 
 void TestDefaults_set_voidList(TestDefaults_ptr p, capn_ptr voidList);
 
@@ -600,7 +613,7 @@ void TestDefaults_set_structList(TestDefaults_ptr p, TestAllTypes_list structLis
 
 void TestDefaults_set_enumList(TestDefaults_ptr p, capn_list16 enumList);
 
-void TestDefaults_set_interfaceList(TestDefaults_ptr p, capn_ptr interfaceList);
+void TestDefaults_set_interfaceList(TestDefaults_ptr p, TestInterface_list interfaceList);
 
 struct TestAnyPointer {
 	capn_ptr anyPointerField;
@@ -1860,6 +1873,9 @@ TestThirdPartyCapId_list new_TestThirdPartyCapId_list(struct capn_segment*, int 
 TestJoinResult_list new_TestJoinResult_list(struct capn_segment*, int len);
 TestNameAnnotation_list new_TestNameAnnotation_list(struct capn_segment*, int len);
 TestNameAnnotation_NestedStruct_list new_TestNameAnnotation_NestedStruct_list(struct capn_segment*, int len);
+
+TestInterface_ptr new_TestInterface(struct capn_segment*);
+TestInterface_list new_TestInterface_list(struct capn_segment*, int len);
 
 void read_TestAllTypes(struct TestAllTypes*, TestAllTypes_ptr);
 void read_TestDefaults(struct TestDefaults*, TestDefaults_ptr);

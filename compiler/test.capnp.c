@@ -10,7 +10,7 @@
 
 static const capn_text capn_val0 = {0,"",0};
 static const capn_ptr capn_null = {CAPN_NULL};
-static const uint8_t capn_buf[9272] = {
+static const uint8_t capn_buf[9528] = {
 	102,111,111,0,0,0,0,0,
 	98,97,114,0,0,0,0,0,
 	1,244,128,13,14,16,76,251,
@@ -19,25 +19,26 @@ static const uint8_t capn_buf[9272] = {
 	210,10,111,18,33,25,204,4,
 	95,112,9,175,2,0,0,0,
 	0,0,0,0,0,144,117,64,
-	77,0,0,0,34,0,0,0,
-	77,0,0,0,26,0,0,0,
-	76,0,0,0,6,0,20,0,
-	37,1,0,0,24,0,0,0,
-	33,1,0,0,41,0,0,0,
-	33,1,0,0,34,0,0,0,
-	33,1,0,0,35,0,0,0,
-	33,1,0,0,36,0,0,0,
-	37,1,0,0,37,0,0,0,
-	49,1,0,0,34,0,0,0,
-	49,1,0,0,35,0,0,0,
-	49,1,0,0,36,0,0,0,
-	53,1,0,0,37,0,0,0,
-	65,1,0,0,52,0,0,0,
-	73,1,0,0,53,0,0,0,
-	93,1,0,0,30,0,0,0,
-	113,1,0,0,30,0,0,0,
-	133,1,0,0,119,2,0,0,
-	213,2,0,0,27,0,0,0,
+	81,0,0,0,34,0,0,0,
+	81,0,0,0,26,0,0,0,
+	80,0,0,0,6,0,21,0,
+	0,0,0,0,0,0,0,0,
+	45,1,0,0,24,0,0,0,
+	41,1,0,0,41,0,0,0,
+	41,1,0,0,34,0,0,0,
+	41,1,0,0,35,0,0,0,
+	41,1,0,0,36,0,0,0,
+	45,1,0,0,37,0,0,0,
+	57,1,0,0,34,0,0,0,
+	57,1,0,0,35,0,0,0,
+	57,1,0,0,36,0,0,0,
+	61,1,0,0,37,0,0,0,
+	73,1,0,0,52,0,0,0,
+	81,1,0,0,53,0,0,0,
+	101,1,0,0,30,0,0,0,
+	121,1,0,0,30,0,0,0,
+	141,1,0,0,143,2,0,0,
+	233,2,0,0,27,0,0,0,
 	0,0,0,0,0,0,0,0,
 	98,97,122,0,0,0,0,0,
 	113,117,120,0,0,0,0,0,
@@ -47,9 +48,10 @@ static const uint8_t capn_buf[9272] = {
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	77,0,0,0,58,0,0,0,
+	81,0,0,0,58,0,0,0,
 	0,0,0,0,0,0,0,0,
-	72,0,0,0,6,0,20,0,
+	76,0,0,0,6,0,21,0,
+	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -74,7 +76,8 @@ static const uint8_t capn_buf[9272] = {
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	77,0,0,0,114,0,0,0,
+	81,0,0,0,114,0,0,0,
+	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -134,40 +137,14 @@ static const uint8_t capn_buf[9272] = {
 	103,97,114,112,108,121,0,0,
 	119,97,108,100,111,0,0,0,
 	102,114,101,100,0,0,0,0,
-	12,0,0,0,6,0,20,0,
+	12,0,0,0,6,0,21,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	29,1,0,0,122,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	189,0,0,0,122,0,0,0,
+	41,1,0,0,122,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -193,7 +170,36 @@ static const uint8_t capn_buf[9272] = {
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	93,0,0,0,122,0,0,0,
+	0,0,0,0,0,0,0,0,
+	197,0,0,0,122,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	97,0,0,0,122,0,0,0,
+	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -249,40 +255,14 @@ static const uint8_t capn_buf[9272] = {
 	101,120,104,97,117,115,116,101,
 	100,0,0,0,0,0,0,0,
 	114,102,99,51,48,57,50,0,
-	12,0,0,0,6,0,20,0,
+	12,0,0,0,6,0,21,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	29,1,0,0,106,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	189,0,0,0,106,0,0,0,
+	41,1,0,0,106,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -308,7 +288,36 @@ static const uint8_t capn_buf[9272] = {
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	93,0,0,0,106,0,0,0,
+	0,0,0,0,0,0,0,0,
+	197,0,0,0,106,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	97,0,0,0,106,0,0,0,
+	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -362,6 +371,7 @@ static const uint8_t capn_buf[9272] = {
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
 	5,0,0,0,34,0,0,0,
 	0,0,0,0,0,0,0,0,
 	102,111,111,0,0,0,0,0,
@@ -371,16 +381,14 @@ static const uint8_t capn_buf[9272] = {
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	77,0,0,0,34,0,0,0,
+	81,0,0,0,34,0,0,0,
 	0,0,0,0,0,0,0,0,
-	72,0,0,0,6,0,20,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	117,3,0,0,19,0,0,0,
+	76,0,0,0,6,0,21,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	141,3,0,0,19,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -388,7 +396,10 @@ static const uint8_t capn_buf[9272] = {
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	77,3,0,0,119,2,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	101,3,0,0,143,2,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	102,111,111,0,0,0,0,0,
@@ -398,25 +409,26 @@ static const uint8_t capn_buf[9272] = {
 	210,10,111,18,33,25,204,4,
 	95,112,9,175,2,0,0,0,
 	0,0,0,0,0,144,117,64,
-	77,0,0,0,34,0,0,0,
-	77,0,0,0,26,0,0,0,
-	76,0,0,0,6,0,20,0,
-	37,1,0,0,24,0,0,0,
-	33,1,0,0,41,0,0,0,
-	33,1,0,0,34,0,0,0,
-	33,1,0,0,35,0,0,0,
-	33,1,0,0,36,0,0,0,
-	37,1,0,0,37,0,0,0,
-	49,1,0,0,34,0,0,0,
-	49,1,0,0,35,0,0,0,
-	49,1,0,0,36,0,0,0,
-	53,1,0,0,37,0,0,0,
-	65,1,0,0,52,0,0,0,
-	73,1,0,0,53,0,0,0,
-	93,1,0,0,30,0,0,0,
-	113,1,0,0,30,0,0,0,
-	133,1,0,0,119,2,0,0,
-	213,2,0,0,27,0,0,0,
+	81,0,0,0,34,0,0,0,
+	81,0,0,0,26,0,0,0,
+	80,0,0,0,6,0,21,0,
+	0,0,0,0,0,0,0,0,
+	45,1,0,0,24,0,0,0,
+	41,1,0,0,41,0,0,0,
+	41,1,0,0,34,0,0,0,
+	41,1,0,0,35,0,0,0,
+	41,1,0,0,36,0,0,0,
+	45,1,0,0,37,0,0,0,
+	57,1,0,0,34,0,0,0,
+	57,1,0,0,35,0,0,0,
+	57,1,0,0,36,0,0,0,
+	61,1,0,0,37,0,0,0,
+	73,1,0,0,52,0,0,0,
+	81,1,0,0,53,0,0,0,
+	101,1,0,0,30,0,0,0,
+	121,1,0,0,30,0,0,0,
+	141,1,0,0,143,2,0,0,
+	233,2,0,0,27,0,0,0,
 	0,0,0,0,0,0,0,0,
 	98,97,122,0,0,0,0,0,
 	113,117,120,0,0,0,0,0,
@@ -426,9 +438,10 @@ static const uint8_t capn_buf[9272] = {
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	77,0,0,0,58,0,0,0,
+	81,0,0,0,58,0,0,0,
 	0,0,0,0,0,0,0,0,
-	72,0,0,0,6,0,20,0,
+	76,0,0,0,6,0,21,0,
+	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -453,7 +466,8 @@ static const uint8_t capn_buf[9272] = {
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	77,0,0,0,114,0,0,0,
+	81,0,0,0,114,0,0,0,
+	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -513,40 +527,14 @@ static const uint8_t capn_buf[9272] = {
 	103,97,114,112,108,121,0,0,
 	119,97,108,100,111,0,0,0,
 	102,114,101,100,0,0,0,0,
-	12,0,0,0,6,0,20,0,
+	12,0,0,0,6,0,21,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	29,1,0,0,122,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	189,0,0,0,122,0,0,0,
+	41,1,0,0,122,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -572,7 +560,36 @@ static const uint8_t capn_buf[9272] = {
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	93,0,0,0,122,0,0,0,
+	0,0,0,0,0,0,0,0,
+	197,0,0,0,122,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	97,0,0,0,122,0,0,0,
+	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -600,40 +617,14 @@ static const uint8_t capn_buf[9272] = {
 	108,105,115,116,32,51,0,0,
 	3,0,1,0,6,0,0,0,
 	103,43,153,212,0,0,0,0,
-	12,0,0,0,6,0,20,0,
+	12,0,0,0,6,0,21,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	29,1,0,0,106,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	189,0,0,0,106,0,0,0,
+	41,1,0,0,106,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -659,7 +650,36 @@ static const uint8_t capn_buf[9272] = {
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	93,0,0,0,106,0,0,0,
+	0,0,0,0,0,0,0,0,
+	197,0,0,0,106,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	97,0,0,0,106,0,0,0,
+	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -693,25 +713,26 @@ static const uint8_t capn_buf[9272] = {
 	210,10,111,18,33,25,204,4,
 	95,112,9,175,2,0,0,0,
 	0,0,0,0,0,144,117,64,
-	77,0,0,0,34,0,0,0,
-	77,0,0,0,26,0,0,0,
-	76,0,0,0,6,0,20,0,
-	37,1,0,0,24,0,0,0,
-	33,1,0,0,41,0,0,0,
-	33,1,0,0,34,0,0,0,
-	33,1,0,0,35,0,0,0,
-	33,1,0,0,36,0,0,0,
-	37,1,0,0,37,0,0,0,
-	49,1,0,0,34,0,0,0,
-	49,1,0,0,35,0,0,0,
-	49,1,0,0,36,0,0,0,
-	53,1,0,0,37,0,0,0,
-	65,1,0,0,52,0,0,0,
-	73,1,0,0,53,0,0,0,
-	93,1,0,0,30,0,0,0,
-	113,1,0,0,30,0,0,0,
-	133,1,0,0,119,2,0,0,
-	213,2,0,0,27,0,0,0,
+	81,0,0,0,34,0,0,0,
+	81,0,0,0,26,0,0,0,
+	80,0,0,0,6,0,21,0,
+	0,0,0,0,0,0,0,0,
+	45,1,0,0,24,0,0,0,
+	41,1,0,0,41,0,0,0,
+	41,1,0,0,34,0,0,0,
+	41,1,0,0,35,0,0,0,
+	41,1,0,0,36,0,0,0,
+	45,1,0,0,37,0,0,0,
+	57,1,0,0,34,0,0,0,
+	57,1,0,0,35,0,0,0,
+	57,1,0,0,36,0,0,0,
+	61,1,0,0,37,0,0,0,
+	73,1,0,0,52,0,0,0,
+	81,1,0,0,53,0,0,0,
+	101,1,0,0,30,0,0,0,
+	121,1,0,0,30,0,0,0,
+	141,1,0,0,143,2,0,0,
+	233,2,0,0,27,0,0,0,
 	0,0,0,0,0,0,0,0,
 	98,97,122,0,0,0,0,0,
 	113,117,120,0,0,0,0,0,
@@ -721,9 +742,10 @@ static const uint8_t capn_buf[9272] = {
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	77,0,0,0,58,0,0,0,
+	81,0,0,0,58,0,0,0,
 	0,0,0,0,0,0,0,0,
-	72,0,0,0,6,0,20,0,
+	76,0,0,0,6,0,21,0,
+	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -748,7 +770,8 @@ static const uint8_t capn_buf[9272] = {
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	77,0,0,0,114,0,0,0,
+	81,0,0,0,114,0,0,0,
+	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -808,40 +831,14 @@ static const uint8_t capn_buf[9272] = {
 	103,97,114,112,108,121,0,0,
 	119,97,108,100,111,0,0,0,
 	102,114,101,100,0,0,0,0,
-	12,0,0,0,6,0,20,0,
+	12,0,0,0,6,0,21,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	29,1,0,0,122,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	189,0,0,0,122,0,0,0,
+	41,1,0,0,122,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -867,7 +864,36 @@ static const uint8_t capn_buf[9272] = {
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	93,0,0,0,122,0,0,0,
+	0,0,0,0,0,0,0,0,
+	197,0,0,0,122,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	97,0,0,0,122,0,0,0,
+	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -923,40 +949,14 @@ static const uint8_t capn_buf[9272] = {
 	101,120,104,97,117,115,116,101,
 	100,0,0,0,0,0,0,0,
 	114,102,99,51,48,57,50,0,
-	12,0,0,0,6,0,20,0,
+	12,0,0,0,6,0,21,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	29,1,0,0,106,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	189,0,0,0,106,0,0,0,
+	41,1,0,0,106,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -982,7 +982,36 @@ static const uint8_t capn_buf[9272] = {
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	93,0,0,0,106,0,0,0,
+	0,0,0,0,0,0,0,0,
+	197,0,0,0,106,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	97,0,0,0,106,0,0,0,
+	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -1087,10 +1116,11 @@ static const uint8_t capn_buf[9272] = {
 	5,0,0,0,50,0,0,0,
 	113,117,120,0,0,0,0,0,
 	99,111,114,103,101,0,0,0,
-	5,0,0,0,167,1,0,0,
-	213,0,0,0,215,0,0,0,
-	8,0,0,0,6,0,20,0,
+	5,0,0,0,183,1,0,0,
+	221,0,0,0,223,0,0,0,
+	8,0,0,0,6,0,21,0,
 	0,0,0,0,123,0,0,0,
+	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -1142,8 +1172,10 @@ static const uint8_t capn_buf[9272] = {
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
-	4,0,0,0,6,0,20,0,
+	0,0,0,0,0,0,0,0,
+	4,0,0,0,6,0,21,0,
 	0,0,0,0,21,3,0,0,
+	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
@@ -1171,7 +1203,7 @@ static const uint8_t capn_buf[9272] = {
 	0,0,0,0,0,0,0,0,
 	98,97,122,0,0,0,0,0
 };
-static const struct capn_segment capn_seg = {{0},0,0,0,(char*)&capn_buf[0],9272,9272,0};
+static const struct capn_segment capn_seg = {{0},0,0,0,(char*)&capn_buf[0],9528,9528,0};
 const union capn_conv_f32 TestWholeFloatDefault_constant = {0x43e40000u};
 const union capn_conv_f32 TestWholeFloatDefault_bigConstant = {0x7249f2cau};
 const unsigned TestConstants_boolConst = TEST_CONSTANTS_BOOL_CONST;
@@ -1187,38 +1219,38 @@ const union capn_conv_f32 TestConstants_float32Const = {0x449a5000u};
 const union capn_conv_f64 TestConstants_float64Const = {((uint64_t) 0xc9b58b82u << 32) | 0xc0e0bb00u};
 capn_text TestConstants_textConst = {3,(char*)&capn_buf[0],(struct capn_segment*)&capn_seg};
 capn_data TestConstants_dataConst = {{2,0,0,0,1,0,3,(char*)&capn_buf[8],(struct capn_segment*)&capn_seg}};
-TestAllTypes_ptr TestConstants_structConst = {{1,0,0,0,48,20,0,(char*)&capn_buf[16],(struct capn_segment*)&capn_seg}};
+TestAllTypes_ptr TestConstants_structConst = {{1,0,0,0,48,21,0,(char*)&capn_buf[16],(struct capn_segment*)&capn_seg}};
 const enum TestEnum TestConstants_enumConst = (enum TestEnum) TEST_CONSTANTS_ENUM_CONST;
-capn_ptr TestConstants_voidListConst = {2,0,0,0,0,0,6,(char*)&capn_buf[1672],(struct capn_segment*)&capn_seg};
-capn_list1 TestConstants_boolListConst = {{4,0,0,0,1,0,4,(char*)&capn_buf[1672],(struct capn_segment*)&capn_seg}};
-capn_list8 TestConstants_int8ListConst = {{2,0,0,0,1,0,2,(char*)&capn_buf[1680],(struct capn_segment*)&capn_seg}};
-capn_list16 TestConstants_int16ListConst = {{2,0,0,0,2,0,2,(char*)&capn_buf[1688],(struct capn_segment*)&capn_seg}};
-capn_list32 TestConstants_int32ListConst = {{2,0,0,0,4,0,2,(char*)&capn_buf[1696],(struct capn_segment*)&capn_seg}};
-capn_list64 TestConstants_int64ListConst = {{2,0,0,0,8,0,2,(char*)&capn_buf[1704],(struct capn_segment*)&capn_seg}};
-capn_list8 TestConstants_uint8ListConst = {{2,0,0,0,1,0,2,(char*)&capn_buf[1720],(struct capn_segment*)&capn_seg}};
-capn_list16 TestConstants_uint16ListConst = {{2,0,0,0,2,0,2,(char*)&capn_buf[1728],(struct capn_segment*)&capn_seg}};
-capn_list32 TestConstants_uint32ListConst = {{2,0,0,0,4,0,1,(char*)&capn_buf[1736],(struct capn_segment*)&capn_seg}};
-capn_list64 TestConstants_uint64ListConst = {{2,0,0,0,8,0,1,(char*)&capn_buf[1744],(struct capn_segment*)&capn_seg}};
-capn_list32 TestConstants_float32ListConst = {{2,0,0,0,4,0,4,(char*)&capn_buf[1752],(struct capn_segment*)&capn_seg}};
-capn_list64 TestConstants_float64ListConst = {{2,0,0,0,8,0,4,(char*)&capn_buf[1768],(struct capn_segment*)&capn_seg}};
-capn_ptr_list TestConstants_textListConst = {{3,0,0,0,0,0,3,(char*)&capn_buf[1800],(struct capn_segment*)&capn_seg}};
-capn_ptr_list TestConstants_dataListConst = {{3,0,0,0,0,0,3,(char*)&capn_buf[1848],(struct capn_segment*)&capn_seg}};
-TestAllTypes_list TestConstants_structListConst = {{2,0,0,1,48,20,3,(char*)&capn_buf[1912],(struct capn_segment*)&capn_seg}};
-capn_list16 TestConstants_enumListConst = {{2,0,0,0,2,0,2,(char*)&capn_buf[2584],(struct capn_segment*)&capn_seg}};
+capn_ptr TestConstants_voidListConst = {2,0,0,0,0,0,6,(char*)&capn_buf[1720],(struct capn_segment*)&capn_seg};
+capn_list1 TestConstants_boolListConst = {{4,0,0,0,1,0,4,(char*)&capn_buf[1720],(struct capn_segment*)&capn_seg}};
+capn_list8 TestConstants_int8ListConst = {{2,0,0,0,1,0,2,(char*)&capn_buf[1728],(struct capn_segment*)&capn_seg}};
+capn_list16 TestConstants_int16ListConst = {{2,0,0,0,2,0,2,(char*)&capn_buf[1736],(struct capn_segment*)&capn_seg}};
+capn_list32 TestConstants_int32ListConst = {{2,0,0,0,4,0,2,(char*)&capn_buf[1744],(struct capn_segment*)&capn_seg}};
+capn_list64 TestConstants_int64ListConst = {{2,0,0,0,8,0,2,(char*)&capn_buf[1752],(struct capn_segment*)&capn_seg}};
+capn_list8 TestConstants_uint8ListConst = {{2,0,0,0,1,0,2,(char*)&capn_buf[1768],(struct capn_segment*)&capn_seg}};
+capn_list16 TestConstants_uint16ListConst = {{2,0,0,0,2,0,2,(char*)&capn_buf[1776],(struct capn_segment*)&capn_seg}};
+capn_list32 TestConstants_uint32ListConst = {{2,0,0,0,4,0,1,(char*)&capn_buf[1784],(struct capn_segment*)&capn_seg}};
+capn_list64 TestConstants_uint64ListConst = {{2,0,0,0,8,0,1,(char*)&capn_buf[1792],(struct capn_segment*)&capn_seg}};
+capn_list32 TestConstants_float32ListConst = {{2,0,0,0,4,0,4,(char*)&capn_buf[1800],(struct capn_segment*)&capn_seg}};
+capn_list64 TestConstants_float64ListConst = {{2,0,0,0,8,0,4,(char*)&capn_buf[1816],(struct capn_segment*)&capn_seg}};
+capn_ptr_list TestConstants_textListConst = {{3,0,0,0,0,0,3,(char*)&capn_buf[1848],(struct capn_segment*)&capn_seg}};
+capn_ptr_list TestConstants_dataListConst = {{3,0,0,0,0,0,3,(char*)&capn_buf[1896],(struct capn_segment*)&capn_seg}};
+TestAllTypes_list TestConstants_structListConst = {{2,0,0,1,48,21,3,(char*)&capn_buf[1960],(struct capn_segment*)&capn_seg}};
+capn_list16 TestConstants_enumListConst = {{2,0,0,0,2,0,2,(char*)&capn_buf[2656],(struct capn_segment*)&capn_seg}};
 const uint32_t globalInt = GLOBAL_INT;
-capn_text globalText = {6,(char*)&capn_buf[2592],(struct capn_segment*)&capn_seg};
-TestAllTypes_ptr globalStruct = {{1,0,0,0,48,20,0,(char*)&capn_buf[2600],(struct capn_segment*)&capn_seg}};
-TestPrintInlineStructs_ptr globalPrintableStruct = {{1,0,0,0,0,2,0,(char*)&capn_buf[2808],(struct capn_segment*)&capn_seg}};
-TestAllTypes_ptr derivedConstant = {{1,0,0,0,48,20,0,(char*)&capn_buf[2832],(struct capn_segment*)&capn_seg}};
+capn_text globalText = {6,(char*)&capn_buf[2664],(struct capn_segment*)&capn_seg};
+TestAllTypes_ptr globalStruct = {{1,0,0,0,48,21,0,(char*)&capn_buf[2672],(struct capn_segment*)&capn_seg}};
+TestPrintInlineStructs_ptr globalPrintableStruct = {{1,0,0,0,0,2,0,(char*)&capn_buf[2888],(struct capn_segment*)&capn_seg}};
+TestAllTypes_ptr derivedConstant = {{1,0,0,0,48,21,0,(char*)&capn_buf[2912],(struct capn_segment*)&capn_seg}};
 
 TestAllTypes_ptr new_TestAllTypes(struct capn_segment *s) {
 	TestAllTypes_ptr p;
-	p.p = capn_new_struct(s, 48, 20);
+	p.p = capn_new_struct(s, 48, 21);
 	return p;
 }
 TestAllTypes_list new_TestAllTypes_list(struct capn_segment *s, int len) {
 	TestAllTypes_list p;
-	p.p = capn_new_list(s, len, 48, 20);
+	p.p = capn_new_list(s, len, 48, 21);
 	return p;
 }
 void read_TestAllTypes(struct TestAllTypes *s capnp_unused, TestAllTypes_ptr p) {
@@ -1239,23 +1271,24 @@ void read_TestAllTypes(struct TestAllTypes *s capnp_unused, TestAllTypes_ptr p) 
 	s->dataField = capn_get_data(p.p, 1);
 	s->structField.p = capn_getp(p.p, 2, 0);
 	s->enumField = (enum TestEnum)(int) capn_read16(p.p, 36);
-	s->voidList = capn_getp(p.p, 3, 0);
-	s->boolList.p = capn_getp(p.p, 4, 0);
-	s->int8List.p = capn_getp(p.p, 5, 0);
-	s->int16List.p = capn_getp(p.p, 6, 0);
-	s->int32List.p = capn_getp(p.p, 7, 0);
-	s->int64List.p = capn_getp(p.p, 8, 0);
-	s->uInt8List.p = capn_getp(p.p, 9, 0);
-	s->uInt16List.p = capn_getp(p.p, 10, 0);
-	s->uInt32List.p = capn_getp(p.p, 11, 0);
-	s->uInt64List.p = capn_getp(p.p, 12, 0);
-	s->float32List.p = capn_getp(p.p, 13, 0);
-	s->float64List.p = capn_getp(p.p, 14, 0);
-	s->textList.p = capn_getp(p.p, 15, 0);
-	s->dataList.p = capn_getp(p.p, 16, 0);
-	s->structList.p = capn_getp(p.p, 17, 0);
-	s->enumList.p = capn_getp(p.p, 18, 0);
-	s->interfaceList = capn_getp(p.p, 19, 0);
+	s->interfaceField.p = capn_getp(p.p, 3, 0);
+	s->voidList = capn_getp(p.p, 4, 0);
+	s->boolList.p = capn_getp(p.p, 5, 0);
+	s->int8List.p = capn_getp(p.p, 6, 0);
+	s->int16List.p = capn_getp(p.p, 7, 0);
+	s->int32List.p = capn_getp(p.p, 8, 0);
+	s->int64List.p = capn_getp(p.p, 9, 0);
+	s->uInt8List.p = capn_getp(p.p, 10, 0);
+	s->uInt16List.p = capn_getp(p.p, 11, 0);
+	s->uInt32List.p = capn_getp(p.p, 12, 0);
+	s->uInt64List.p = capn_getp(p.p, 13, 0);
+	s->float32List.p = capn_getp(p.p, 14, 0);
+	s->float64List.p = capn_getp(p.p, 15, 0);
+	s->textList.p = capn_getp(p.p, 16, 0);
+	s->dataList.p = capn_getp(p.p, 17, 0);
+	s->structList.p = capn_getp(p.p, 18, 0);
+	s->enumList.p = capn_getp(p.p, 19, 0);
+	s->interfaceList.p = capn_getp(p.p, 20, 0);
 }
 void write_TestAllTypes(const struct TestAllTypes *s capnp_unused, TestAllTypes_ptr p) {
 	capn_resolve(&p.p);
@@ -1272,26 +1305,27 @@ void write_TestAllTypes(const struct TestAllTypes *s capnp_unused, TestAllTypes_
 	capn_write32(p.p, 32, capn_from_f32(s->float32Field));
 	capn_write64(p.p, 40, capn_from_f64(s->float64Field));
 	capn_set_text(p.p, 0, s->textField);
-	capn_setp(p.p, 1, s->dataField.p);
-	capn_setp(p.p, 2, s->structField.p);
+	capn_setp(p.p, 1, (s->dataField.p.type != CAPN_NULL) ? s->dataField.p : capn_null);
+	capn_setp(p.p, 2, (s->structField.p.type != CAPN_NULL) ? s->structField.p : capn_null);
 	capn_write16(p.p, 36, (uint16_t) (s->enumField));
-	capn_setp(p.p, 3, s->voidList);
-	capn_setp(p.p, 4, s->boolList.p);
-	capn_setp(p.p, 5, s->int8List.p);
-	capn_setp(p.p, 6, s->int16List.p);
-	capn_setp(p.p, 7, s->int32List.p);
-	capn_setp(p.p, 8, s->int64List.p);
-	capn_setp(p.p, 9, s->uInt8List.p);
-	capn_setp(p.p, 10, s->uInt16List.p);
-	capn_setp(p.p, 11, s->uInt32List.p);
-	capn_setp(p.p, 12, s->uInt64List.p);
-	capn_setp(p.p, 13, s->float32List.p);
-	capn_setp(p.p, 14, s->float64List.p);
-	capn_setp(p.p, 15, s->textList.p);
-	capn_setp(p.p, 16, s->dataList.p);
-	capn_setp(p.p, 17, s->structList.p);
-	capn_setp(p.p, 18, s->enumList.p);
-	capn_setp(p.p, 19, s->interfaceList);
+	capn_setp(p.p, 3, (s->interfaceField.p.type != CAPN_NULL) ? s->interfaceField.p : capn_null);
+	capn_setp(p.p, 4, (s->voidList.type != CAPN_NULL) ? s->voidList : capn_null);
+	capn_setp(p.p, 5, (s->boolList.p.type != CAPN_NULL) ? s->boolList.p : capn_null);
+	capn_setp(p.p, 6, (s->int8List.p.type != CAPN_NULL) ? s->int8List.p : capn_null);
+	capn_setp(p.p, 7, (s->int16List.p.type != CAPN_NULL) ? s->int16List.p : capn_null);
+	capn_setp(p.p, 8, (s->int32List.p.type != CAPN_NULL) ? s->int32List.p : capn_null);
+	capn_setp(p.p, 9, (s->int64List.p.type != CAPN_NULL) ? s->int64List.p : capn_null);
+	capn_setp(p.p, 10, (s->uInt8List.p.type != CAPN_NULL) ? s->uInt8List.p : capn_null);
+	capn_setp(p.p, 11, (s->uInt16List.p.type != CAPN_NULL) ? s->uInt16List.p : capn_null);
+	capn_setp(p.p, 12, (s->uInt32List.p.type != CAPN_NULL) ? s->uInt32List.p : capn_null);
+	capn_setp(p.p, 13, (s->uInt64List.p.type != CAPN_NULL) ? s->uInt64List.p : capn_null);
+	capn_setp(p.p, 14, (s->float32List.p.type != CAPN_NULL) ? s->float32List.p : capn_null);
+	capn_setp(p.p, 15, (s->float64List.p.type != CAPN_NULL) ? s->float64List.p : capn_null);
+	capn_setp(p.p, 16, (s->textList.p.type != CAPN_NULL) ? s->textList.p : capn_null);
+	capn_setp(p.p, 17, (s->dataList.p.type != CAPN_NULL) ? s->dataList.p : capn_null);
+	capn_setp(p.p, 18, (s->structList.p.type != CAPN_NULL) ? s->structList.p : capn_null);
+	capn_setp(p.p, 19, (s->enumList.p.type != CAPN_NULL) ? s->enumList.p : capn_null);
+	capn_setp(p.p, 20, (s->interfaceList.p.type != CAPN_NULL) ? s->interfaceList.p : capn_null);
 }
 void get_TestAllTypes(struct TestAllTypes *s, TestAllTypes_list l, int i) {
 	TestAllTypes_ptr p;
@@ -1424,11 +1458,19 @@ enum TestEnum TestAllTypes_get_enumField(TestAllTypes_ptr p)
 	return enumField;
 }
 
+TestInterface_ptr TestAllTypes_get_interfaceField(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	TestInterface_ptr interfaceField;
+	interfaceField.p = capn_getp(p.p, 3, 1);
+	return interfaceField;
+}
+
 capn_ptr TestAllTypes_get_voidList(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_ptr voidList;
-	voidList = capn_getp(p.p, 3, 1);
+	voidList = capn_getp(p.p, 4, 1);
 	return voidList;
 }
 
@@ -1436,7 +1478,7 @@ capn_list1 TestAllTypes_get_boolList(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list1 boolList;
-	boolList.p = capn_getp(p.p, 4, 1);
+	boolList.p = capn_getp(p.p, 5, 1);
 	return boolList;
 }
 
@@ -1444,7 +1486,7 @@ capn_list8 TestAllTypes_get_int8List(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list8 int8List;
-	int8List.p = capn_getp(p.p, 5, 1);
+	int8List.p = capn_getp(p.p, 6, 1);
 	return int8List;
 }
 
@@ -1452,7 +1494,7 @@ capn_list16 TestAllTypes_get_int16List(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list16 int16List;
-	int16List.p = capn_getp(p.p, 6, 1);
+	int16List.p = capn_getp(p.p, 7, 1);
 	return int16List;
 }
 
@@ -1460,7 +1502,7 @@ capn_list32 TestAllTypes_get_int32List(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list32 int32List;
-	int32List.p = capn_getp(p.p, 7, 1);
+	int32List.p = capn_getp(p.p, 8, 1);
 	return int32List;
 }
 
@@ -1468,7 +1510,7 @@ capn_list64 TestAllTypes_get_int64List(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list64 int64List;
-	int64List.p = capn_getp(p.p, 8, 1);
+	int64List.p = capn_getp(p.p, 9, 1);
 	return int64List;
 }
 
@@ -1476,7 +1518,7 @@ capn_list8 TestAllTypes_get_uInt8List(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list8 uInt8List;
-	uInt8List.p = capn_getp(p.p, 9, 1);
+	uInt8List.p = capn_getp(p.p, 10, 1);
 	return uInt8List;
 }
 
@@ -1484,7 +1526,7 @@ capn_list16 TestAllTypes_get_uInt16List(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list16 uInt16List;
-	uInt16List.p = capn_getp(p.p, 10, 1);
+	uInt16List.p = capn_getp(p.p, 11, 1);
 	return uInt16List;
 }
 
@@ -1492,7 +1534,7 @@ capn_list32 TestAllTypes_get_uInt32List(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list32 uInt32List;
-	uInt32List.p = capn_getp(p.p, 11, 1);
+	uInt32List.p = capn_getp(p.p, 12, 1);
 	return uInt32List;
 }
 
@@ -1500,7 +1542,7 @@ capn_list64 TestAllTypes_get_uInt64List(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list64 uInt64List;
-	uInt64List.p = capn_getp(p.p, 12, 1);
+	uInt64List.p = capn_getp(p.p, 13, 1);
 	return uInt64List;
 }
 
@@ -1508,7 +1550,7 @@ capn_list32 TestAllTypes_get_float32List(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list32 float32List;
-	float32List.p = capn_getp(p.p, 13, 1);
+	float32List.p = capn_getp(p.p, 14, 1);
 	return float32List;
 }
 
@@ -1516,7 +1558,7 @@ capn_list64 TestAllTypes_get_float64List(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list64 float64List;
-	float64List.p = capn_getp(p.p, 14, 1);
+	float64List.p = capn_getp(p.p, 15, 1);
 	return float64List;
 }
 
@@ -1524,7 +1566,7 @@ capn_ptr_list TestAllTypes_get_textList(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_ptr_list textList;
-	textList.p = capn_getp(p.p, 15, 1);
+	textList.p = capn_getp(p.p, 16, 1);
 	return textList;
 }
 
@@ -1532,7 +1574,7 @@ capn_ptr_list TestAllTypes_get_dataList(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_ptr_list dataList;
-	dataList.p = capn_getp(p.p, 16, 1);
+	dataList.p = capn_getp(p.p, 17, 1);
 	return dataList;
 }
 
@@ -1540,7 +1582,7 @@ TestAllTypes_list TestAllTypes_get_structList(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	TestAllTypes_list structList;
-	structList.p = capn_getp(p.p, 17, 1);
+	structList.p = capn_getp(p.p, 18, 1);
 	return structList;
 }
 
@@ -1548,15 +1590,15 @@ capn_list16 TestAllTypes_get_enumList(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list16 enumList;
-	enumList.p = capn_getp(p.p, 18, 1);
+	enumList.p = capn_getp(p.p, 19, 1);
 	return enumList;
 }
 
-capn_ptr TestAllTypes_get_interfaceList(TestAllTypes_ptr p)
+TestInterface_list TestAllTypes_get_interfaceList(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
-	capn_ptr interfaceList;
-	interfaceList = capn_getp(p.p, 19, 1);
+	TestInterface_list interfaceList;
+	interfaceList.p = capn_getp(p.p, 20, 1);
 	return interfaceList;
 }
 
@@ -1635,13 +1677,13 @@ void TestAllTypes_set_textField(TestAllTypes_ptr p, capn_text textField)
 void TestAllTypes_set_dataField(TestAllTypes_ptr p, capn_data dataField)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 1, dataField.p);
+	capn_setp(p.p, 1, (dataField.p.type != CAPN_NULL) ? dataField.p : capn_null);
 }
 
 void TestAllTypes_set_structField(TestAllTypes_ptr p, TestAllTypes_ptr structField)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 2, structField.p);
+	capn_setp(p.p, 2, (structField.p.type != CAPN_NULL) ? structField.p : capn_null);
 }
 
 void TestAllTypes_set_enumField(TestAllTypes_ptr p, enum TestEnum enumField)
@@ -1650,135 +1692,141 @@ void TestAllTypes_set_enumField(TestAllTypes_ptr p, enum TestEnum enumField)
 	capn_write16(p.p, 36, (uint16_t) (enumField));
 }
 
+void TestAllTypes_set_interfaceField(TestAllTypes_ptr p, TestInterface_ptr interfaceField)
+{
+	capn_resolve(&p.p);
+	capn_setp(p.p, 3, (interfaceField.p.type != CAPN_NULL) ? interfaceField.p : capn_null);
+}
+
 void TestAllTypes_set_voidList(TestAllTypes_ptr p, capn_ptr voidList)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 3, voidList);
+	capn_setp(p.p, 4, (voidList.type != CAPN_NULL) ? voidList : capn_null);
 }
 
 void TestAllTypes_set_boolList(TestAllTypes_ptr p, capn_list1 boolList)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 4, boolList.p);
+	capn_setp(p.p, 5, (boolList.p.type != CAPN_NULL) ? boolList.p : capn_null);
 }
 
 void TestAllTypes_set_int8List(TestAllTypes_ptr p, capn_list8 int8List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 5, int8List.p);
+	capn_setp(p.p, 6, (int8List.p.type != CAPN_NULL) ? int8List.p : capn_null);
 }
 
 void TestAllTypes_set_int16List(TestAllTypes_ptr p, capn_list16 int16List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 6, int16List.p);
+	capn_setp(p.p, 7, (int16List.p.type != CAPN_NULL) ? int16List.p : capn_null);
 }
 
 void TestAllTypes_set_int32List(TestAllTypes_ptr p, capn_list32 int32List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 7, int32List.p);
+	capn_setp(p.p, 8, (int32List.p.type != CAPN_NULL) ? int32List.p : capn_null);
 }
 
 void TestAllTypes_set_int64List(TestAllTypes_ptr p, capn_list64 int64List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 8, int64List.p);
+	capn_setp(p.p, 9, (int64List.p.type != CAPN_NULL) ? int64List.p : capn_null);
 }
 
 void TestAllTypes_set_uInt8List(TestAllTypes_ptr p, capn_list8 uInt8List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 9, uInt8List.p);
+	capn_setp(p.p, 10, (uInt8List.p.type != CAPN_NULL) ? uInt8List.p : capn_null);
 }
 
 void TestAllTypes_set_uInt16List(TestAllTypes_ptr p, capn_list16 uInt16List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 10, uInt16List.p);
+	capn_setp(p.p, 11, (uInt16List.p.type != CAPN_NULL) ? uInt16List.p : capn_null);
 }
 
 void TestAllTypes_set_uInt32List(TestAllTypes_ptr p, capn_list32 uInt32List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 11, uInt32List.p);
+	capn_setp(p.p, 12, (uInt32List.p.type != CAPN_NULL) ? uInt32List.p : capn_null);
 }
 
 void TestAllTypes_set_uInt64List(TestAllTypes_ptr p, capn_list64 uInt64List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 12, uInt64List.p);
+	capn_setp(p.p, 13, (uInt64List.p.type != CAPN_NULL) ? uInt64List.p : capn_null);
 }
 
 void TestAllTypes_set_float32List(TestAllTypes_ptr p, capn_list32 float32List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 13, float32List.p);
+	capn_setp(p.p, 14, (float32List.p.type != CAPN_NULL) ? float32List.p : capn_null);
 }
 
 void TestAllTypes_set_float64List(TestAllTypes_ptr p, capn_list64 float64List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 14, float64List.p);
+	capn_setp(p.p, 15, (float64List.p.type != CAPN_NULL) ? float64List.p : capn_null);
 }
 
 void TestAllTypes_set_textList(TestAllTypes_ptr p, capn_ptr_list textList)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 15, textList.p);
+	capn_setp(p.p, 16, (textList.p.type != CAPN_NULL) ? textList.p : capn_null);
 }
 
 void TestAllTypes_set_dataList(TestAllTypes_ptr p, capn_ptr_list dataList)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 16, dataList.p);
+	capn_setp(p.p, 17, (dataList.p.type != CAPN_NULL) ? dataList.p : capn_null);
 }
 
 void TestAllTypes_set_structList(TestAllTypes_ptr p, TestAllTypes_list structList)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 17, structList.p);
+	capn_setp(p.p, 18, (structList.p.type != CAPN_NULL) ? structList.p : capn_null);
 }
 
 void TestAllTypes_set_enumList(TestAllTypes_ptr p, capn_list16 enumList)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 18, enumList.p);
+	capn_setp(p.p, 19, (enumList.p.type != CAPN_NULL) ? enumList.p : capn_null);
 }
 
-void TestAllTypes_set_interfaceList(TestAllTypes_ptr p, capn_ptr interfaceList)
+void TestAllTypes_set_interfaceList(TestAllTypes_ptr p, TestInterface_list interfaceList)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 19, interfaceList);
+	capn_setp(p.p, 20, (interfaceList.p.type != CAPN_NULL) ? interfaceList.p : capn_null);
 }
-static capn_text capn_val1 = {3,(char*)&capn_buf[5392],(struct capn_segment*)&capn_seg};
-static capn_data capn_val2 = {{2,0,0,0,1,0,3,(char*)&capn_buf[5400],(struct capn_segment*)&capn_seg}};
-static TestAllTypes_ptr capn_val3 = {{1,0,0,0,48,20,0,(char*)&capn_buf[5408],(struct capn_segment*)&capn_seg}};
-static capn_ptr capn_val4 = {2,0,0,0,0,0,6,(char*)&capn_buf[7064],(struct capn_segment*)&capn_seg};
-static capn_list1 capn_val5 = {{4,0,0,0,1,0,4,(char*)&capn_buf[7064],(struct capn_segment*)&capn_seg}};
-static capn_list8 capn_val6 = {{2,0,0,0,1,0,2,(char*)&capn_buf[7072],(struct capn_segment*)&capn_seg}};
-static capn_list16 capn_val7 = {{2,0,0,0,2,0,2,(char*)&capn_buf[7080],(struct capn_segment*)&capn_seg}};
-static capn_list32 capn_val8 = {{2,0,0,0,4,0,2,(char*)&capn_buf[7088],(struct capn_segment*)&capn_seg}};
-static capn_list64 capn_val9 = {{2,0,0,0,8,0,2,(char*)&capn_buf[7096],(struct capn_segment*)&capn_seg}};
-static capn_list8 capn_val10 = {{2,0,0,0,1,0,2,(char*)&capn_buf[7112],(struct capn_segment*)&capn_seg}};
-static capn_list16 capn_val11 = {{2,0,0,0,2,0,2,(char*)&capn_buf[7120],(struct capn_segment*)&capn_seg}};
-static capn_list32 capn_val12 = {{2,0,0,0,4,0,1,(char*)&capn_buf[7128],(struct capn_segment*)&capn_seg}};
-static capn_list64 capn_val13 = {{2,0,0,0,8,0,1,(char*)&capn_buf[7136],(struct capn_segment*)&capn_seg}};
-static capn_list32 capn_val14 = {{2,0,0,0,4,0,4,(char*)&capn_buf[7144],(struct capn_segment*)&capn_seg}};
-static capn_list64 capn_val15 = {{2,0,0,0,8,0,4,(char*)&capn_buf[7160],(struct capn_segment*)&capn_seg}};
-static capn_ptr_list capn_val16 = {{3,0,0,0,0,0,3,(char*)&capn_buf[7192],(struct capn_segment*)&capn_seg}};
-static capn_ptr_list capn_val17 = {{3,0,0,0,0,0,3,(char*)&capn_buf[7240],(struct capn_segment*)&capn_seg}};
-static TestAllTypes_list capn_val18 = {{2,0,0,1,48,20,3,(char*)&capn_buf[7304],(struct capn_segment*)&capn_seg}};
-static capn_list16 capn_val19 = {{2,0,0,0,2,0,2,(char*)&capn_buf[7976],(struct capn_segment*)&capn_seg}};
+static capn_text capn_val1 = {3,(char*)&capn_buf[5552],(struct capn_segment*)&capn_seg};
+static capn_data capn_val2 = {{2,0,0,0,1,0,3,(char*)&capn_buf[5560],(struct capn_segment*)&capn_seg}};
+static TestAllTypes_ptr capn_val3 = {{1,0,0,0,48,21,0,(char*)&capn_buf[5568],(struct capn_segment*)&capn_seg}};
+static capn_ptr capn_val4 = {2,0,0,0,0,0,6,(char*)&capn_buf[7272],(struct capn_segment*)&capn_seg};
+static capn_list1 capn_val5 = {{4,0,0,0,1,0,4,(char*)&capn_buf[7272],(struct capn_segment*)&capn_seg}};
+static capn_list8 capn_val6 = {{2,0,0,0,1,0,2,(char*)&capn_buf[7280],(struct capn_segment*)&capn_seg}};
+static capn_list16 capn_val7 = {{2,0,0,0,2,0,2,(char*)&capn_buf[7288],(struct capn_segment*)&capn_seg}};
+static capn_list32 capn_val8 = {{2,0,0,0,4,0,2,(char*)&capn_buf[7296],(struct capn_segment*)&capn_seg}};
+static capn_list64 capn_val9 = {{2,0,0,0,8,0,2,(char*)&capn_buf[7304],(struct capn_segment*)&capn_seg}};
+static capn_list8 capn_val10 = {{2,0,0,0,1,0,2,(char*)&capn_buf[7320],(struct capn_segment*)&capn_seg}};
+static capn_list16 capn_val11 = {{2,0,0,0,2,0,2,(char*)&capn_buf[7328],(struct capn_segment*)&capn_seg}};
+static capn_list32 capn_val12 = {{2,0,0,0,4,0,1,(char*)&capn_buf[7336],(struct capn_segment*)&capn_seg}};
+static capn_list64 capn_val13 = {{2,0,0,0,8,0,1,(char*)&capn_buf[7344],(struct capn_segment*)&capn_seg}};
+static capn_list32 capn_val14 = {{2,0,0,0,4,0,4,(char*)&capn_buf[7352],(struct capn_segment*)&capn_seg}};
+static capn_list64 capn_val15 = {{2,0,0,0,8,0,4,(char*)&capn_buf[7368],(struct capn_segment*)&capn_seg}};
+static capn_ptr_list capn_val16 = {{3,0,0,0,0,0,3,(char*)&capn_buf[7400],(struct capn_segment*)&capn_seg}};
+static capn_ptr_list capn_val17 = {{3,0,0,0,0,0,3,(char*)&capn_buf[7448],(struct capn_segment*)&capn_seg}};
+static TestAllTypes_list capn_val18 = {{2,0,0,1,48,21,3,(char*)&capn_buf[7512],(struct capn_segment*)&capn_seg}};
+static capn_list16 capn_val19 = {{2,0,0,0,2,0,2,(char*)&capn_buf[8208],(struct capn_segment*)&capn_seg}};
 
 TestDefaults_ptr new_TestDefaults(struct capn_segment *s) {
 	TestDefaults_ptr p;
-	p.p = capn_new_struct(s, 48, 20);
+	p.p = capn_new_struct(s, 48, 21);
 	return p;
 }
 TestDefaults_list new_TestDefaults_list(struct capn_segment *s, int len) {
 	TestDefaults_list p;
-	p.p = capn_new_list(s, len, 48, 20);
+	p.p = capn_new_list(s, len, 48, 21);
 	return p;
 }
 void read_TestDefaults(struct TestDefaults *s capnp_unused, TestDefaults_ptr p) {
@@ -1805,71 +1853,72 @@ void read_TestDefaults(struct TestDefaults *s capnp_unused, TestDefaults_ptr p) 
 		s->structField = capn_val3;
 	}
 	s->enumField = (enum TestEnum)(int) capn_read16(p.p, 36) ^ 5u;
-	s->voidList = capn_getp(p.p, 3, 0);
+	s->interfaceField.p = capn_getp(p.p, 3, 0);
+	s->voidList = capn_getp(p.p, 4, 0);
 	if (!s->voidList.type) {
 		s->voidList = capn_val4;
 	}
-	s->boolList.p = capn_getp(p.p, 4, 0);
+	s->boolList.p = capn_getp(p.p, 5, 0);
 	if (!s->boolList.p.type) {
 		s->boolList = capn_val5;
 	}
-	s->int8List.p = capn_getp(p.p, 5, 0);
+	s->int8List.p = capn_getp(p.p, 6, 0);
 	if (!s->int8List.p.type) {
 		s->int8List = capn_val6;
 	}
-	s->int16List.p = capn_getp(p.p, 6, 0);
+	s->int16List.p = capn_getp(p.p, 7, 0);
 	if (!s->int16List.p.type) {
 		s->int16List = capn_val7;
 	}
-	s->int32List.p = capn_getp(p.p, 7, 0);
+	s->int32List.p = capn_getp(p.p, 8, 0);
 	if (!s->int32List.p.type) {
 		s->int32List = capn_val8;
 	}
-	s->int64List.p = capn_getp(p.p, 8, 0);
+	s->int64List.p = capn_getp(p.p, 9, 0);
 	if (!s->int64List.p.type) {
 		s->int64List = capn_val9;
 	}
-	s->uInt8List.p = capn_getp(p.p, 9, 0);
+	s->uInt8List.p = capn_getp(p.p, 10, 0);
 	if (!s->uInt8List.p.type) {
 		s->uInt8List = capn_val10;
 	}
-	s->uInt16List.p = capn_getp(p.p, 10, 0);
+	s->uInt16List.p = capn_getp(p.p, 11, 0);
 	if (!s->uInt16List.p.type) {
 		s->uInt16List = capn_val11;
 	}
-	s->uInt32List.p = capn_getp(p.p, 11, 0);
+	s->uInt32List.p = capn_getp(p.p, 12, 0);
 	if (!s->uInt32List.p.type) {
 		s->uInt32List = capn_val12;
 	}
-	s->uInt64List.p = capn_getp(p.p, 12, 0);
+	s->uInt64List.p = capn_getp(p.p, 13, 0);
 	if (!s->uInt64List.p.type) {
 		s->uInt64List = capn_val13;
 	}
-	s->float32List.p = capn_getp(p.p, 13, 0);
+	s->float32List.p = capn_getp(p.p, 14, 0);
 	if (!s->float32List.p.type) {
 		s->float32List = capn_val14;
 	}
-	s->float64List.p = capn_getp(p.p, 14, 0);
+	s->float64List.p = capn_getp(p.p, 15, 0);
 	if (!s->float64List.p.type) {
 		s->float64List = capn_val15;
 	}
-	s->textList.p = capn_getp(p.p, 15, 0);
+	s->textList.p = capn_getp(p.p, 16, 0);
 	if (!s->textList.p.type) {
 		s->textList = capn_val16;
 	}
-	s->dataList.p = capn_getp(p.p, 16, 0);
+	s->dataList.p = capn_getp(p.p, 17, 0);
 	if (!s->dataList.p.type) {
 		s->dataList = capn_val17;
 	}
-	s->structList.p = capn_getp(p.p, 17, 0);
+	s->structList.p = capn_getp(p.p, 18, 0);
 	if (!s->structList.p.type) {
 		s->structList = capn_val18;
 	}
-	s->enumList.p = capn_getp(p.p, 18, 0);
+	s->enumList.p = capn_getp(p.p, 19, 0);
 	if (!s->enumList.p.type) {
 		s->enumList = capn_val19;
 	}
-	s->interfaceList = capn_getp(p.p, 19, 0);
+	s->interfaceList.p = capn_getp(p.p, 20, 0);
 }
 void write_TestDefaults(const struct TestDefaults *s capnp_unused, TestDefaults_ptr p) {
 	capn_resolve(&p.p);
@@ -1889,23 +1938,24 @@ void write_TestDefaults(const struct TestDefaults *s capnp_unused, TestDefaults_
 	capn_setp(p.p, 1, (s->dataField.p.data != capn_val2.p.data) ? s->dataField.p : capn_null);
 	capn_setp(p.p, 2, (s->structField.p.data != capn_val3.p.data) ? s->structField.p : capn_null);
 	capn_write16(p.p, 36, (uint16_t) (s->enumField ^ 5u));
-	capn_setp(p.p, 3, (s->voidList.data != capn_val4.data) ? s->voidList : capn_null);
-	capn_setp(p.p, 4, (s->boolList.p.data != capn_val5.p.data) ? s->boolList.p : capn_null);
-	capn_setp(p.p, 5, (s->int8List.p.data != capn_val6.p.data) ? s->int8List.p : capn_null);
-	capn_setp(p.p, 6, (s->int16List.p.data != capn_val7.p.data) ? s->int16List.p : capn_null);
-	capn_setp(p.p, 7, (s->int32List.p.data != capn_val8.p.data) ? s->int32List.p : capn_null);
-	capn_setp(p.p, 8, (s->int64List.p.data != capn_val9.p.data) ? s->int64List.p : capn_null);
-	capn_setp(p.p, 9, (s->uInt8List.p.data != capn_val10.p.data) ? s->uInt8List.p : capn_null);
-	capn_setp(p.p, 10, (s->uInt16List.p.data != capn_val11.p.data) ? s->uInt16List.p : capn_null);
-	capn_setp(p.p, 11, (s->uInt32List.p.data != capn_val12.p.data) ? s->uInt32List.p : capn_null);
-	capn_setp(p.p, 12, (s->uInt64List.p.data != capn_val13.p.data) ? s->uInt64List.p : capn_null);
-	capn_setp(p.p, 13, (s->float32List.p.data != capn_val14.p.data) ? s->float32List.p : capn_null);
-	capn_setp(p.p, 14, (s->float64List.p.data != capn_val15.p.data) ? s->float64List.p : capn_null);
-	capn_setp(p.p, 15, (s->textList.p.data != capn_val16.p.data) ? s->textList.p : capn_null);
-	capn_setp(p.p, 16, (s->dataList.p.data != capn_val17.p.data) ? s->dataList.p : capn_null);
-	capn_setp(p.p, 17, (s->structList.p.data != capn_val18.p.data) ? s->structList.p : capn_null);
-	capn_setp(p.p, 18, (s->enumList.p.data != capn_val19.p.data) ? s->enumList.p : capn_null);
-	capn_setp(p.p, 19, s->interfaceList);
+	capn_setp(p.p, 3, (s->interfaceField.p.type != CAPN_NULL) ? s->interfaceField.p : capn_null);
+	capn_setp(p.p, 4, (s->voidList.data != capn_val4.data) ? s->voidList : capn_null);
+	capn_setp(p.p, 5, (s->boolList.p.data != capn_val5.p.data) ? s->boolList.p : capn_null);
+	capn_setp(p.p, 6, (s->int8List.p.data != capn_val6.p.data) ? s->int8List.p : capn_null);
+	capn_setp(p.p, 7, (s->int16List.p.data != capn_val7.p.data) ? s->int16List.p : capn_null);
+	capn_setp(p.p, 8, (s->int32List.p.data != capn_val8.p.data) ? s->int32List.p : capn_null);
+	capn_setp(p.p, 9, (s->int64List.p.data != capn_val9.p.data) ? s->int64List.p : capn_null);
+	capn_setp(p.p, 10, (s->uInt8List.p.data != capn_val10.p.data) ? s->uInt8List.p : capn_null);
+	capn_setp(p.p, 11, (s->uInt16List.p.data != capn_val11.p.data) ? s->uInt16List.p : capn_null);
+	capn_setp(p.p, 12, (s->uInt32List.p.data != capn_val12.p.data) ? s->uInt32List.p : capn_null);
+	capn_setp(p.p, 13, (s->uInt64List.p.data != capn_val13.p.data) ? s->uInt64List.p : capn_null);
+	capn_setp(p.p, 14, (s->float32List.p.data != capn_val14.p.data) ? s->float32List.p : capn_null);
+	capn_setp(p.p, 15, (s->float64List.p.data != capn_val15.p.data) ? s->float64List.p : capn_null);
+	capn_setp(p.p, 16, (s->textList.p.data != capn_val16.p.data) ? s->textList.p : capn_null);
+	capn_setp(p.p, 17, (s->dataList.p.data != capn_val17.p.data) ? s->dataList.p : capn_null);
+	capn_setp(p.p, 18, (s->structList.p.data != capn_val18.p.data) ? s->structList.p : capn_null);
+	capn_setp(p.p, 19, (s->enumList.p.data != capn_val19.p.data) ? s->enumList.p : capn_null);
+	capn_setp(p.p, 20, (s->interfaceList.p.type != CAPN_NULL) ? s->interfaceList.p : capn_null);
 }
 void get_TestDefaults(struct TestDefaults *s, TestDefaults_list l, int i) {
 	TestDefaults_ptr p;
@@ -2044,11 +2094,19 @@ enum TestEnum TestDefaults_get_enumField(TestDefaults_ptr p)
 	return enumField;
 }
 
+TestInterface_ptr TestDefaults_get_interfaceField(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	TestInterface_ptr interfaceField;
+	interfaceField.p = capn_getp(p.p, 3, 1);
+	return interfaceField;
+}
+
 capn_ptr TestDefaults_get_voidList(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_ptr voidList;
-	voidList = capn_getp(p.p, 3, 1);
+	voidList = capn_getp(p.p, 4, 1);
 if (!voidList.type) {
 	voidList = capn_val4;
 }
@@ -2059,7 +2117,7 @@ capn_list1 TestDefaults_get_boolList(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list1 boolList;
-	boolList.p = capn_getp(p.p, 4, 1);
+	boolList.p = capn_getp(p.p, 5, 1);
 if (!boolList.p.type) {
 	boolList = capn_val5;
 }
@@ -2070,7 +2128,7 @@ capn_list8 TestDefaults_get_int8List(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list8 int8List;
-	int8List.p = capn_getp(p.p, 5, 1);
+	int8List.p = capn_getp(p.p, 6, 1);
 if (!int8List.p.type) {
 	int8List = capn_val6;
 }
@@ -2081,7 +2139,7 @@ capn_list16 TestDefaults_get_int16List(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list16 int16List;
-	int16List.p = capn_getp(p.p, 6, 1);
+	int16List.p = capn_getp(p.p, 7, 1);
 if (!int16List.p.type) {
 	int16List = capn_val7;
 }
@@ -2092,7 +2150,7 @@ capn_list32 TestDefaults_get_int32List(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list32 int32List;
-	int32List.p = capn_getp(p.p, 7, 1);
+	int32List.p = capn_getp(p.p, 8, 1);
 if (!int32List.p.type) {
 	int32List = capn_val8;
 }
@@ -2103,7 +2161,7 @@ capn_list64 TestDefaults_get_int64List(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list64 int64List;
-	int64List.p = capn_getp(p.p, 8, 1);
+	int64List.p = capn_getp(p.p, 9, 1);
 if (!int64List.p.type) {
 	int64List = capn_val9;
 }
@@ -2114,7 +2172,7 @@ capn_list8 TestDefaults_get_uInt8List(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list8 uInt8List;
-	uInt8List.p = capn_getp(p.p, 9, 1);
+	uInt8List.p = capn_getp(p.p, 10, 1);
 if (!uInt8List.p.type) {
 	uInt8List = capn_val10;
 }
@@ -2125,7 +2183,7 @@ capn_list16 TestDefaults_get_uInt16List(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list16 uInt16List;
-	uInt16List.p = capn_getp(p.p, 10, 1);
+	uInt16List.p = capn_getp(p.p, 11, 1);
 if (!uInt16List.p.type) {
 	uInt16List = capn_val11;
 }
@@ -2136,7 +2194,7 @@ capn_list32 TestDefaults_get_uInt32List(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list32 uInt32List;
-	uInt32List.p = capn_getp(p.p, 11, 1);
+	uInt32List.p = capn_getp(p.p, 12, 1);
 if (!uInt32List.p.type) {
 	uInt32List = capn_val12;
 }
@@ -2147,7 +2205,7 @@ capn_list64 TestDefaults_get_uInt64List(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list64 uInt64List;
-	uInt64List.p = capn_getp(p.p, 12, 1);
+	uInt64List.p = capn_getp(p.p, 13, 1);
 if (!uInt64List.p.type) {
 	uInt64List = capn_val13;
 }
@@ -2158,7 +2216,7 @@ capn_list32 TestDefaults_get_float32List(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list32 float32List;
-	float32List.p = capn_getp(p.p, 13, 1);
+	float32List.p = capn_getp(p.p, 14, 1);
 if (!float32List.p.type) {
 	float32List = capn_val14;
 }
@@ -2169,7 +2227,7 @@ capn_list64 TestDefaults_get_float64List(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list64 float64List;
-	float64List.p = capn_getp(p.p, 14, 1);
+	float64List.p = capn_getp(p.p, 15, 1);
 if (!float64List.p.type) {
 	float64List = capn_val15;
 }
@@ -2180,7 +2238,7 @@ capn_ptr_list TestDefaults_get_textList(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_ptr_list textList;
-	textList.p = capn_getp(p.p, 15, 1);
+	textList.p = capn_getp(p.p, 16, 1);
 if (!textList.p.type) {
 	textList = capn_val16;
 }
@@ -2191,7 +2249,7 @@ capn_ptr_list TestDefaults_get_dataList(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_ptr_list dataList;
-	dataList.p = capn_getp(p.p, 16, 1);
+	dataList.p = capn_getp(p.p, 17, 1);
 if (!dataList.p.type) {
 	dataList = capn_val17;
 }
@@ -2202,7 +2260,7 @@ TestAllTypes_list TestDefaults_get_structList(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
 	TestAllTypes_list structList;
-	structList.p = capn_getp(p.p, 17, 1);
+	structList.p = capn_getp(p.p, 18, 1);
 if (!structList.p.type) {
 	structList = capn_val18;
 }
@@ -2213,18 +2271,18 @@ capn_list16 TestDefaults_get_enumList(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list16 enumList;
-	enumList.p = capn_getp(p.p, 18, 1);
+	enumList.p = capn_getp(p.p, 19, 1);
 if (!enumList.p.type) {
 	enumList = capn_val19;
 }
 	return enumList;
 }
 
-capn_ptr TestDefaults_get_interfaceList(TestDefaults_ptr p)
+TestInterface_list TestDefaults_get_interfaceList(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
-	capn_ptr interfaceList;
-	interfaceList = capn_getp(p.p, 19, 1);
+	TestInterface_list interfaceList;
+	interfaceList.p = capn_getp(p.p, 20, 1);
 	return interfaceList;
 }
 
@@ -2318,106 +2376,112 @@ void TestDefaults_set_enumField(TestDefaults_ptr p, enum TestEnum enumField)
 	capn_write16(p.p, 36, (uint16_t) (enumField ^ 5u));
 }
 
+void TestDefaults_set_interfaceField(TestDefaults_ptr p, TestInterface_ptr interfaceField)
+{
+	capn_resolve(&p.p);
+	capn_setp(p.p, 3, (interfaceField.p.type != CAPN_NULL) ? interfaceField.p : capn_null);
+}
+
 void TestDefaults_set_voidList(TestDefaults_ptr p, capn_ptr voidList)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 3, (voidList.data != capn_val4.data) ? voidList : capn_null);
+	capn_setp(p.p, 4, (voidList.data != capn_val4.data) ? voidList : capn_null);
 }
 
 void TestDefaults_set_boolList(TestDefaults_ptr p, capn_list1 boolList)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 4, (boolList.p.data != capn_val5.p.data) ? boolList.p : capn_null);
+	capn_setp(p.p, 5, (boolList.p.data != capn_val5.p.data) ? boolList.p : capn_null);
 }
 
 void TestDefaults_set_int8List(TestDefaults_ptr p, capn_list8 int8List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 5, (int8List.p.data != capn_val6.p.data) ? int8List.p : capn_null);
+	capn_setp(p.p, 6, (int8List.p.data != capn_val6.p.data) ? int8List.p : capn_null);
 }
 
 void TestDefaults_set_int16List(TestDefaults_ptr p, capn_list16 int16List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 6, (int16List.p.data != capn_val7.p.data) ? int16List.p : capn_null);
+	capn_setp(p.p, 7, (int16List.p.data != capn_val7.p.data) ? int16List.p : capn_null);
 }
 
 void TestDefaults_set_int32List(TestDefaults_ptr p, capn_list32 int32List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 7, (int32List.p.data != capn_val8.p.data) ? int32List.p : capn_null);
+	capn_setp(p.p, 8, (int32List.p.data != capn_val8.p.data) ? int32List.p : capn_null);
 }
 
 void TestDefaults_set_int64List(TestDefaults_ptr p, capn_list64 int64List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 8, (int64List.p.data != capn_val9.p.data) ? int64List.p : capn_null);
+	capn_setp(p.p, 9, (int64List.p.data != capn_val9.p.data) ? int64List.p : capn_null);
 }
 
 void TestDefaults_set_uInt8List(TestDefaults_ptr p, capn_list8 uInt8List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 9, (uInt8List.p.data != capn_val10.p.data) ? uInt8List.p : capn_null);
+	capn_setp(p.p, 10, (uInt8List.p.data != capn_val10.p.data) ? uInt8List.p : capn_null);
 }
 
 void TestDefaults_set_uInt16List(TestDefaults_ptr p, capn_list16 uInt16List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 10, (uInt16List.p.data != capn_val11.p.data) ? uInt16List.p : capn_null);
+	capn_setp(p.p, 11, (uInt16List.p.data != capn_val11.p.data) ? uInt16List.p : capn_null);
 }
 
 void TestDefaults_set_uInt32List(TestDefaults_ptr p, capn_list32 uInt32List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 11, (uInt32List.p.data != capn_val12.p.data) ? uInt32List.p : capn_null);
+	capn_setp(p.p, 12, (uInt32List.p.data != capn_val12.p.data) ? uInt32List.p : capn_null);
 }
 
 void TestDefaults_set_uInt64List(TestDefaults_ptr p, capn_list64 uInt64List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 12, (uInt64List.p.data != capn_val13.p.data) ? uInt64List.p : capn_null);
+	capn_setp(p.p, 13, (uInt64List.p.data != capn_val13.p.data) ? uInt64List.p : capn_null);
 }
 
 void TestDefaults_set_float32List(TestDefaults_ptr p, capn_list32 float32List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 13, (float32List.p.data != capn_val14.p.data) ? float32List.p : capn_null);
+	capn_setp(p.p, 14, (float32List.p.data != capn_val14.p.data) ? float32List.p : capn_null);
 }
 
 void TestDefaults_set_float64List(TestDefaults_ptr p, capn_list64 float64List)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 14, (float64List.p.data != capn_val15.p.data) ? float64List.p : capn_null);
+	capn_setp(p.p, 15, (float64List.p.data != capn_val15.p.data) ? float64List.p : capn_null);
 }
 
 void TestDefaults_set_textList(TestDefaults_ptr p, capn_ptr_list textList)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 15, (textList.p.data != capn_val16.p.data) ? textList.p : capn_null);
+	capn_setp(p.p, 16, (textList.p.data != capn_val16.p.data) ? textList.p : capn_null);
 }
 
 void TestDefaults_set_dataList(TestDefaults_ptr p, capn_ptr_list dataList)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 16, (dataList.p.data != capn_val17.p.data) ? dataList.p : capn_null);
+	capn_setp(p.p, 17, (dataList.p.data != capn_val17.p.data) ? dataList.p : capn_null);
 }
 
 void TestDefaults_set_structList(TestDefaults_ptr p, TestAllTypes_list structList)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 17, (structList.p.data != capn_val18.p.data) ? structList.p : capn_null);
+	capn_setp(p.p, 18, (structList.p.data != capn_val18.p.data) ? structList.p : capn_null);
 }
 
 void TestDefaults_set_enumList(TestDefaults_ptr p, capn_list16 enumList)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 18, (enumList.p.data != capn_val19.p.data) ? enumList.p : capn_null);
+	capn_setp(p.p, 19, (enumList.p.data != capn_val19.p.data) ? enumList.p : capn_null);
 }
 
-void TestDefaults_set_interfaceList(TestDefaults_ptr p, capn_ptr interfaceList)
+void TestDefaults_set_interfaceList(TestDefaults_ptr p, TestInterface_list interfaceList)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 19, interfaceList);
+	capn_setp(p.p, 20, (interfaceList.p.type != CAPN_NULL) ? interfaceList.p : capn_null);
 }
 
 TestAnyPointer_ptr new_TestAnyPointer(struct capn_segment *s) {
@@ -2438,7 +2502,7 @@ void read_TestAnyPointer(struct TestAnyPointer *s capnp_unused, TestAnyPointer_p
 void write_TestAnyPointer(const struct TestAnyPointer *s capnp_unused, TestAnyPointer_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
-	capn_setp(p.p, 0, s->anyPointerField);
+	capn_setp(p.p, 0, (s->anyPointerField.type != CAPN_NULL) ? s->anyPointerField : capn_null);
 }
 void get_TestAnyPointer(struct TestAnyPointer *s, TestAnyPointer_list l, int i) {
 	TestAnyPointer_ptr p;
@@ -2462,7 +2526,7 @@ capn_ptr TestAnyPointer_get_anyPointerField(TestAnyPointer_ptr p)
 void TestAnyPointer_set_anyPointerField(TestAnyPointer_ptr p, capn_ptr anyPointerField)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 0, anyPointerField);
+	capn_setp(p.p, 0, (anyPointerField.type != CAPN_NULL) ? anyPointerField : capn_null);
 }
 
 TestOutOfOrder_ptr new_TestOutOfOrder(struct capn_segment *s) {
@@ -3318,10 +3382,10 @@ void set_TestInterleavedGroups(const struct TestInterleavedGroups *s, TestInterl
 	p.p = capn_getp(l.p, i, 0);
 	write_TestInterleavedGroups(s, p);
 }
-static TestUnion_ptr capn_val20 = {{1,0,0,0,64,2,0,(char*)&capn_buf[7984],(struct capn_segment*)&capn_seg}};
-static TestUnion_ptr capn_val21 = {{1,0,0,0,64,2,0,(char*)&capn_buf[8064],(struct capn_segment*)&capn_seg}};
-static TestUnnamedUnion_ptr capn_val22 = {{1,0,0,0,16,2,0,(char*)&capn_buf[8152],(struct capn_segment*)&capn_seg}};
-static TestUnnamedUnion_ptr capn_val23 = {{1,0,0,0,16,2,0,(char*)&capn_buf[8184],(struct capn_segment*)&capn_seg}};
+static TestUnion_ptr capn_val20 = {{1,0,0,0,64,2,0,(char*)&capn_buf[8216],(struct capn_segment*)&capn_seg}};
+static TestUnion_ptr capn_val21 = {{1,0,0,0,64,2,0,(char*)&capn_buf[8296],(struct capn_segment*)&capn_seg}};
+static TestUnnamedUnion_ptr capn_val22 = {{1,0,0,0,16,2,0,(char*)&capn_buf[8384],(struct capn_segment*)&capn_seg}};
+static TestUnnamedUnion_ptr capn_val23 = {{1,0,0,0,16,2,0,(char*)&capn_buf[8416],(struct capn_segment*)&capn_seg}};
 
 TestUnionDefaults_ptr new_TestUnionDefaults(struct capn_segment *s) {
 	TestUnionDefaults_ptr p;
@@ -3460,7 +3524,7 @@ void read_TestNestedTypes(struct TestNestedTypes *s capnp_unused, TestNestedType
 void write_TestNestedTypes(const struct TestNestedTypes *s capnp_unused, TestNestedTypes_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
-	capn_setp(p.p, 0, s->nestedStruct.p);
+	capn_setp(p.p, 0, (s->nestedStruct.p.type != CAPN_NULL) ? s->nestedStruct.p : capn_null);
 	capn_write16(p.p, 0, (uint16_t) (s->outerNestedEnum ^ 1u));
 	capn_write16(p.p, 2, (uint16_t) (s->innerNestedEnum ^ 2u));
 }
@@ -3502,7 +3566,7 @@ enum TestNestedTypes_NestedStruct_NestedEnum TestNestedTypes_get_innerNestedEnum
 void TestNestedTypes_set_nestedStruct(TestNestedTypes_ptr p, TestNestedTypes_NestedStruct_ptr nestedStruct)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 0, nestedStruct.p);
+	capn_setp(p.p, 0, (nestedStruct.p.type != CAPN_NULL) ? nestedStruct.p : capn_null);
 }
 
 void TestNestedTypes_set_outerNestedEnum(TestNestedTypes_ptr p, enum TestNestedTypes_NestedEnum outerNestedEnum)
@@ -3666,16 +3730,16 @@ void read_TestLists(struct TestLists *s capnp_unused, TestLists_ptr p) {
 void write_TestLists(const struct TestLists *s capnp_unused, TestLists_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
-	capn_setp(p.p, 0, s->list0.p);
-	capn_setp(p.p, 1, s->list1.p);
-	capn_setp(p.p, 2, s->list8.p);
-	capn_setp(p.p, 3, s->list16.p);
-	capn_setp(p.p, 4, s->list32.p);
-	capn_setp(p.p, 5, s->list64.p);
-	capn_setp(p.p, 6, s->listP.p);
-	capn_setp(p.p, 7, s->int32ListList.p);
-	capn_setp(p.p, 8, s->textListList.p);
-	capn_setp(p.p, 9, s->structListList.p);
+	capn_setp(p.p, 0, (s->list0.p.type != CAPN_NULL) ? s->list0.p : capn_null);
+	capn_setp(p.p, 1, (s->list1.p.type != CAPN_NULL) ? s->list1.p : capn_null);
+	capn_setp(p.p, 2, (s->list8.p.type != CAPN_NULL) ? s->list8.p : capn_null);
+	capn_setp(p.p, 3, (s->list16.p.type != CAPN_NULL) ? s->list16.p : capn_null);
+	capn_setp(p.p, 4, (s->list32.p.type != CAPN_NULL) ? s->list32.p : capn_null);
+	capn_setp(p.p, 5, (s->list64.p.type != CAPN_NULL) ? s->list64.p : capn_null);
+	capn_setp(p.p, 6, (s->listP.p.type != CAPN_NULL) ? s->listP.p : capn_null);
+	capn_setp(p.p, 7, (s->int32ListList.p.type != CAPN_NULL) ? s->int32ListList.p : capn_null);
+	capn_setp(p.p, 8, (s->textListList.p.type != CAPN_NULL) ? s->textListList.p : capn_null);
+	capn_setp(p.p, 9, (s->structListList.p.type != CAPN_NULL) ? s->structListList.p : capn_null);
 }
 void get_TestLists(struct TestLists *s, TestLists_list l, int i) {
 	TestLists_ptr p;
@@ -3771,61 +3835,61 @@ capn_ptr_list TestLists_get_structListList(TestLists_ptr p)
 void TestLists_set_list0(TestLists_ptr p, TestLists_Struct0_list list0)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 0, list0.p);
+	capn_setp(p.p, 0, (list0.p.type != CAPN_NULL) ? list0.p : capn_null);
 }
 
 void TestLists_set_list1(TestLists_ptr p, TestLists_Struct1_list list1)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 1, list1.p);
+	capn_setp(p.p, 1, (list1.p.type != CAPN_NULL) ? list1.p : capn_null);
 }
 
 void TestLists_set_list8(TestLists_ptr p, TestLists_Struct8_list list8)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 2, list8.p);
+	capn_setp(p.p, 2, (list8.p.type != CAPN_NULL) ? list8.p : capn_null);
 }
 
 void TestLists_set_list16(TestLists_ptr p, TestLists_Struct16_list list16)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 3, list16.p);
+	capn_setp(p.p, 3, (list16.p.type != CAPN_NULL) ? list16.p : capn_null);
 }
 
 void TestLists_set_list32(TestLists_ptr p, TestLists_Struct32_list list32)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 4, list32.p);
+	capn_setp(p.p, 4, (list32.p.type != CAPN_NULL) ? list32.p : capn_null);
 }
 
 void TestLists_set_list64(TestLists_ptr p, TestLists_Struct64_list list64)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 5, list64.p);
+	capn_setp(p.p, 5, (list64.p.type != CAPN_NULL) ? list64.p : capn_null);
 }
 
 void TestLists_set_listP(TestLists_ptr p, TestLists_StructP_list listP)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 6, listP.p);
+	capn_setp(p.p, 6, (listP.p.type != CAPN_NULL) ? listP.p : capn_null);
 }
 
 void TestLists_set_int32ListList(TestLists_ptr p, capn_ptr_list int32ListList)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 7, int32ListList.p);
+	capn_setp(p.p, 7, (int32ListList.p.type != CAPN_NULL) ? int32ListList.p : capn_null);
 }
 
 void TestLists_set_textListList(TestLists_ptr p, capn_ptr_list textListList)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 8, textListList.p);
+	capn_setp(p.p, 8, (textListList.p.type != CAPN_NULL) ? textListList.p : capn_null);
 }
 
 void TestLists_set_structListList(TestLists_ptr p, capn_ptr_list structListList)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 9, structListList.p);
+	capn_setp(p.p, 9, (structListList.p.type != CAPN_NULL) ? structListList.p : capn_null);
 }
 
 TestLists_Struct0_ptr new_TestLists_Struct0(struct capn_segment *s) {
@@ -4614,7 +4678,7 @@ void TestFieldZeroIsBit_set_thirdField(TestFieldZeroIsBit_ptr p, uint8_t thirdFi
 	capn_resolve(&p.p);
 	capn_write8(p.p, 1, thirdField ^ 123u);
 }
-static TestLists_ptr capn_val24 = {{1,0,0,0,0,10,0,(char*)&capn_buf[8232],(struct capn_segment*)&capn_seg}};
+static TestLists_ptr capn_val24 = {{1,0,0,0,0,10,0,(char*)&capn_buf[8464],(struct capn_segment*)&capn_seg}};
 
 TestListDefaults_ptr new_TestListDefaults(struct capn_segment *s) {
 	TestListDefaults_ptr p;
@@ -4727,7 +4791,7 @@ void write_TestLateUnion(const struct TestLateUnion *s capnp_unused, TestLateUni
 		capn_set_text(p.p, 1, s->theUnion.qux);
 		break;
 	case TestLateUnion_theUnion_corge:
-		capn_setp(p.p, 1, s->theUnion.corge.p);
+		capn_setp(p.p, 1, (s->theUnion.corge.p.type != CAPN_NULL) ? s->theUnion.corge.p : capn_null);
 		break;
 	default:
 		break;
@@ -4741,7 +4805,7 @@ void write_TestLateUnion(const struct TestLateUnion *s capnp_unused, TestLateUni
 		capn_set_text(p.p, 2, s->anotherUnion.qux);
 		break;
 	case TestLateUnion_anotherUnion_corge:
-		capn_setp(p.p, 2, s->anotherUnion.corge.p);
+		capn_setp(p.p, 2, (s->anotherUnion.corge.p.type != CAPN_NULL) ? s->anotherUnion.corge.p : capn_null);
 		break;
 	default:
 		break;
@@ -4822,7 +4886,7 @@ void write_TestOldVersion(const struct TestOldVersion *s capnp_unused, TestOldVe
 	capnp_use(s);
 	capn_write64(p.p, 0, (uint64_t) (s->old1));
 	capn_set_text(p.p, 0, s->old2);
-	capn_setp(p.p, 1, s->old3.p);
+	capn_setp(p.p, 1, (s->old3.p.type != CAPN_NULL) ? s->old3.p : capn_null);
 }
 void get_TestOldVersion(struct TestOldVersion *s, TestOldVersion_list l, int i) {
 	TestOldVersion_ptr p;
@@ -4874,9 +4938,9 @@ void TestOldVersion_set_old2(TestOldVersion_ptr p, capn_text old2)
 void TestOldVersion_set_old3(TestOldVersion_ptr p, TestOldVersion_ptr old3)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 1, old3.p);
+	capn_setp(p.p, 1, (old3.p.type != CAPN_NULL) ? old3.p : capn_null);
 }
-static capn_text capn_val25 = {3,(char*)&capn_buf[9264],(struct capn_segment*)&capn_seg};
+static capn_text capn_val25 = {3,(char*)&capn_buf[9520],(struct capn_segment*)&capn_seg};
 
 TestNewVersion_ptr new_TestNewVersion(struct capn_segment *s) {
 	TestNewVersion_ptr p;
@@ -4902,7 +4966,7 @@ void write_TestNewVersion(const struct TestNewVersion *s capnp_unused, TestNewVe
 	capnp_use(s);
 	capn_write64(p.p, 0, (uint64_t) (s->old1));
 	capn_set_text(p.p, 0, s->old2);
-	capn_setp(p.p, 1, s->old3.p);
+	capn_setp(p.p, 1, (s->old3.p.type != CAPN_NULL) ? s->old3.p : capn_null);
 	capn_write64(p.p, 8, (uint64_t) (s->new1 ^ ((int64_t)((uint64_t) 0u << 32) ^ 0x3dbu)));
 	capn_set_text(p.p, 2, (s->new2.str != capn_val25.str) ? s->new2 : capn_val0);
 }
@@ -4972,7 +5036,7 @@ void TestNewVersion_set_old2(TestNewVersion_ptr p, capn_text old2)
 void TestNewVersion_set_old3(TestNewVersion_ptr p, TestNewVersion_ptr old3)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 1, old3.p);
+	capn_setp(p.p, 1, (old3.p.type != CAPN_NULL) ? old3.p : capn_null);
 }
 
 void TestNewVersion_set_new1(TestNewVersion_ptr p, int64_t new1)
@@ -5017,7 +5081,7 @@ void write_TestStructUnion(const struct TestStructUnion *s capnp_unused, TestStr
 	switch (s->un_which) {
 	case TestStructUnion_un__struct:
 	case TestStructUnion_un_object:
-		capn_setp(p.p, 0, s->un.object.p);
+		capn_setp(p.p, 0, (s->un.object.p.type != CAPN_NULL) ? s->un.object.p : capn_null);
 		break;
 	default:
 		break;
@@ -5115,7 +5179,7 @@ void write_TestPrintInlineStructs(const struct TestPrintInlineStructs *s capnp_u
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_set_text(p.p, 0, s->someText);
-	capn_setp(p.p, 1, s->structList.p);
+	capn_setp(p.p, 1, (s->structList.p.type != CAPN_NULL) ? s->structList.p : capn_null);
 }
 void get_TestPrintInlineStructs(struct TestPrintInlineStructs *s, TestPrintInlineStructs_list l, int i) {
 	TestPrintInlineStructs_ptr p;
@@ -5153,7 +5217,7 @@ void TestPrintInlineStructs_set_someText(TestPrintInlineStructs_ptr p, capn_text
 void TestPrintInlineStructs_set_structList(TestPrintInlineStructs_ptr p, TestPrintInlineStructs_InlineStruct_list structList)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 1, structList.p);
+	capn_setp(p.p, 1, (structList.p.type != CAPN_NULL) ? structList.p : capn_null);
 }
 
 TestPrintInlineStructs_InlineStruct_ptr new_TestPrintInlineStructs_InlineStruct(struct capn_segment *s) {
@@ -5355,8 +5419,8 @@ void read_TestSturdyRef(struct TestSturdyRef *s capnp_unused, TestSturdyRef_ptr 
 void write_TestSturdyRef(const struct TestSturdyRef *s capnp_unused, TestSturdyRef_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
-	capn_setp(p.p, 0, s->hostId.p);
-	capn_setp(p.p, 1, s->objectId);
+	capn_setp(p.p, 0, (s->hostId.p.type != CAPN_NULL) ? s->hostId.p : capn_null);
+	capn_setp(p.p, 1, (s->objectId.type != CAPN_NULL) ? s->objectId : capn_null);
 }
 void get_TestSturdyRef(struct TestSturdyRef *s, TestSturdyRef_list l, int i) {
 	TestSturdyRef_ptr p;
@@ -5388,13 +5452,13 @@ capn_ptr TestSturdyRef_get_objectId(TestSturdyRef_ptr p)
 void TestSturdyRef_set_hostId(TestSturdyRef_ptr p, TestSturdyRefHostId_ptr hostId)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 0, hostId.p);
+	capn_setp(p.p, 0, (hostId.p.type != CAPN_NULL) ? hostId.p : capn_null);
 }
 
 void TestSturdyRef_set_objectId(TestSturdyRef_ptr p, capn_ptr objectId)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 1, objectId);
+	capn_setp(p.p, 1, (objectId.type != CAPN_NULL) ? objectId : capn_null);
 }
 
 TestSturdyRefHostId_ptr new_TestSturdyRefHostId(struct capn_segment *s) {
@@ -5657,7 +5721,7 @@ void write_TestNameAnnotation(const struct TestNameAnnotation *s capnp_unused, T
 	capn_write16(p.p, 6, s->badlyNamedUnion_which);
 	switch (s->badlyNamedUnion_which) {
 	case TestNameAnnotation_badlyNamedUnion_baz:
-		capn_setp(p.p, 0, s->badlyNamedUnion.baz.p);
+		capn_setp(p.p, 0, (s->badlyNamedUnion.baz.p.type != CAPN_NULL) ? s->badlyNamedUnion.baz.p : capn_null);
 		break;
 	case TestNameAnnotation_badlyNamedUnion_badlyNamedGroup:
 		break;
@@ -5696,7 +5760,7 @@ void write_TestNameAnnotation_NestedStruct(const struct TestNameAnnotation_Neste
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write1(p.p, 0, s->badNestedFieldName != 0);
-	capn_setp(p.p, 0, s->anotherBadNestedFieldName.p);
+	capn_setp(p.p, 0, (s->anotherBadNestedFieldName.p.type != CAPN_NULL) ? s->anotherBadNestedFieldName.p : capn_null);
 }
 void get_TestNameAnnotation_NestedStruct(struct TestNameAnnotation_NestedStruct *s, TestNameAnnotation_NestedStruct_list l, int i) {
 	TestNameAnnotation_NestedStruct_ptr p;
@@ -5734,5 +5798,16 @@ void TestNameAnnotation_NestedStruct_set_badNestedFieldName(TestNameAnnotation_N
 void TestNameAnnotation_NestedStruct_set_anotherBadNestedFieldName(TestNameAnnotation_NestedStruct_ptr p, TestNameAnnotation_NestedStruct_ptr anotherBadNestedFieldName)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 0, anotherBadNestedFieldName.p);
+	capn_setp(p.p, 0, (anotherBadNestedFieldName.p.type != CAPN_NULL) ? anotherBadNestedFieldName.p : capn_null);
+}
+
+TestInterface_ptr new_TestInterface(struct capn_segment *s) {
+	TestInterface_ptr p;
+	p.p = capn_new_interface(s, 0, 0);
+	return p;
+}
+TestInterface_list new_TestInterface_list(struct capn_segment *s, int len) {
+	TestInterface_list p;
+	p.p = capn_new_ptr_list(s, len);
+	return p;
 }
