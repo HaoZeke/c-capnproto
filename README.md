@@ -158,8 +158,10 @@ allocator and feed a caller buffer with `capn_init_mem` /
 
 Harnesses live in [`fuzz/read_mem.c`](fuzz/read_mem.c) (memory reader) and
 [`fuzz/read_fp.c`](fuzz/read_fp.c) (`FILE*` reader). They link the addressbook
-example schema. Seed corpus: `fuzz/in/` (the autotools `fuzz-mem` / `fuzz-fp`
-targets create it).
+example schema. Seed corpus: `fuzz/in/` (checked-in `Person.bin`; the autotools
+`fuzz-mem` / `fuzz-fp` targets also create it via `capnp encode`). CI Ubuntu
+builds the meson harnesses (`-Dfuzz=true`) and runs a one-shot smoke on that
+seed; it does not launch unbounded AFL.
 
 ### Meson (libFuzzer or AFL++)
 
@@ -167,6 +169,8 @@ targets create it).
 meson setup build-fuzz -Dfuzz=true -Denable_tests=false
 meson compile -C build-fuzz
 # harnesses: build-fuzz/fuzz-mem  build-fuzz/fuzz-fp
+meson test -C build-fuzz   # fuzz-mem-smoke / fuzz-fp-smoke on Person.bin
+# same one-shot: ./build-fuzz/fuzz-mem fuzz/in/Person.bin
 ```
 
 libFuzzer: configure with clang and `-Db_sanitize=fuzzer,address`. AFL++: set

@@ -115,6 +115,7 @@ EXTRA_DIST += \
 	tests/interface-field.capnp \
 	tests/interface-field-test.cpp \
 	fuzz/Person.txt \
+	fuzz/in/Person.bin \
 	fuzz/read_mem.c \
 	fuzz/read_fp.c
 capn_test_CPPFLAGS = $(AM_CPPFLAGS) $(GTEST_CPPFLAGS) \

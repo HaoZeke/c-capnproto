@@ -295,7 +295,7 @@ endif
 if get_option('fuzz')
   fuzz_inc = include_directories(['lib', 'tests', 'compiler'])
   # read_mem.c uses lstat; strict c99 hides POSIX declarations.
-  executable(
+  fuzz_mem = executable(
     'fuzz-mem',
     ['fuzz' / 'read_mem.c', 'tests' / 'addressbook.capnp.c'],
     include_directories: fuzz_inc,
@@ -305,7 +305,7 @@ if get_option('fuzz')
     install: false,
     implicit_include_directories: false,
   )
-  executable(
+  fuzz_fp = executable(
     'fuzz-fp',
     ['fuzz' / 'read_fp.c', 'tests' / 'addressbook.capnp.c'],
     include_directories: fuzz_inc,
@@ -315,4 +315,35 @@ if get_option('fuzz')
     install: false,
     implicit_include_directories: false,
   )
+
+  # One-shot smoke on the seed corpus. Prefer a freshly encoded Person.bin
+  # when capnp is on PATH (same as the autotools fuzz/in/Person.bin rule);
+  # otherwise use the checked-in seed. Not unbounded AFL.
+  fs = import('fs')
+  fuzz_seed = meson.project_source_root() / 'fuzz' / 'in' / 'Person.bin'
+  capnp_fuzz = find_program('capnp', required: false)
+  sh = find_program('sh', required: false)
+  if capnp_fuzz.found() and sh.found()
+    fuzz_person_bin = custom_target(
+      'fuzz-person-bin',
+      input: files('fuzz' / 'Person.txt'),
+      output: 'Person.bin',
+      command: [
+        sh,
+        '-c',
+        '"$1" encode -I "$2" "$3" Person < "$4" > "$5"',
+        '--',
+        capnp_fuzz.full_path(),
+        meson.project_source_root() / 'compiler',
+        meson.project_source_root() / 'tests' / 'addressbook.capnp',
+        '@INPUT@',
+        '@OUTPUT@',
+      ],
+    )
+    test('fuzz-mem-smoke', fuzz_mem, args: [fuzz_person_bin])
+    test('fuzz-fp-smoke', fuzz_fp, args: [fuzz_person_bin])
+  elif fs.exists(fuzz_seed)
+    test('fuzz-mem-smoke', fuzz_mem, args: [fuzz_seed])
+    test('fuzz-fp-smoke', fuzz_fp, args: [fuzz_seed])
+  endif
 endif
