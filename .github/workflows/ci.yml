@@ -14,11 +14,13 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            meson_opts: -Denable_tests=true
+            meson_opts: -Denable_tests=true -Dfuzz=true
             run_tests: true
+            fuzz_smoke: true
           - os: macos-latest
             meson_opts: -Denable_tests=true
             run_tests: true
+            fuzz_smoke: false
           # x64 only. No win32 matrix (no validated ILP32 Windows
           # toolchain). 32-bit: compile-time check_segment_alignment;
           # optional scripts/smoke-m32.sh when gcc -m32 exists.
@@ -26,6 +28,7 @@ jobs:
           - os: windows-latest
             meson_opts: --vsenv -Denable_tests=false
             run_tests: false
+            fuzz_smoke: false
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,6 +38,9 @@ jobs:
           python-version: "3.12"
       - name: Install meson ninja
         run: pip install meson ninja
+      - name: Install capnproto
+        if: matrix.fuzz_smoke
+        run: sudo apt-get update && sudo apt-get install -y capnproto
       - name: Configure
         run: meson setup build -Dbuildtype=release ${{ matrix.meson_opts }}
       - name: Build
@@ -42,6 +48,23 @@ jobs:
       - name: Test
         if: matrix.run_tests
         run: meson test -C build --print-errorlogs
+      - name: Fuzz harness smoke
+        if: matrix.fuzz_smoke
+        run: |
+          # One-shot corpus replay, not unbounded AFL/libFuzzer.
+          mkdir -p fuzz/in
+          if [ ! -s fuzz/in/Person.bin ]; then
+            if ! command -v capnp >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y capnproto
+            fi
+            capnp encode -Icompiler tests/addressbook.capnp Person < fuzz/Person.txt > fuzz/in/Person.bin
+          fi
+          test -s fuzz/in/Person.bin
+          test -x build/fuzz-mem
+          test -x build/fuzz-fp
+          ./build/fuzz-mem fuzz/in/Person.bin
+          ./build/fuzz-fp fuzz/in/Person.bin
       - name: Skip tests (MSVC gtest)
         if: ${{ !matrix.run_tests }}
         run: echo "Windows job builds libcapnp_c and capnpc-c only; gtest subproject is not built (-Denable_tests=false)."

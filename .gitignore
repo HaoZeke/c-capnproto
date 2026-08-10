@@ -34,7 +34,9 @@ c-capnproto.pc
 subprojects/googletest-*
 subprojects/packagecache
 
-fuzz/in
+# AFL I/O; keep the checked-in Person.bin seed
+fuzz/in/*
+!fuzz/in/Person.bin
 fuzz/out
 fuzz/read-mem*
 fuzz/read-fp*

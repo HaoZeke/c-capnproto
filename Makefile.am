@@ -112,6 +112,7 @@ EXTRA_DIST += \
 	tests/fixtures/addressbook.packed.bin \
 	tests/fixtures/addressbook.canonical.bin \
 	fuzz/Person.txt \
+	fuzz/in/Person.bin \
 	fuzz/read_mem.c \
 	fuzz/read_fp.c
 capn_test_CPPFLAGS = $(AM_CPPFLAGS) $(GTEST_CPPFLAGS) \
