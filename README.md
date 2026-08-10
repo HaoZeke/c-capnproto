@@ -144,7 +144,8 @@ the sample in [`examples/kernel`](examples/kernel).
 ### Small messages
 
 `capn_init_malloc` allocates a new 4096-byte segment on the first write of
-each session. Calling it once per small message pays that malloc every time.
+each session (`-DCAPN_CREATE_MIN_SZ=<power of two>` overrides the floor).
+Calling it once per small message pays that malloc every time.
 Reuse one `struct capn` (and its arena) across messages, or skip the heap
 allocator and feed a caller buffer with `capn_init_mem` /
 `capn_append_segment`.

@@ -86,6 +86,7 @@ if get_option('enable_tests') and not meson.is_subproject()
   gtest_proj = subproject('gtest')
   gtest_dep = gtest_proj.get_variable('gtest_dep')
   gmock_dep = gtest_proj.get_variable('gmock_dep')
+  gtest_main_dep = gtest_proj.get_variable('gtest_main_dep')
 
   test_dependencies = [libcapnp_dep, gtest_dep, gmock_dep, thread_dep]
 
@@ -133,9 +134,25 @@ if get_option('enable_tests') and not meson.is_subproject()
   )
   test('capn-test', exe)
 
+  create_min_sz_test = executable(
+    'create-min-sz-test',
+    [
+      'tests' / 'create-min-sz-test.cpp',
+      'lib' / 'capn.c',
+      'lib' / 'capn-malloc.c',
+      'lib' / 'capn-stream.c',
+    ],
+    include_directories: include_directories(['lib']),
+    dependencies: [gtest_dep, gtest_main_dep, thread_dep],
+    c_args: common_c_args + ['-DCAPN_CREATE_MIN_SZ=512'],
+    cpp_args: common_cpp_args,
+    install: false,
+    implicit_include_directories: false,
+  )
+  test('create-min-sz-test', create_min_sz_test)
+
   capnp = find_program('capnp', required: false)
   if capnp.found()
-    gtest_main_dep = gtest_proj.get_variable('gtest_main_dep')
     codec_c_args = common_c_args + ['-D_POSIX_C_SOURCE=200809L']
 
     codec_roundtrip_gen = custom_target(

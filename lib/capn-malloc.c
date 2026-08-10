@@ -44,13 +44,19 @@ struct check_segment_alignment {
 	unsigned int foo : (sizeof(struct capn_segment)&7) ? -1 : 1;
 };
 
+/* Floor and rounding unit for create() allocations. Must be a power of two.
+ * Override at compile time: -DCAPN_CREATE_MIN_SZ=512 */
+#ifndef CAPN_CREATE_MIN_SZ
+#define CAPN_CREATE_MIN_SZ 4096
+#endif
+
 static struct capn_segment *create(void *u, uint32_t id, int sz) {
 	struct capn_segment *s;
 	sz += sizeof(*s);
-	if (sz < 4096) {
-		sz = 4096;
+	if (sz < CAPN_CREATE_MIN_SZ) {
+		sz = CAPN_CREATE_MIN_SZ;
 	} else {
-		sz = (sz + 4095) & ~4095;
+		sz = (sz + CAPN_CREATE_MIN_SZ - 1) & ~(CAPN_CREATE_MIN_SZ - 1);
 	}
 	s = (struct capn_segment*) calloc(1, sz);
 	s->data = (char*) (s+1);
