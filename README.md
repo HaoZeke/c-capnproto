@@ -97,6 +97,18 @@ $C.fieldgetset;
 struct MyStruct {}
 ```
 
+Pointer fields also get `Foo_has_bar(Foo_ptr p)`: nonzero when the wire
+pointer is not `CAPN_NULL`. That is C++ `hasFoo()`. `get_` / `read_` still
+substitute schema defaults, so a null Text reads as `""` while
+`Foo_has_note` is 0. Use `capn_getp` (or `has_`) when null vs empty
+matters.
+
+Empty Text is a `capn_text` with `str` non-NULL and `len == 0` (`capn_set_text`
+writes a 1-byte NUL list). Null Text is `str == NULL`; `capn_set_text`
+writes a wire null. Empty Data is `capn_new_list8(seg, 0)` then
+`capn_set_data`. Null Data is a zeroed `capn_data`. Codecgen `NULL` Text
+is wire null; a non-NULL Data pointer with length 0 is an empty list.
+
 ### Example C code
 
 See the unit tests in [`tests/example-test.cpp`](tests/example-test.cpp).
