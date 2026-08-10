@@ -475,6 +475,71 @@ TEST(Alignment, MallocSegmentData) {
   capn_free(&c);
 }
 
+/* 30-bit signed pointer offset is [-2^29, 2^29-1] words. */
+static const int64_t kPtrOffMinWords = -(INT64_C(1) << 29);
+static const int64_t kPtrOffMaxWords = (INT64_C(1) << 29) - 1;
+
+TEST(WireFormat, WritePtrTagOverflowDoesNotWrite) {
+  uint64_t word = UINT64_C(0xdeadbeefcafebabe);
+  capn_ptr p;
+  memset(&p, 0, sizeof(p));
+  p.type = CAPN_STRUCT;
+  p.datasz = 8;
+  p.ptrs = 0;
+
+  EXPECT_EQ(-1, write_ptr_tag((char *)&word, p, (kPtrOffMinWords - 1) * 8));
+  EXPECT_EQ(UINT64_C(0xdeadbeefcafebabe), word);
+
+  EXPECT_EQ(-1, write_ptr_tag((char *)&word, p, (kPtrOffMaxWords + 1) * 8));
+  EXPECT_EQ(UINT64_C(0xdeadbeefcafebabe), word);
+
+  EXPECT_EQ(0, write_ptr_tag((char *)&word, p, kPtrOffMinWords * 8));
+  EXPECT_NE(UINT64_C(0xdeadbeefcafebabe), word);
+  word = UINT64_C(0xdeadbeefcafebabe);
+  EXPECT_EQ(0, write_ptr_tag((char *)&word, p, kPtrOffMaxWords * 8));
+  EXPECT_NE(UINT64_C(0xdeadbeefcafebabe), word);
+}
+
+TEST(WireFormat, NullStructPointerEncodesAsNull) {
+  Session ctx;
+  capn_ptr root = capn_root(&ctx.capn);
+  capn_ptr outer = capn_new_struct(root.seg, 0, 1);
+  ASSERT_EQ(CAPN_STRUCT, outer.type);
+  ASSERT_EQ(0, capn_set_root(&ctx.capn, outer));
+
+  capn_ptr nil;
+  memset(&nil, 0, sizeof(nil));
+  EXPECT_EQ(0, capn_setp(outer, 0, nil));
+  EXPECT_EQ(CAPN_NULL, capn_getp(outer, 0, 1).type);
+
+  /* Present-looking struct metadata with no payload must still encode as
+   * null, not a far/copy of a NULL data pointer. */
+  capn_ptr hollow;
+  memset(&hollow, 0, sizeof(hollow));
+  hollow.type = CAPN_STRUCT;
+  hollow.datasz = 8;
+  EXPECT_EQ(0, capn_setp(outer, 0, hollow));
+  EXPECT_EQ(CAPN_NULL, capn_getp(outer, 0, 1).type);
+}
+
+TEST(WireFormat, WritePtrTagNegativeOffsetRoundTrip) {
+  Session ctx;
+  capn_ptr root = capn_root(&ctx.capn);
+  capn_ptr behind = capn_new_struct(root.seg, 8, 0);
+  ASSERT_EQ(CAPN_STRUCT, behind.type);
+  EXPECT_EQ(0, capn_write64(behind, 0, UINT64_C(0x0102030405060708)));
+
+  capn_ptr holder = capn_new_struct(behind.seg, 0, 1);
+  ASSERT_EQ(CAPN_STRUCT, holder.type);
+  EXPECT_LT(behind.data, holder.data);
+  EXPECT_EQ(0, capn_setp(holder, 0, behind));
+
+  capn_ptr got = capn_getp(holder, 0, 1);
+  EXPECT_EQ(CAPN_STRUCT, got.type);
+  EXPECT_EQ(8, got.datasz);
+  EXPECT_EQ(UINT64_C(0x0102030405060708), capn_read64(got, 0));
+}
+
 int main(int argc, char *argv[]) {
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

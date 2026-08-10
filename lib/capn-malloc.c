@@ -91,6 +91,10 @@ void capn_reset_copy(struct capn *c) {
 }
 
 #define ZBUF_SZ 4096
+/* Framing header is a stack array of this many segment-size words.
+ * The first word of the stream is (segnum - 1); more than CAPN_MAX_SEGS
+ * segments cannot be decoded. */
+#define CAPN_MAX_SEGS 1024
 
 static int read_fp(void *p, size_t sz, FILE *f, struct capn_stream *z, uint8_t* zbuf, int packed) {
 #ifndef __KERNEL__
@@ -142,7 +146,7 @@ static int init_fp(struct capn *c, FILE *f, struct capn_stream *z, int packed) {
 
 	struct capn_segment *s = NULL;
 	uint32_t i, segnum, total = 0;
-	uint32_t hdr[1024];
+	uint32_t hdr[CAPN_MAX_SEGS];
 	uint8_t zbuf[ZBUF_SZ];
 	char *data = NULL;
 
@@ -153,7 +157,7 @@ static int init_fp(struct capn *c, FILE *f, struct capn_stream *z, int packed) {
 		goto err;
 
 	segnum = capn_flip32(segnum);
-	if (segnum > 1023)
+	if (segnum > CAPN_MAX_SEGS - 1)
 		goto err;
 	segnum++; /* The wire encoding was zero-based */
 
@@ -260,10 +264,18 @@ static int64_t capn_write_mem_packed(struct capn *c, uint8_t *p, size_t sz)
 
 	root = capn_root(c);
 	header_calc(c, &headerlen, &headersz);
-	header = (uint32_t*) (p + headersz + 2); /* must reserve two bytes for worst case expansion */
 
-	if (sz < headersz*2 + 2) /* We must have space for temporary writing of header to deflate */
+	/* Uncompressed header is written at p + headersz + 2 (two bytes of
+	 * worst-case pack expansion), then header_render stores headerlen
+	 * little-endian uint32s. Reject before any store.
+	 * Need: headersz + 2 + headerlen*4 <= sz
+	 */
+	if (headersz > sz || sz - headersz < 2)
 		return -1;
+	if (headerlen > (sz - headersz - 2) / 4)
+		return -1;
+
+	header = (uint32_t*) (p + headersz + 2);
 
 	ret = header_render(c, root.seg, header, headerlen, &datasz);
 	if (ret != 0)

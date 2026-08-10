@@ -9,6 +9,7 @@
 #endif
 
 static const capn_text capn_val0 = {0,"",0};
+static const capn_ptr capn_null = {CAPN_NULL};
 
 Person_ptr new_Person(struct capn_segment *s) {
 	Person_ptr p;
@@ -43,7 +44,7 @@ void write_Person(const struct Person *s capnp_unused, Person_ptr p) {
 	capn_write32(p.p, 0, s->id);
 	capn_set_text(p.p, 0, s->name);
 	capn_set_text(p.p, 1, s->email);
-	capn_setp(p.p, 2, s->phones.p);
+	capn_setp(p.p, 2, (s->phones.p.type != CAPN_NULL) ? s->phones.p : capn_null);
 	capn_write16(p.p, 4, s->employment_which);
 	switch (s->employment_which) {
 	case Person_employment_employer:
@@ -118,7 +119,7 @@ void Person_set_email(Person_ptr p, capn_text email)
 void Person_set_phones(Person_ptr p, Person_PhoneNumber_list phones)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 2, phones.p);
+	capn_setp(p.p, 2, (phones.p.type != CAPN_NULL) ? phones.p : capn_null);
 }
 
 Person_PhoneNumber_ptr new_Person_PhoneNumber(struct capn_segment *s) {
@@ -200,7 +201,7 @@ void read_AddressBook(struct AddressBook *s capnp_unused, AddressBook_ptr p) {
 void write_AddressBook(const struct AddressBook *s capnp_unused, AddressBook_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
-	capn_setp(p.p, 0, s->people.p);
+	capn_setp(p.p, 0, (s->people.p.type != CAPN_NULL) ? s->people.p : capn_null);
 }
 void get_AddressBook(struct AddressBook *s, AddressBook_list l, int i) {
 	AddressBook_ptr p;
@@ -224,5 +225,5 @@ Person_list AddressBook_get_people(AddressBook_ptr p)
 void AddressBook_set_people(AddressBook_ptr p, Person_list people)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 0, people.p);
+	capn_setp(p.p, 0, (people.p.type != CAPN_NULL) ? people.p : capn_null);
 }

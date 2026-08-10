@@ -16,6 +16,16 @@ union AlignedData {
   uint64_t words[wordCount];
 };
 
+TEST(Stream, ReadRejectsTooManySegments) {
+  /* Wire word 0 is (segnum - 1). 1024 => 1025 segments, above CAPN_MAX_SEGS. */
+  AlignedData<1> data = {{
+    0x00, 0x04, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+  }};
+  struct capn ctx;
+  EXPECT_NE(0, capn_init_mem(&ctx, data.bytes, sizeof(data.bytes), 0));
+}
+
 TEST(Stream, ReadEmptyStream_Even) {
   AlignedData<2> data = {{
     1, 0, 0, 0, // num of segs - 1
@@ -181,6 +191,29 @@ TEST(Stream, WriteEmptyStreamPacked) {
 
   capn_free(&ctx1);
   capn_free(&ctx2);
+}
+
+TEST(Stream, WritePackedHeaderOverflowTinyBuffer) {
+  /* capn_write_mem_packed writes the uncompressed header at
+   * p + headersz + 2 (headerlen uint32s). A caller-claimed size that
+   * cannot hold that scratch must return -1 and must not store past sz.
+   */
+  uint8_t buf[64];
+  memset(buf, 0xAB, sizeof(buf));
+
+  struct capn ctx;
+  capn_init_malloc(&ctx);
+  struct capn_ptr root = capn_root(&ctx);
+  ASSERT_EQ(CAPN_PTR_LIST, root.type);
+
+  /* One segment: headerlen = 2, headersz = 8. Scratch ends at 8+2+8 = 18. */
+  EXPECT_EQ(-1, capn_write_mem(&ctx, buf, 8, 1));
+  EXPECT_EQ(-1, capn_write_mem(&ctx, buf, 17, 1));
+  for (size_t i = 17; i < sizeof(buf); i++) {
+    EXPECT_EQ(0xAB, buf[i]) << i;
+  }
+
+  capn_free(&ctx);
 }
 
 TEST(Stream, WriteOneSegment) {

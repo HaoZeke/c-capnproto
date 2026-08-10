@@ -81,6 +81,10 @@ capnp compile -Icompiler -o ./capnpc-c schema.capnp
 
 `capnp` generates a C struct that corresponds to each capn proto struct, along with read/write functions that convert to/from capn proto form. Generated headers `#include "c.capnp.h"` (installed next to `capnp_c.h`).
 
+You **must** call `capn_set_root(c, person.p)` (or `capn_setp(capn_root(c), 0, person.p)`) after `new_*` / `write_*`. Those helpers only fill a struct in a segment; they do not attach it as the message root. Omitting the call writes a valid empty message (`capn_getp(root, 0)` is null; `capnp decode` shows `()`). Empty messages are legal -- they are just not the payload you built.
+
+Zero-init C structs (`struct Person p = {0};` or `memset`) before `write_*` so optional pointer fields (nested structs, lists, text, data) stay unset. A `CAPN_NULL` / NULL `data` pointer is encoded as a wire null; C++ `hasFoo()` is false and this reader returns `CAPN_NULL`. Uninitialized (garbage) pointer fields are not safe.
+
 If you want accessor functions for struct members, import the C annotations (`/c.capnp`) and use `$C.fieldgetset`:
 
 ```capnp
@@ -96,6 +100,18 @@ struct MyStruct {}
 See the unit tests in [`tests/example-test.cpp`](tests/example-test.cpp).
 The example schema file is [`tests/addressbook.capnp`](tests/addressbook.capnp).
 The tests are written in C++, but only use C features.
+
+Typical write path:
+
+```c
+struct capn c;
+capn_init_malloc(&c);
+Person_ptr pp = new_Person(capn_root(&c).seg);
+write_Person(&person, pp);
+capn_set_root(&c, pp.p);   /* required; otherwise the message is empty */
+sz = capn_write_mem(&c, buf, sizeof(buf), 0);
+capn_free(&c);
+```
 
 You need to compile these runtime library files and link them into your own project's binaries:
 

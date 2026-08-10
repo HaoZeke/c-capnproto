@@ -227,6 +227,11 @@ CAPN_EXPORT void capn_append_segment(struct capn*, struct capn_segment*);
 CAPN_EXPORT capn_ptr capn_root(struct capn *c);
 CAPN_EXPORT void capn_resolve(capn_ptr *p);
 
+/* capn_set_root sets the message root to p (capn_setp(capn_root(c), 0, p)).
+ * new_* / write_* only fill a struct in a segment; the message is empty
+ * until the root pointer is set. Empty messages are valid. */
+CAPN_EXPORT int capn_set_root(struct capn *c, capn_ptr p);
+
 #define capn_len(list) ((list).p.type == CAPN_FAR_POINTER ? (capn_resolve(&(list).p), (list).p.len) : (list).p.len)
 
 /* capn_getp|setp functions get/set ptrs in list/structs
@@ -234,6 +239,8 @@ CAPN_EXPORT void capn_resolve(capn_ptr *p);
  * capn_setp will copy the data, create far pointers, etc if the target
  * is in a different segment/context.
  * Both of these will use/return inner pointers for composite lists.
+ * A tgt of type CAPN_NULL, or with data == NULL, is encoded as a null
+ * pointer. Zero-init C structs so optional pointer fields stay unset.
  */
 CAPN_EXPORT capn_ptr capn_getp(capn_ptr p, int off, int resolve);
 CAPN_EXPORT int capn_setp(capn_ptr p, int off, capn_ptr tgt);
