@@ -11,6 +11,9 @@
 #include <gtest/gtest.h>
 #include <stdio.h>
 #include <string.h>
+#ifndef _MSC_VER
+#include <unistd.h>
+#endif
 
 template <int wordCount>
 union AlignedData {
@@ -525,3 +528,142 @@ TEST(Stream, WriteFpTwoSegmentsPackedRoundTrip) {
   capn_free(&ctx2);
   fclose(f);
 }
+
+#ifndef _MSC_VER
+static ssize_t test_write_fd(int fd, const void *p, size_t count) {
+  return write(fd, p, count);
+}
+
+static ssize_t test_read_fd(int fd, void *p, size_t count) {
+  return read(fd, p, count);
+}
+
+TEST(Stream, InitFdRejectsNullRead) {
+  struct capn ctx;
+  EXPECT_EQ(-1, capn_init_fd(&ctx, NULL, 0, 0));
+  EXPECT_EQ(-1, capn_init_fd(&ctx, NULL, 0, 1));
+}
+
+TEST(Stream, WriteFdInitFdUnpackedRoundTrip) {
+  const uint64_t val = UINT64_C(0x1011121314151617);
+  FILE *f = tmpfile();
+  ASSERT_TRUE(f != NULL);
+
+  struct capn ctx1, ctx2;
+  capn_init_malloc(&ctx1);
+  fill_one_segment(&ctx1, val);
+
+  int n = capn_write_fd(&ctx1, test_write_fd, fileno(f), 0);
+  EXPECT_EQ(3 * 8, n);
+
+  rewind(f);
+  ASSERT_EQ(0, capn_init_fd(&ctx2, test_read_fd, fileno(f), 0));
+  EXPECT_EQ(1, ctx2.segnum);
+  struct capn_ptr root = capn_root(&ctx2);
+  struct capn_ptr ptr = capn_getp(root, 0, 1);
+  EXPECT_EQ(val, capn_read64(ptr, 0));
+
+  capn_free(&ctx1);
+  capn_free(&ctx2);
+  fclose(f);
+}
+
+TEST(Stream, WriteFdInitFdPackedRoundTrip) {
+  const uint64_t val = UINT64_C(0x1011121314151617);
+  FILE *f = tmpfile();
+  ASSERT_TRUE(f != NULL);
+
+  struct capn ctx1, ctx2;
+  capn_init_malloc(&ctx1);
+  fill_one_segment(&ctx1, val);
+
+  int n = capn_write_fd(&ctx1, test_write_fd, fileno(f), 1);
+  EXPECT_EQ(14, n);
+
+  rewind(f);
+  ASSERT_EQ(0, capn_init_fd(&ctx2, test_read_fd, fileno(f), 1));
+  EXPECT_EQ(1, ctx2.segnum);
+  struct capn_ptr root = capn_root(&ctx2);
+  struct capn_ptr ptr = capn_getp(root, 0, 1);
+  EXPECT_EQ(val, capn_read64(ptr, 0));
+
+  capn_free(&ctx1);
+  capn_free(&ctx2);
+  fclose(f);
+}
+
+TEST(Stream, WriteFdInitFdPipeUnpackedRoundTrip) {
+  const uint64_t val = UINT64_C(0xfffefdfcfbfaf9f8);
+  int fds[2];
+  ASSERT_EQ(0, pipe(fds));
+
+  struct capn ctx1, ctx2;
+  capn_init_malloc(&ctx1);
+  fill_one_segment(&ctx1, val);
+
+  int n = capn_write_fd(&ctx1, test_write_fd, fds[1], 0);
+  EXPECT_EQ(3 * 8, n);
+  ASSERT_EQ(0, close(fds[1]));
+
+  ASSERT_EQ(0, capn_init_fd(&ctx2, test_read_fd, fds[0], 0));
+  EXPECT_EQ(1, ctx2.segnum);
+  struct capn_ptr root = capn_root(&ctx2);
+  struct capn_ptr ptr = capn_getp(root, 0, 1);
+  EXPECT_EQ(val, capn_read64(ptr, 0));
+
+  capn_free(&ctx1);
+  capn_free(&ctx2);
+  ASSERT_EQ(0, close(fds[0]));
+}
+
+TEST(Stream, WriteFdInitFdPipePackedRoundTrip) {
+  const uint64_t val = UINT64_C(0x1011121314151617);
+  int fds[2];
+  ASSERT_EQ(0, pipe(fds));
+
+  struct capn ctx1, ctx2;
+  capn_init_malloc(&ctx1);
+  fill_one_segment(&ctx1, val);
+
+  int n = capn_write_fd(&ctx1, test_write_fd, fds[1], 1);
+  EXPECT_EQ(14, n);
+  ASSERT_EQ(0, close(fds[1]));
+
+  ASSERT_EQ(0, capn_init_fd(&ctx2, test_read_fd, fds[0], 1));
+  EXPECT_EQ(1, ctx2.segnum);
+  struct capn_ptr root = capn_root(&ctx2);
+  struct capn_ptr ptr = capn_getp(root, 0, 1);
+  EXPECT_EQ(val, capn_read64(ptr, 0));
+
+  capn_free(&ctx1);
+  capn_free(&ctx2);
+  ASSERT_EQ(0, close(fds[0]));
+}
+
+TEST(Stream, WriteFdInitFdTwoSegmentsPackedRoundTrip) {
+  int fds[2];
+  ASSERT_EQ(0, pipe(fds));
+
+  struct capn ctx1, ctx2;
+  capn_init_malloc(&ctx1);
+  ctx1.create = &CreateSmallSegment;
+  struct capn_ptr root = capn_root(&ctx1);
+  struct capn_ptr ptr1 = capn_new_struct(root.seg, 8, 0);
+  EXPECT_EQ(0, capn_setp(root, 0, ptr1));
+  EXPECT_EQ(0, capn_write64(ptr1, 0, UINT64_C(0xfffefdfcfbfaf9f8)));
+  EXPECT_EQ(2, ctx1.segnum);
+
+  int n = capn_write_fd(&ctx1, test_write_fd, fds[1], 1);
+  EXPECT_EQ(20, n);
+  ASSERT_EQ(0, close(fds[1]));
+
+  ASSERT_EQ(0, capn_init_fd(&ctx2, test_read_fd, fds[0], 1));
+  root = capn_root(&ctx2);
+  ptr1 = capn_getp(root, 0, 1);
+  EXPECT_EQ(UINT64_C(0xfffefdfcfbfaf9f8), capn_read64(ptr1, 0));
+
+  capn_free(&ctx1);
+  capn_free(&ctx2);
+  ASSERT_EQ(0, close(fds[0]));
+}
+#endif /* !_MSC_VER */

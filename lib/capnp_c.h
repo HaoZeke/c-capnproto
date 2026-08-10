@@ -383,9 +383,10 @@ CAPN_INLINE int capn_write64(capn_ptr p, int off, uint64_t val);
  * segments) across messages, or skip the heap allocator and call
  * capn_init_mem / capn_append_segment on a caller buffer instead.
  *
- * capn_init_(fp|mem) inits by reading segments in from the file/memory buffer
- * in serialized form (optionally packed). It will then setup the create
- * function ala capn_init_malloc so that further segments can be created.
+ * capn_init_(fp|mem|fd) inits by reading segments from a FILE*, a memory
+ * buffer, or a file descriptor (via a read callback) in serialized form
+ * (optionally packed). It will then setup the create function ala
+ * capn_init_malloc so that further segments can be created.
  *
  * capn_free frees all the segment headers and data created by the create
  * function setup by capn_init_*
@@ -393,6 +394,12 @@ CAPN_INLINE int capn_write64(capn_ptr p, int off, uint64_t val);
 CAPN_EXPORT void capn_init_malloc(struct capn *c);
 CAPN_EXPORT int capn_init_fp(struct capn *c, FILE *f, int packed);
 CAPN_EXPORT int capn_init_mem(struct capn *c, const uint8_t *p, size_t sz, int packed);
+/* capn_init_fd is the read-side pair of capn_write_fd: the caller supplies
+ * a read callback (same shape as POSIX read). packed is the stream codec.
+ * Returns 0 on success, -1 on a NULL callback or a framing/I/O error.
+ * Under __KERNEL__ the symbol exists and returns -1 (use capn_init_mem).
+ */
+CAPN_EXPORT int capn_init_fd(struct capn *c, ssize_t (*read_fd)(int fd, void *p, size_t count), int fd, int packed);
 
 /* capn_size() calculates the amount of memory required to serialise the given
  * Cap'n Proto structure in the unpacked format. It does NOT apply to packed
