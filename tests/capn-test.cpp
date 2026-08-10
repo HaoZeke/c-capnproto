@@ -839,6 +839,25 @@ static void expect_list_c(capn_ptr holder, uint64_t c) {
   EXPECT_EQ(c, (word >> 32) & 7u);
 }
 
+TEST(WireFormat, NewStructListIsAlwaysComposite) {
+  Session ctx;
+  capn_ptr root = capn_root(&ctx.capn);
+  capn_ptr holder = capn_new_struct(root.seg, 0, 1);
+  capn_ptr list = capn_new_struct_list(holder.seg, 3, 8, 0);
+  ASSERT_EQ(CAPN_LIST, list.type);
+  EXPECT_EQ(1, list.is_composite_list);
+  EXPECT_EQ(3, list.len);
+  EXPECT_EQ(8, list.datasz);
+  EXPECT_EQ(0, list.ptrs);
+  ASSERT_EQ(0, capn_setp(holder, 0, list));
+  expect_list_c(holder, 7);
+  ASSERT_NE(static_cast<char *>(NULL), list.data);
+  uint64_t tag = capn_flip64(*(uint64_t *)(list.data - 8));
+  EXPECT_EQ(UINT64_C(3), (tag >> 2) & UINT64_C(0x3fffffff));
+  EXPECT_EQ(UINT64_C(1), (tag >> 32) & 0xffffu);
+  EXPECT_EQ(UINT64_C(0), tag >> 48);
+}
+
 TEST(WireFormat, EmptyStructListEncodesCompositeC7) {
   Session ctx;
   capn_ptr root = capn_root(&ctx.capn);

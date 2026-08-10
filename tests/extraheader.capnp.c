@@ -17,7 +17,7 @@ EXTRAHEADER_EXTATTR Widget_ptr new_Widget(struct capn_segment *s) {
 }
 EXTRAHEADER_EXTATTR Widget_list new_Widget_list(struct capn_segment *s, int len) {
 	Widget_list p;
-	p.p = capn_new_list(s, len, 8, 1);
+	p.p = capn_new_struct_list(s, len, 8, 1);
 	return p;
 }
 EXTRAHEADER_EXTATTR void read_Widget(struct Widget *s capnp_unused, Widget_ptr p) {

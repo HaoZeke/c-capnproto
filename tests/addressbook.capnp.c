@@ -18,7 +18,7 @@ Person_ptr new_Person(struct capn_segment *s) {
 }
 Person_list new_Person_list(struct capn_segment *s, int len) {
 	Person_list p;
-	p.p = capn_new_list(s, len, 8, 4);
+	p.p = capn_new_struct_list(s, len, 8, 4);
 	return p;
 }
 void read_Person(struct Person *s capnp_unused, Person_ptr p) {
@@ -129,7 +129,7 @@ Person_PhoneNumber_ptr new_Person_PhoneNumber(struct capn_segment *s) {
 }
 Person_PhoneNumber_list new_Person_PhoneNumber_list(struct capn_segment *s, int len) {
 	Person_PhoneNumber_list p;
-	p.p = capn_new_list(s, len, 8, 1);
+	p.p = capn_new_struct_list(s, len, 8, 1);
 	return p;
 }
 void read_Person_PhoneNumber(struct Person_PhoneNumber *s capnp_unused, Person_PhoneNumber_ptr p) {
@@ -190,7 +190,7 @@ AddressBook_ptr new_AddressBook(struct capn_segment *s) {
 }
 AddressBook_list new_AddressBook_list(struct capn_segment *s, int len) {
 	AddressBook_list p;
-	p.p = capn_new_list(s, len, 0, 1);
+	p.p = capn_new_struct_list(s, len, 0, 1);
 	return p;
 }
 void read_AddressBook(struct AddressBook *s capnp_unused, AddressBook_ptr p) {
