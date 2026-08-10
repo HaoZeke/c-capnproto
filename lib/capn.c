@@ -484,7 +484,11 @@ err:
 	return p;
 }
 
-static void write_ptr_tag(char *d, capn_ptr p, int off) {
+/* 30-bit signed pointer offset, in words. */
+#define CAPN_PTR_OFF_MIN_WORDS (-(int64_t)(1 << 29))
+#define CAPN_PTR_OFF_MAX_WORDS ((int64_t)(1 << 29) - 1)
+
+static int write_ptr_tag(char *d, capn_ptr p, int64_t off) {
 	/*
 	lsb                      struct pointer                       msb
 	+-+-----------------------------+---------------+---------------+
@@ -503,17 +507,22 @@ static void write_ptr_tag(char *d, capn_ptr p, int off) {
 	the signed integer (ie. values run into the sign bit). The
 	ASAN detector will rightly complain. So we do two's complement
 	manually, and check bounds, to stay within unsigned arithmetic.
+
+	off is the byte offset (typically pdata - d - 8). It is int64_t so a
+	ptrdiff_t on LP64 is not truncated to int before the 30-bit check.
+	On overflow the destination is left unwritten and -1 is returned.
 	*/
-	const int off_words = off / 8;
+	const int64_t off_words = off / 8;
 	uint64_t val;
+
+	if (off_words < CAPN_PTR_OFF_MIN_WORDS || off_words > CAPN_PTR_OFF_MAX_WORDS)
+		return -1;
+
 	if (off_words < 0) {
-		if (off_words < -(2147483647 >> 2) - 1) {
-			goto err;
-		}
-		uint32_t twos = 1 + ~(U32(-off_words) << 2);
+		uint32_t twos = 1u + ~(U32((uint64_t)(-off_words)) << 2);
 		val = U64(twos);
 	} else {
-		val = U64(U32(off_words) << 2);
+		val = U64(U32((uint64_t)off_words) << 2);
 	}
 
 	switch (p.type) {
@@ -561,9 +570,7 @@ static void write_ptr_tag(char *d, capn_ptr p, int off) {
 	}
 
 	*(uint64_t*) d = capn_flip64(val);
-
-err:
-	memset(&p, 0, sizeof(p));
+	return 0;
 }
 
 static void write_far_ptr(char *d, struct capn_segment *s, char *tgt) {
@@ -581,15 +588,13 @@ static int write_ptr(struct capn_segment *s, char *d, capn_ptr p) {
 	char *pdata = p.data - 8*p.is_composite_list;
 
 	if (p.type == CAPN_NULL || (p.type == CAPN_STRUCT && p.datasz == 0 && p.ptrs == 0)) {
-		write_ptr_tag(d, p, 0);
-		return 0;
+		return write_ptr_tag(d, p, 0);
 
 	} else if (!p.seg || p.seg->capn != s->capn || p.is_list_member) {
 		return NEED_TO_COPY;
 
 	} else if (p.seg == s) {
-		write_ptr_tag(d, p, pdata - d - 8);
-		return 0;
+		return write_ptr_tag(d, p, pdata - d - 8);
 
 	} else if (p.has_ptr_tag) {
 		/* By lucky chance, the data has a tag in front
@@ -601,7 +606,8 @@ static int write_ptr(struct capn_segment *s, char *d, capn_ptr p) {
 	} else if (p.seg->len + 8 <= p.seg->cap) {
 		/* The target segment has enough room for tag */
 		char *t = p.seg->data + p.seg->len;
-		write_ptr_tag(t, p, pdata - t - 8);
+		if (write_ptr_tag(t, p, pdata - t - 8))
+			return -1;
 		write_far_ptr(d, p.seg, t);
 		p.seg->len += 8;
 		return 0;
@@ -623,7 +629,8 @@ static int write_ptr(struct capn_segment *s, char *d, capn_ptr p) {
 		}
 
 		write_far_ptr(t, p.seg, pdata);
-		write_ptr_tag(t+8, p, 0);
+		if (write_ptr_tag(t+8, p, 0))
+			return -1;
 		write_double_far(d, s, t);
 		return 0;
 	}
@@ -1009,7 +1016,10 @@ static void new_object(capn_ptr *p, int bytes) {
 	}
 
 	if (ADD_TAG) {
-		write_ptr_tag(p->data, *p, 0);
+		if (write_ptr_tag(p->data, *p, 0)) {
+			memset(p, 0, sizeof(*p));
+			return;
+		}
 		p->data += 8;
 		p->has_ptr_tag = 1;
 	}
