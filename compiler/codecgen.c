@@ -331,6 +331,9 @@ static void gen_call_list_decoder(capnp_ctx_t *ctx, struct str *func,
     if (n != NULL) {
       char *dtypename = n->name.str;
 
+      /* decode_X_list(&(d->count), &(d->dest), s->src). decode_member
+       * calls this as (dest_mapname, count, schema_field). A var/var2
+       * swap fails tests/list-decode-srcdest (mapname != schema name). */
       str_addf(func, "decode_%s_list(&(d->%s), &(d->%s), s->%s);\n",
                dtypename, countvar, var, var2);
     }
