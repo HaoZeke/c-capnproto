@@ -49,6 +49,12 @@ struct id_bst {
 	struct id_bst *right;
 };
 
+struct string_list {
+	const char *string;
+	struct string_list *prev;
+	struct string_list *next;
+};
+
 static struct str SRC = STR_INIT, HDR = STR_INIT;
 static struct capn g_valcapn;
 static struct capn_segment g_valseg;
@@ -145,6 +151,36 @@ static void free_id_bst(struct id_bst * bst)
 		free_id_bst(bst->left);
 		free_id_bst(bst->right);
 		free(bst);
+	}
+}
+
+/* string_list implementation */
+
+static struct string_list * insert_file(struct string_list * list, const char *string)
+{
+	struct string_list ** current = &list;
+	struct string_list ** prev = NULL;
+
+	while (*current)
+	{
+		prev = current;
+		current = &(*current)->next;
+	}
+
+	*current = malloc(sizeof **current);
+	(*current)->string = string;
+	(*current)->prev = prev == NULL ? NULL : *prev;
+	(*current)->next = NULL;
+
+	return list;
+}
+
+static void free_string_list(struct string_list * list)
+{
+	if (list)
+	{
+		free_string_list(list->next);
+		free(list);
 	}
 }
 
@@ -815,9 +851,11 @@ static void declare_slot(struct strings *s, struct field *f) {
 	}
 }
 
-static void define_group(struct strings *s, struct node *n, const char *group_name, bool enclose_unions);
+static void define_group(struct strings *s, struct node *n, const char *group_name, bool enclose_unions,
+		const char *extattr, const char *extattr_space);
 
-static void do_union(struct strings *s, struct node *n, struct field *first_field, const char *union_name) {
+static void do_union(struct strings *s, struct node *n, struct field *first_field, const char *union_name,
+		const char *extattr, const char *extattr_space) {
 	int tagoff = 2 * n->n._struct.discriminantOffset;
 	struct field *f;
 	static struct str tag = STR_INIT;
@@ -875,7 +913,7 @@ static void do_union(struct strings *s, struct node *n, struct field *first_fiel
 			// When we add a union inside a union, we need to enclose it in its
 			// own struct so that its members do not overwrite its own
 			// discriminant.
-			define_group(s, f->group, field_name(f), true);
+			define_group(s, f->group, field_name(f), true, extattr, extattr_space);
 			str_addf(&s->get, "%sbreak;\n", s->ftab.str);
 			str_addf(&s->set, "%sbreak;\n", s->ftab.str);
 			str_setlen(&s->ftab, s->ftab.len-1);
@@ -911,7 +949,7 @@ static void do_union(struct strings *s, struct node *n, struct field *first_fiel
 	str_release(&enums);
 }
 
-static void define_field(struct strings *s, struct field *f) {
+static void define_field(struct strings *s, struct field *f, const char *extattr, const char *extattr_space) {
 	static struct str buf = STR_INIT;
 
 	switch (f->f.which) {
@@ -922,20 +960,24 @@ static void define_field(struct strings *s, struct field *f) {
 		break;
 
 	case Field_group:
-		define_group(s, f->group, field_name(f), false);
+		define_group(s, f->group, field_name(f), false, extattr, extattr_space);
 		break;
 	}
 }
 
 static void define_getter_functions(struct node* node, struct field* field,
-                        struct strings* s)
+                        struct strings* s, const char *extattr, const char *extattr_space)
 {
         /**
          * define getter
          */
-        str_addf(&s->pub_get_header, "\n%s %s_get_%s(%s_ptr p);\n", field->v.tname, node->name.str,
+        str_addf(&s->pub_get_header, "\n%s%s%s %s_get_%s(%s_ptr p);\n",
+                 extattr, extattr_space,
+                 field->v.tname, node->name.str,
                  field_name(field), node->name.str);
-        str_addf(&s->pub_get, "\n%s %s_get_%s(%s_ptr p)\n", field->v.tname, node->name.str,
+        str_addf(&s->pub_get, "\n%s%s%s %s_get_%s(%s_ptr p)\n",
+                 extattr, extattr_space,
+                 field->v.tname, node->name.str,
                  field_name(field), node->name.str);
         struct str getter_body = STR_INIT;
         get_member(&getter_body, field, "p.p", "", field_name(field));
@@ -949,12 +991,16 @@ static void define_getter_functions(struct node* node, struct field* field,
 }
 
 static void define_setter_functions(struct node* node, struct field* field,
-                        struct strings* s)
+                        struct strings* s, const char *extattr, const char *extattr_space)
 {
-        str_addf(&s->pub_set_header, "\nvoid %s_set_%s(%s_ptr p, %s %s);\n",node->name.str,
+        str_addf(&s->pub_set_header, "\n%s%svoid %s_set_%s(%s_ptr p, %s %s);\n",
+                 extattr, extattr_space,
+                 node->name.str,
                  field_name(field), node->name.str, field->v.tname,
                  field_name(field));
-        str_addf(&s->pub_set, "\nvoid %s_set_%s(%s_ptr p, %s %s)\n",node->name.str,
+        str_addf(&s->pub_set, "\n%s%svoid %s_set_%s(%s_ptr p, %s %s)\n",
+                 extattr, extattr_space,
+                 node->name.str,
                  field_name(field), node->name.str, field->v.tname,
                  field_name(field));
         struct str setter_body = STR_INIT;
@@ -963,7 +1009,8 @@ static void define_setter_functions(struct node* node, struct field* field,
         str_release(&setter_body);
 }
 
-static void define_group(struct strings *s, struct node *n, const char *group_name, bool enclose_unions) {
+static void define_group(struct strings *s, struct node *n, const char *group_name, bool enclose_unions,
+		const char *extattr, const char *extattr_space) {
 	struct field *f;
 	int flen = capn_len(n->n._struct.fields);
 	int ulen = n->n._struct.discriminantCount;
@@ -994,7 +1041,7 @@ static void define_group(struct strings *s, struct node *n, const char *group_na
 
 	/* fields before the union members */
 	for (f = n->fields; f < n->fields + flen && !in_union(f); f++) {
-		define_field(s, f);
+		define_field(s, f, extattr, extattr_space);
 
 		if (!g_fieldgetset) {
 			continue;
@@ -1012,8 +1059,8 @@ static void define_group(struct strings *s, struct node *n, const char *group_na
 			continue;
 		}
 
-		define_getter_functions(n, f, s);
-		define_setter_functions(n, f, s);
+		define_getter_functions(n, f, s, extattr, extattr_space);
+		define_setter_functions(n, f, s, extattr, extattr_space);
 	}
 
 	if (ulen > 0) {
@@ -1027,14 +1074,14 @@ static void define_group(struct strings *s, struct node *n, const char *group_na
 
 		const bool keep_union_name = named_union && !enclose_unions;
 
-		do_union(s, n, f, keep_union_name ? group_name : NULL);
+		do_union(s, n, f, keep_union_name ? group_name : NULL, extattr, extattr_space);
 
 		while (f < n->fields + flen && in_union(f))
 			f++;
 
 		/* fields after the unnamed union */
 		for (;f < n->fields + flen; f++) {
-			define_field(s, f);
+			define_field(s, f, extattr, extattr_space);
 		}
 
 		if (enclose_unions)
@@ -1054,7 +1101,7 @@ static void define_group(struct strings *s, struct node *n, const char *group_na
 	}
 }
 
-static void define_struct(struct node *n) {
+static void define_struct(struct node *n, const char *extattr, const char *extattr_space) {
 	static struct strings s;
 	int i;
 
@@ -1074,12 +1121,13 @@ static void define_struct(struct node *n) {
 	str_add(&s.ftab, "\t", -1);
 	str_add(&s.var, "s->", -1);
 
-	define_group(&s, n, NULL, false);
+	define_group(&s, n, NULL, false, extattr, extattr_space);
 
 	str_add(&HDR, s.enums.str, s.enums.len);
 
-	str_addf(&HDR, "\n%sstruct %s {\n",
+	str_addf(&HDR, "\n%sstruct %s%s%s {\n",
 			s.decl.len == 0 ? "capnp_nowarn " : "",
+			extattr, extattr_space,
 			n->name.str);
 	str_add(&HDR, s.decl.str, s.decl.len);
 	str_addf(&HDR, "};\n");
@@ -1102,7 +1150,7 @@ static void define_struct(struct node *n) {
 		}
 	}
 
-	str_addf(&SRC, "\n%s_ptr new_%s(struct capn_segment *s) {\n", n->name.str, n->name.str);
+	str_addf(&SRC, "\n%s%s%s_ptr new_%s(struct capn_segment *s) {\n", extattr, extattr_space, n->name.str, n->name.str);
 	str_addf(&SRC, "\t%s_ptr p;\n", n->name.str);
 	str_addf(&SRC, "\tp.p = capn_new_struct(s, %d, %d);\n", 8*n->n._struct.dataWordCount, n->n._struct.pointerCount);
 	str_addf(&SRC, "\treturn p;\n");
@@ -1113,29 +1161,29 @@ static void define_struct(struct node *n) {
 	str_addf(&HDR, "\nstatic const size_t %s_pointer_count = %d;\n", n->name.str, n->n._struct.pointerCount);
 	str_addf(&HDR, "\nstatic const size_t %s_struct_bytes_count = %d;\n\n", n->name.str, 8 * (n->n._struct.pointerCount + n->n._struct.dataWordCount));
 
-	str_addf(&SRC, "%s_list new_%s_list(struct capn_segment *s, int len) {\n", n->name.str, n->name.str);
+	str_addf(&SRC, "%s%s%s_list new_%s_list(struct capn_segment *s, int len) {\n", extattr, extattr_space, n->name.str, n->name.str);
 	str_addf(&SRC, "\t%s_list p;\n", n->name.str);
 	str_addf(&SRC, "\tp.p = capn_new_list(s, len, %d, %d);\n", 8*n->n._struct.dataWordCount, n->n._struct.pointerCount);
 	str_addf(&SRC, "\treturn p;\n");
 	str_addf(&SRC, "}\n");
 
-	str_addf(&SRC, "void read_%s(struct %s *s capnp_unused, %s_ptr p) {\n", n->name.str, n->name.str, n->name.str);
+	str_addf(&SRC, "%s%svoid read_%s(struct %s *s capnp_unused, %s_ptr p) {\n", extattr, extattr_space, n->name.str, n->name.str, n->name.str);
 	str_addf(&SRC, "\tcapn_resolve(&p.p);\n\tcapnp_use(s);\n");
 	str_add(&SRC, s.get.str, s.get.len);
 	str_addf(&SRC, "}\n");
 
-	str_addf(&SRC, "void write_%s(const struct %s *s capnp_unused, %s_ptr p) {\n", n->name.str, n->name.str, n->name.str);
+	str_addf(&SRC, "%s%svoid write_%s(const struct %s *s capnp_unused, %s_ptr p) {\n", extattr, extattr_space, n->name.str, n->name.str, n->name.str);
 	str_addf(&SRC, "\tcapn_resolve(&p.p);\n\tcapnp_use(s);\n");
 	str_add(&SRC, s.set.str, s.set.len);
 	str_addf(&SRC, "}\n");
 
-	str_addf(&SRC, "void get_%s(struct %s *s, %s_list l, int i) {\n", n->name.str, n->name.str, n->name.str);
+	str_addf(&SRC, "%s%svoid get_%s(struct %s *s, %s_list l, int i) {\n", extattr, extattr_space, n->name.str, n->name.str, n->name.str);
 	str_addf(&SRC, "\t%s_ptr p;\n", n->name.str);
 	str_addf(&SRC, "\tp.p = capn_getp(l.p, i, 0);\n");
 	str_addf(&SRC, "\tread_%s(s, p);\n", n->name.str);
 	str_addf(&SRC, "}\n");
 
-	str_addf(&SRC, "void set_%s(const struct %s *s, %s_list l, int i) {\n", n->name.str, n->name.str, n->name.str);
+	str_addf(&SRC, "%s%svoid set_%s(const struct %s *s, %s_list l, int i) {\n", extattr, extattr_space, n->name.str, n->name.str, n->name.str);
 	str_addf(&SRC, "\t%s_ptr p;\n", n->name.str);
 	str_addf(&SRC, "\tp.p = capn_getp(l.p, i, 0);\n");
 	str_addf(&SRC, "\twrite_%s(s, p);\n", n->name.str);
@@ -1308,6 +1356,30 @@ static void declare(struct node *file_node, const char *format, int num) {
 	}
 }
 
+static void declare_ext(struct node *file_node, const char *format, int num,
+		const char *extattr, const char *extattr_space) {
+	struct node *n;
+	str_addf(&HDR, "\n");
+	for (n = file_node->file_nodes; n != NULL; n = n->next_file_node) {
+		if (n->n.which == Node__struct && !n->n._struct.isGroup) {
+			switch (num) {
+			case 3:
+				str_addf(&HDR, format, extattr, extattr_space,
+					n->name.str, n->name.str, n->name.str);
+				break;
+			case 2:
+				str_addf(&HDR, format, extattr, extattr_space,
+					n->name.str, n->name.str);
+				break;
+			case 1:
+				str_addf(&HDR, format, extattr, extattr_space,
+					n->name.str);
+				break;
+			}
+		}
+	}
+}
+
 #define ANNOTATION_NAMESPACE	0xf2c035025fec7c2bUL
 
 int main() {
@@ -1451,6 +1523,9 @@ int main() {
 		const char *nameinfix = NULL;
 		FILE *srcf, *hdrf;
 		struct id_bst * donotinclude_ids = NULL;
+		struct string_list * extraheader_strings = NULL;
+		const char *extattr = NULL;
+		const char *extattr_space = "";
 
 		g_valc = 0;
 		g_valseg.len = 0;
@@ -1495,10 +1570,35 @@ int main() {
 				}
 				donotinclude_ids = insert_id(donotinclude_ids, v.uint64);
 				break;
+			case 0xbadb496d09cf4612UL:	/* $C::extraheader("...") */
+				if (v.which != Value_text)
+				{
+					fprintf(stderr, "schema breakage on $C::extraheader annotation\n");
+					exit(2);
+				}
+				extraheader_strings = insert_file(extraheader_strings, v.text.str ? v.text.str : "");
+				break;
+			case 0xd187bca5c6844c24UL:	/* $C::extendedattribute("...") */
+				if (v.which != Value_text)
+				{
+					fprintf(stderr, "schema breakage on $C::extendedattribute annotation\n");
+					exit(2);
+				}
+				if (extattr) {
+					fprintf(stderr, "$C::extendedattribute annotation appears more than once\n");
+					exit(2);
+				}
+				if (v.text.str && strlen(v.text.str)) {
+					extattr = v.text.str;
+					extattr_space = " ";
+				}
+				break;
 			}
 		}
 		if (!nameinfix)
 			nameinfix = "";
+		if (!extattr)
+			extattr = "";
 
 		str_reset(&HDR);
 		str_reset(&SRC);
@@ -1506,7 +1606,24 @@ int main() {
 		str_addf(&HDR, "#ifndef CAPN_%X%X\n", (uint32_t) (file_node->n.id >> 32), (uint32_t) file_node->n.id);
 		str_addf(&HDR, "#define CAPN_%X%X\n", (uint32_t) (file_node->n.id >> 32), (uint32_t) file_node->n.id);
 		str_addf(&HDR, "/* AUTO GENERATED - DO NOT EDIT */\n");
-		str_addf(&HDR, "#include <capnp_c.h>\n\n");
+		str_addf(&HDR, "#include <capnp_c.h>\n");
+		/* Do [extraheader] in declaration order. */
+		{
+			struct string_list ** current = &extraheader_strings;
+			struct string_list ** prev = &extraheader_strings;
+			while (*current)
+			{
+				prev = current;
+				current = &(*current)->next;
+			}
+			current = prev;
+			while (*current)
+			{
+				str_addf(&HDR, "%s\n", (*current)->string);
+				current = &(*current)->prev;
+			}
+		}
+		str_addf(&HDR, "\n");
 		str_addf(&HDR, "#if CAPN_VERSION != 1\n");
 		str_addf(&HDR, "#error \"version mismatch between capnp_c.h and generated code\"\n");
 		str_addf(&HDR, "#endif\n\n");
@@ -1541,10 +1658,11 @@ int main() {
 
 		free_id_bst(used_import_ids);
 		free_id_bst(donotinclude_ids);
+		free_string_list(extraheader_strings);
 
 		str_addf(&HDR, "\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n");
 
-		declare(file_node, "struct %s;\n", 1);
+		declare_ext(file_node, "struct %s%s%s;\n", 1, extattr, extattr_space);
 		declare(file_node, "typedef struct {capn_ptr p;} %s_ptr;\n", 1);
 		declare(file_node, "typedef struct {capn_ptr p;} %s_list;\n", 1);
 
@@ -1562,16 +1680,16 @@ int main() {
 
 		for (n = file_node->file_nodes; n != NULL; n = n->next_file_node) {
 			if (n->n.which == Node__struct && !n->n._struct.isGroup) {
-				define_struct(n);
+				define_struct(n, extattr, extattr_space);
 			}
 		}
 
-		declare(file_node, "%s_ptr new_%s(struct capn_segment*);\n", 2);
-		declare(file_node, "%s_list new_%s_list(struct capn_segment*, int len);\n", 2);
-		declare(file_node, "void read_%s(struct %s*, %s_ptr);\n", 3);
-		declare(file_node, "void write_%s(const struct %s*, %s_ptr);\n", 3);
-		declare(file_node, "void get_%s(struct %s*, %s_list, int i);\n", 3);
-		declare(file_node, "void set_%s(const struct %s*, %s_list, int i);\n", 3);
+		declare_ext(file_node, "%s%s%s_ptr new_%s(struct capn_segment*);\n", 2, extattr, extattr_space);
+		declare_ext(file_node, "%s%s%s_list new_%s_list(struct capn_segment*, int len);\n", 2, extattr, extattr_space);
+		declare_ext(file_node, "%s%svoid read_%s(struct %s*, %s_ptr);\n", 3, extattr, extattr_space);
+		declare_ext(file_node, "%s%svoid write_%s(const struct %s*, %s_ptr);\n", 3, extattr, extattr_space);
+		declare_ext(file_node, "%s%svoid get_%s(struct %s*, %s_list, int i);\n", 3, extattr, extattr_space);
+		declare_ext(file_node, "%s%svoid set_%s(const struct %s*, %s_list, int i);\n", 3, extattr, extattr_space);
 
 		str_addf(&HDR, "\n#ifdef __cplusplus\n}\n#endif\n#endif\n");
 

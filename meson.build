@@ -84,11 +84,15 @@ if get_option('enable_tests') and not meson.is_subproject()
     'tests' / 'capn-test.cpp',
     'tests' / 'capn-stream-test.cpp',
     'tests' / 'example-test.cpp',
+    'tests' / 'extraheader-test.cpp',
     'tests' / 'addressbook.capnp.c',
+    'tests' / 'extraheader.capnp.c',
     'compiler' / 'test.capnp.c',
     'compiler' / 'schema-test.cpp',
     'compiler' / 'schema.capnp.c',
   ]
+
+  extraheader_h = meson.project_source_root() / 'tests' / 'extraheader.capnp.h'
 
   exe = executable(
     'capn-test',
@@ -96,7 +100,9 @@ if get_option('enable_tests') and not meson.is_subproject()
     include_directories: include_directories(['lib', 'tests', 'compiler']),
     dependencies: test_dependencies,
     c_args: common_c_args,
-    cpp_args: common_cpp_args,
+    cpp_args: common_cpp_args + [
+      '-DEXTRAHEADER_GENERATED_H="' + extraheader_h + '"',
+    ],
     install: false,
     implicit_include_directories: false,
   )
