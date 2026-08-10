@@ -195,6 +195,9 @@ struct capn_ptr {
 	unsigned int is_list_member : 1;
 	unsigned int is_composite_list : 1;
 	unsigned int datasz : 19;
+	/* bit-within-byte for an inner CAPN_BIT_LIST member from capn_getp.
+	 * Zero on a full bit list. Occupies padding in the first word. */
+	unsigned int bitoff : 3;
 	unsigned int ptrs : 16;
 	int len;
 	char *data;
@@ -267,6 +270,9 @@ CAPN_EXPORT int capn_set_root(struct capn *c, capn_ptr p);
  * capn_setp will copy the data, create far pointers, etc if the target
  * is in a different segment/context.
  * Both of these will use/return inner pointers for composite lists.
+ * For CAPN_BIT_LIST (List(Bool), wire C=1) off is a bit index.
+ * capn_getp returns a 1-element inner bit-list member; capn_setp copies
+ * one bit (from another bit list, a struct's first bit, or CAPN_NULL=0).
  * A tgt of type CAPN_NULL, or with data == NULL, is encoded as a null
  * pointer. Zero-init C structs so optional pointer fields stay unset.
  */
@@ -319,6 +325,10 @@ CAPN_EXPORT int capn_setv64(capn_list64 p, int off, const uint64_t *data, int sz
  * On an error a CAPN_NULL pointer is returned
  *
  * List encoding (capnproto.org/encoding.html, matching C++):
+ *   - List(Bool): bit list, element size C=1. Use capn_new_list1.
+ *     Bits pack little-endian (index 0 = LSB of byte 0). capn_get1/set1
+ *     and capn_getp/setp index bits. List(Bool) cannot be upgraded to
+ *     List(Struct); do not encode bools as a composite list.
  *   - List(Text), List(Data), List(AnyPointer): pointer list, element size C=6.
  *     Generated type is capn_ptr_list (has .p) so capn_len works.
  *     Use capn_new_ptr_list(seg, n). Then capn_set_text / capn_setp per index.

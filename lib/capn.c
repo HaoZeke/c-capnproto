@@ -913,7 +913,6 @@ done:
 	return rc;
 }
 
-/* TODO: should this handle CAPN_BIT_LIST? */
 capn_ptr capn_getp(capn_ptr p, int off, int resolve) {
 	capn_ptr ret = {CAPN_FAR_POINTER};
 	int rem;
@@ -939,6 +938,25 @@ capn_ptr capn_getp(capn_ptr p, int off, int resolve) {
 		} else {
 			goto err;
 		}
+
+	case CAPN_BIT_LIST: {
+		/* Inner 1-bit view. data points at the containing byte;
+		 * bitoff is the bit within that byte. Not a pointer. */
+		int bit;
+		capn_ptr inner = {CAPN_BIT_LIST};
+		if (off < 0 || off >= p.len || !p.data)
+			goto err;
+		bit = off + (int) p.bitoff;
+		inner.is_list_member = 1;
+		inner.seg = p.seg;
+		inner.data = p.data + (bit >> 3);
+		inner.datasz = 1;
+		inner.len = 1;
+		inner.bitoff = (unsigned) (bit & 7);
+		inner.nesting_valid = 1;
+		inner.nesting = rem;
+		return inner;
+	}
 
 	case CAPN_STRUCT:
 		if (off >= p.ptrs) {
@@ -1154,7 +1172,8 @@ static int is_ptr_equal(const struct capn_ptr *a, const struct capn_ptr *b) {
 		&& a->type == b->type
 		&& a->len == b->len
 		&& a->datasz == b->datasz
-		&& a->ptrs == b->ptrs;
+		&& a->ptrs == b->ptrs
+		&& a->bitoff == b->bitoff;
 }
 
 static int data_size(struct capn_ptr p) {
@@ -1178,7 +1197,8 @@ static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, st
 	struct capn_tree **xcp;
 	char *fbegin = f->data - 8*f->is_composite_list;
 	char *fend = fbegin + data_size(*f);
-	int zero_sized = (fend == fbegin);
+	int zero_sized = (fend == fbegin)
+		|| (f->type == CAPN_BIT_LIST && f->is_list_member);
 
 	/* We always copy list members as it would otherwise be an
 	 * overlapped pointer (the data is owned by the enclosing list).
@@ -1260,6 +1280,12 @@ static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, st
 		return 0;
 
 	case CAPN_BIT_LIST:
+		if (f->is_list_member) {
+			capn_list1 fl;
+			fl.p = *f;
+			t->data[0] = (char) (capn_get1(fl, 0) ? 1 : 0);
+			return 0;
+		}
 		memcpy(t->data, f->data, t->datasz);
 		return 0;
 
@@ -1310,7 +1336,6 @@ static void copy_list_member(capn_ptr* t, capn_ptr *f, int *dep) {
 
 #define MAX_COPY_DEPTH 32
 
-/* TODO: handle CAPN_BIT_LIST and setting from an inner bit list member */
 int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 	struct capn_ptr to[MAX_COPY_DEPTH], from[MAX_COPY_DEPTH];
 	char *data;
@@ -1338,6 +1363,26 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 		from[0] = tgt;
 		copy_list_member(to, from, &dep);
 		break;
+
+	case CAPN_BIT_LIST: {
+		capn_list1 dst;
+		int val;
+		if (off < 0 || off >= p.len)
+			return -1;
+		if (tgt.type == CAPN_NULL || tgt.data == NULL) {
+			val = 0;
+		} else if (tgt.type == CAPN_BIT_LIST) {
+			capn_list1 src;
+			src.p = tgt;
+			val = capn_get1(src, 0);
+		} else if (tgt.type == CAPN_STRUCT && tgt.datasz >= 1 && tgt.data) {
+			val = (tgt.data[0] & 1) != 0;
+		} else {
+			return -1;
+		}
+		dst.p = p;
+		return capn_set1(dst, off, val);
+	}
 
 	case CAPN_PTR_LIST:
 		if (off >= p.len)
@@ -1411,23 +1456,102 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 	return 0;
 }
 
-/* TODO: handle CAPN_LIST, CAPN_PTR_LIST for bit lists */
-
 int capn_get1(capn_list1 l, int off) {
-	return l.p.type == CAPN_BIT_LIST
-		&& off < l.p.len
-		&& (l.p.data[off/8] & (1 << (off%8))) != 0;
+	char *d;
+	int bit;
+	capn_ptr p;
+	capn_resolve(&l.p);
+	p = l.p;
+	if (off < 0)
+		return 0;
+
+	switch (p.type) {
+	case CAPN_BIT_LIST:
+		if (off >= p.len || !p.data)
+			return 0;
+		bit = off + (int) p.bitoff;
+		return (p.data[bit / 8] & (1 << (bit % 8))) != 0;
+
+	case CAPN_LIST:
+		if (off >= p.len || p.datasz < 1 || !p.data)
+			return 0;
+		d = p.data + off * (p.datasz + 8 * p.ptrs);
+		return (d[0] & 1) != 0;
+
+	case CAPN_PTR_LIST: {
+		capn_ptr el;
+		if (off >= p.len)
+			return 0;
+		el = read_ptr(p.seg, p.data + 8 * off, hop_remaining(p));
+		if (el.type == CAPN_STRUCT && el.datasz >= 1 && el.data)
+			return (el.data[0] & 1) != 0;
+		if (el.type == CAPN_BIT_LIST) {
+			capn_list1 bl;
+			bl.p = el;
+			return capn_get1(bl, 0);
+		}
+		return 0;
+	}
+
+	default:
+		return 0;
+	}
 }
 
 int capn_set1(capn_list1 l, int off, int val) {
-	if (l.p.type != CAPN_BIT_LIST || off >= l.p.len)
+	char *d;
+	int bit;
+	capn_ptr p;
+	capn_resolve(&l.p);
+	p = l.p;
+	if (off < 0)
 		return -1;
-	if (val) {
-		l.p.data[off/8] |= 1 << (off%8);
-	} else {
-		l.p.data[off/8] &= ~(1 << (off%8));
+
+	switch (p.type) {
+	case CAPN_BIT_LIST:
+		if (off >= p.len || !p.data)
+			return -1;
+		bit = off + (int) p.bitoff;
+		if (val) {
+			p.data[bit / 8] |= 1 << (bit % 8);
+		} else {
+			p.data[bit / 8] &= ~(1 << (bit % 8));
+		}
+		return 0;
+
+	case CAPN_LIST:
+		if (off >= p.len || p.datasz < 1 || !p.data)
+			return -1;
+		d = p.data + off * (p.datasz + 8 * p.ptrs);
+		if (val)
+			d[0] |= 1;
+		else
+			d[0] &= ~1;
+		return 0;
+
+	case CAPN_PTR_LIST: {
+		capn_ptr el;
+		if (off >= p.len)
+			return -1;
+		el = read_ptr(p.seg, p.data + 8 * off, hop_remaining(p));
+		if (el.type == CAPN_STRUCT && el.datasz >= 1 && el.data) {
+			if (val)
+				el.data[0] |= 1;
+			else
+				el.data[0] &= ~1;
+			return 0;
+		}
+		if (el.type == CAPN_BIT_LIST) {
+			capn_list1 bl;
+			bl.p = el;
+			return capn_set1(bl, 0, val);
+		}
+		return -1;
 	}
-	return 0;
+
+	default:
+		return -1;
+	}
 }
 
 int capn_getv1(capn_list1 l, int off, uint8_t *data, int sz) {
@@ -1436,7 +1560,7 @@ int capn_getv1(capn_list1 l, int off, uint8_t *data, int sz) {
 	capn_ptr p;
 	capn_resolve(&l.p);
 	p = l.p;
-	if (p.type != CAPN_BIT_LIST || (off & 7) != 0)
+	if (p.type != CAPN_BIT_LIST || (off & 7) != 0 || p.bitoff != 0)
 		return -1;
 
 	bsz = (sz + 7) / 8;
@@ -1455,7 +1579,7 @@ int capn_setv1(capn_list1 l, int off, const uint8_t *data, int sz) {
 	/* Note we only support aligned writes */
 	int bsz;
 	capn_ptr p = l.p;
-	if (p.type != CAPN_BIT_LIST || (off & 7) != 0)
+	if (p.type != CAPN_BIT_LIST || (off & 7) != 0 || p.bitoff != 0)
 		return -1;
 
 	bsz = (sz + 7) / 8;
