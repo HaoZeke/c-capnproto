@@ -2,9 +2,13 @@
 
 ## Trust model
 
-Generated readers currently assume **trusted Cap'n input**. Do not decode
-untrusted network bytes with the generated API until decode bounds checks are
-complete on this fork.
+Decode now rejects out-of-segment struct/list/far landing pads (see
+`tests/bounds-test.cpp`). This is **partial**: pointer landing checks and a
+64MiB traversal budget, not a full graph validator. Generated accessors still
+trust a `capn_ptr` that has already been decoded. Do not treat the API as
+untrusted-safe.
+
+Do not decode untrusted network bytes without an additional validation layer.
 
 ## Reporting
 

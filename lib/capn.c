@@ -16,6 +16,7 @@
 #ifndef __KERNEL__
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #ifndef _MSC_VER
 #include <sys/param.h>
 #endif
@@ -249,60 +250,172 @@ static struct capn_segment *lookup_segment(struct capn* c, struct capn_segment *
 	return s;
 }
 
+/* p in [s->data, s->data+s->len] and p+bytes does not exceed the
+ * segment. Overflow-safe: no pointer wrap, no size_t wrap. */
+static int bounds_ok(struct capn_segment *s, const char *p, size_t bytes)
+{
+	uintptr_t base, end, addr;
+
+	if (!s || !s->data || !p)
+		return 0;
+
+	base = (uintptr_t) (void *) s->data;
+	if (s->len > (uintptr_t) -1 - base)
+		return 0;
+	end = base + s->len;
+
+	addr = (uintptr_t) (void *) p;
+	if (addr < base || addr > end)
+		return 0;
+	if (bytes == 0)
+		return 1;
+	if (bytes > end - addr)
+		return 0;
+	return 1;
+}
+
+static int mul_size(size_t a, size_t b, size_t *out)
+{
+	if (b != 0 && a > (size_t) -1 / b)
+		return 0;
+	*out = a * b;
+	return 1;
+}
+
+static int charge_traversal(struct capn *c, size_t bytes, int len)
+{
+	size_t add, limit, used;
+
+	if (!c)
+		return 0;
+
+	add = bytes;
+	/* Zero-size / void lists still cost one word per element. */
+	if (add == 0 && len > 0) {
+		if (!mul_size((size_t) len, 8, &add))
+			return -1;
+	}
+	if (add == 0)
+		return 0;
+
+	limit = c->traversal_limit ? c->traversal_limit : CAPN_TRAVERSAL_DEFAULT;
+	used = c->traversal_used;
+	if (add > limit || used > limit - add)
+		return -1;
+	c->traversal_used = used + add;
+	return 0;
+}
+
+/* Advance *pd by (signed 30-bit word offset + 1) words from the
+ * pointer word. Double-far uses a sentinel one word before s->data. */
+static int apply_offset(struct capn_segment *s, char **pd, uint64_t val)
+{
+	int32_t off_words;
+	int64_t rel, next;
+	uintptr_t daddr, saddr;
+
+	if (!s || !s->data || !pd || !*pd)
+		return 0;
+
+	off_words = (int32_t) ((int32_t) U32(val) >> 2);
+	daddr = (uintptr_t) (void *) *pd;
+	saddr = (uintptr_t) (void *) s->data;
+	rel = (int64_t) daddr - (int64_t) saddr;
+	next = rel + ((int64_t) off_words + 1) * 8;
+	if (next < 0 || (uint64_t) next > s->len)
+		return 0;
+	*pd = s->data + (size_t) next;
+	return 1;
+}
+
 static uint64_t lookup_double(struct capn_segment **s, char **d, uint64_t val) {
 	uint64_t far, tag;
-	size_t off = (U32(val) >> 3) * 8;
+	size_t off;
 	char *p;
+	struct capn_segment *seg;
 
-	if ((*s = lookup_segment((*s)->capn, *s, U32(val >> 32))) == NULL) {
+	if (!s || !*s) {
+		if (s)
+			*s = NULL;
 		return 0;
 	}
 
-	p = (*s)->data + off;
-	if (off + 16 > (*s)->len) {
+	off = (size_t) (U32(val) >> 3) * 8;
+	seg = lookup_segment((*s)->capn, *s, U32(val >> 32));
+	if (!seg) {
+		*s = NULL;
+		return 0;
+	}
+	*s = seg;
+
+	if (off > seg->len || seg->len - off < 16) {
+		*s = NULL;
 		return 0;
 	}
 
+	p = seg->data + off;
 	far = capn_flip64(*(uint64_t*) p);
 	tag = capn_flip64(*(uint64_t*) (p+8));
 
 	/* the far tag should not be another double, and the tag
 	 * should be struct/list and have no offset */
 	if ((far&7) != FAR_PTR || U32(tag) > LIST_PTR) {
+		*s = NULL;
 		return 0;
 	}
 
-	if ((*s = lookup_segment((*s)->capn, *s, U32(far >> 32))) == NULL) {
+	seg = lookup_segment(seg->capn, seg, U32(far >> 32));
+	if (!seg) {
+		*s = NULL;
 		return 0;
 	}
+	*s = seg;
 
 	/* -8 because far pointers reference from the start of
 	 * the segment, but offsets reference the end of the
 	 * pointer data. Here *d points to where an equivalent
 	 * ptr would be.
 	 */
-	*d = (*s)->data - 8;
+	*d = seg->data - 8;
 	return U64(U32(far) >> 3 << 2) | tag;
 }
 
 static uint64_t lookup_far(struct capn_segment **s, char **d, uint64_t val) {
-	size_t off = (U32(val) >> 3) * 8;
+	size_t off;
+	struct capn_segment *seg;
 
-	if ((*s = lookup_segment((*s)->capn, *s, U32(val >> 32))) == NULL) {
+	if (!s || !*s) {
+		if (s)
+			*s = NULL;
 		return 0;
 	}
 
-	if (off + 8 > (*s)->len) {
+	off = (size_t) (U32(val) >> 3) * 8;
+	seg = lookup_segment((*s)->capn, *s, U32(val >> 32));
+	if (!seg) {
+		*s = NULL;
+		return 0;
+	}
+	*s = seg;
+
+	if (off > seg->len || seg->len - off < 8) {
+		*s = NULL;
 		return 0;
 	}
 
-	*d = (*s)->data + off;
+	*d = seg->data + off;
 	return capn_flip64(*(uint64_t*)*d);
 }
 
 static char *struct_ptr(struct capn_segment *s, char *d, int minsz) {
-	uint64_t val = capn_flip64(*(uint64_t*)d);
+	uint64_t val;
 	uint16_t datasz;
+	size_t nbytes;
+
+	if (!s || !bounds_ok(s, d, 8))
+		return NULL;
+
+	val = capn_flip64(*(uint64_t*)d);
 
 	switch (val&7) {
 	case FAR_PTR:
@@ -313,10 +426,16 @@ static char *struct_ptr(struct capn_segment *s, char *d, int minsz) {
 		break;
 	}
 
-	datasz = U16(val >> 32);
-	d += (I32(U32(val)) << 1) + 8;
+	if (!s || !val)
+		return NULL;
 
-	if (val != 0 && (val&3) != STRUCT_PTR && datasz >= minsz && s->data <= d && d < s->data + s->len) {
+	if (!apply_offset(s, &d, val))
+		return NULL;
+
+	datasz = U16(val >> 32);
+	nbytes = minsz < 0 ? 0 : (size_t) minsz;
+	if (val != 0 && (val&3) != STRUCT_PTR && datasz >= minsz
+	    && bounds_ok(s, d, nbytes)) {
 		return d;
 	}
 
@@ -326,89 +445,115 @@ static char *struct_ptr(struct capn_segment *s, char *d, int minsz) {
 static capn_ptr read_ptr(struct capn_segment *s, char *d) {
 	capn_ptr ret = {CAPN_NULL};
 	uint64_t val;
-	char *e = 0;
+	size_t nbytes = 0;
+
+	if (!s || !bounds_ok(s, d, 8))
+		goto err;
 
 	val = capn_flip64(*(uint64_t*) d);
 
 	switch (val&7) {
 	case FAR_PTR:
 		val = lookup_far(&s, &d, val);
+		if (!s)
+			goto err;
 		ret.has_ptr_tag = (U32(val) >> 2) == 0;
 		break;
 	case DOUBLE_PTR:
 		val = lookup_double(&s, &d, val);
+		if (!s)
+			goto err;
 		break;
 	}
 
-	d += (I32(U32(val)) >> 2) * 8 + 8;
-
-	if (d < s->data) {
+	if (!apply_offset(s, &d, val))
 		goto err;
-	}
 
 	switch (val & 3) {
 	case STRUCT_PTR:
 		ret.type = val ? CAPN_STRUCT : CAPN_NULL;
-		goto struct_common;
-
-	struct_common:
 		ret.datasz = U32(U16(val >> 32)) * 8;
 		ret.ptrs = U32(U16(val >> 48));
-		e = d + ret.datasz + 8 * ret.ptrs;
+		if ((size_t) ret.datasz > (size_t) -1 - 8u * (size_t) ret.ptrs)
+			goto err;
+		nbytes = (size_t) ret.datasz + 8u * (size_t) ret.ptrs;
 		break;
 
 	case LIST_PTR:
 		ret.type = CAPN_LIST;
-		ret.len = val >> 35;
+		ret.len = (int) (val >> 35);
+		if (ret.len < 0)
+			goto err;
 
 		switch ((val >> 32) & 7) {
 		case VOID_LIST:
-			e = d;
+			nbytes = 0;
 			break;
 		case BIT_1_LIST:
 			ret.type = CAPN_BIT_LIST;
-			ret.datasz = (ret.len+7)/8;
-			e = d + ret.datasz;
+			nbytes = ((size_t) ret.len + 7) / 8;
+			if (nbytes > (1u << 19) - 1)
+				goto err;
+			ret.datasz = (unsigned) nbytes;
 			break;
 		case BYTE_1_LIST:
 			ret.datasz = 1;
-			e = d + ret.len;
+			if (!mul_size((size_t) ret.len, 1, &nbytes))
+				goto err;
 			break;
 		case BYTE_2_LIST:
 			ret.datasz = 2;
-			e = d + ret.len * 2;
+			if (!mul_size((size_t) ret.len, 2, &nbytes))
+				goto err;
 			break;
 		case BYTE_4_LIST:
 			ret.datasz = 4;
-			e = d + ret.len * 4;
+			if (!mul_size((size_t) ret.len, 4, &nbytes))
+				goto err;
 			break;
 		case BYTE_8_LIST:
 			ret.datasz = 8;
-			e = d + ret.len * 8;
+			if (!mul_size((size_t) ret.len, 8, &nbytes))
+				goto err;
 			break;
 		case PTR_LIST:
 			ret.type = CAPN_PTR_LIST;
-			e = d + ret.len * 8;
-			break;
-		case COMPOSITE_LIST:
-			if ((size_t)((d+8) - s->data) > s->len) {
+			if (!mul_size((size_t) ret.len, 8, &nbytes))
 				goto err;
-			}
+			break;
+		case COMPOSITE_LIST: {
+			size_t words, stride, total;
+			uint64_t tag;
 
-			val = capn_flip64(*(uint64_t*) d);
+			if (!mul_size((size_t) ret.len, 8, &words))
+				goto err;
+			if (!bounds_ok(s, d, 8))
+				goto err;
 
+			tag = capn_flip64(*(uint64_t*) d);
 			d += 8;
-			e = d + ret.len * 8;
-
-			ret.datasz = U32(U16(val >> 32)) * 8;
-			ret.ptrs = U32(U16(val >> 48));
-			ret.len = U32(val) >> 2;
-			ret.is_composite_list = 1;
-
-			if ((ret.datasz + 8*ret.ptrs) * ret.len != e - d) {
+			if (!bounds_ok(s, d, words))
 				goto err;
-			}
+
+			ret.datasz = U32(U16(tag >> 32)) * 8;
+			ret.ptrs = U32(U16(tag >> 48));
+			ret.len = (int) (U32(tag) >> 2);
+			ret.is_composite_list = 1;
+			if (ret.len < 0)
+				goto err;
+
+			if ((size_t) ret.datasz > (size_t) -1 - 8u * (size_t) ret.ptrs)
+				goto err;
+			stride = (size_t) ret.datasz + 8u * (size_t) ret.ptrs;
+			if (!mul_size(stride, (size_t) ret.len, &total))
+				goto err;
+			if (total != words)
+				goto err;
+			nbytes = words;
 			break;
+		}
+		default:
+			goto err;
 		}
 		break;
 
@@ -416,7 +561,10 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d) {
 		goto err;
 	}
 
-	if ((size_t)(e - s->data) > s->len)
+	if (!bounds_ok(s, d, nbytes))
+		goto err;
+
+	if (charge_traversal(s->capn, nbytes, ret.len) != 0)
 		goto err;
 
 	ret.data = d;

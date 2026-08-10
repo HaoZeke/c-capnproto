@@ -114,13 +114,19 @@ struct capn {
 	struct capn_segment *(*create)(void* /*user*/, uint32_t /*id */, int /*sz*/);
 	struct capn_segment *(*create_local)(void* /*user*/, int /*sz*/);
 	void *user;
+	/* 0 = 64MiB default. User may set after init, before decode. */
+	size_t traversal_limit;
 	/* zero initialized, user should not modify */
 	uint32_t segnum;
 	struct capn_tree *copy;
 	struct capn_tree *segtree;
 	struct capn_segment *seglist, *lastseg;
 	struct capn_segment *copylist;
+	size_t traversal_used;
 };
+
+/* Default decode traversal budget (bytes). 0 in traversal_limit means this. */
+#define CAPN_TRAVERSAL_DEFAULT ((size_t) 64u * 1024u * 1024u)
 
 /* struct capn_tree is a rb tree header used internally for the segment id
  * lookup and copy tree */

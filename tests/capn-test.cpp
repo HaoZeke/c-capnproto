@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 #include <cstddef>
 #include <cstdint>
+#include <cstddef>
 
 static int g_AddTag = 1;
 #define ADD_TAG g_AddTag
@@ -538,6 +539,65 @@ TEST(WireFormat, WritePtrTagNegativeOffsetRoundTrip) {
   EXPECT_EQ(CAPN_STRUCT, got.type);
   EXPECT_EQ(8, got.datasz);
   EXPECT_EQ(UINT64_C(0x0102030405060708), capn_read64(got, 0));
+}
+
+TEST(WireFormat, BoundsOkRange) {
+  char pad[18];
+  char *buf = pad + 1;
+  struct capn_segment s;
+  memset(&s, 0, sizeof(s));
+  s.data = buf;
+  s.len = 16;
+
+  EXPECT_NE(0, bounds_ok(&s, buf, 16));
+  EXPECT_NE(0, bounds_ok(&s, buf, 0));
+  EXPECT_NE(0, bounds_ok(&s, buf + 16, 0));
+  EXPECT_NE(0, bounds_ok(&s, buf + 8, 8));
+  EXPECT_EQ(0, bounds_ok(&s, buf + 16, 1));
+  EXPECT_EQ(0, bounds_ok(&s, buf, 17));
+  EXPECT_EQ(0, bounds_ok(&s, buf + 8, 9));
+  EXPECT_EQ(0, bounds_ok(&s, pad, 1));
+  EXPECT_EQ(0, bounds_ok(NULL, buf, 1));
+  EXPECT_EQ(0, bounds_ok(&s, NULL, 0));
+  EXPECT_EQ(0, bounds_ok(&s, buf, (size_t) -1));
+}
+
+TEST(WireFormat, ReadPtrRejectsOOBPointerWord) {
+  AlignedData<1> data = {{0}};
+  struct capn_segment seg;
+  struct capn ctx;
+  capn_ptr p;
+  memset(&seg, 0, sizeof(seg));
+  seg.data = (char*) data.bytes;
+  seg.len = seg.cap = sizeof(data.bytes);
+  memset(&ctx, 0, sizeof(ctx));
+  capn_append_segment(&ctx, &seg);
+
+  p = read_ptr(&seg, seg.data + (ptrdiff_t)seg.len);
+  EXPECT_EQ(CAPN_NULL, p.type);
+  p = read_ptr(&seg, seg.data - 8);
+  EXPECT_EQ(CAPN_NULL, p.type);
+  p = read_ptr(NULL, seg.data);
+  EXPECT_EQ(CAPN_NULL, p.type);
+}
+
+TEST(WireFormat, GetpHugeOffsetIsNull) {
+  AlignedData<2> data = {{
+    /* struct, offset = 0x00FFFFFF words, dataSize = 1 */
+    0xfc, 0xff, 0xff, 0x03, 0x01, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+  }};
+  struct capn_segment seg;
+  struct capn ctx;
+  capn_ptr p;
+  memset(&seg, 0, sizeof(seg));
+  seg.data = (char*) data.bytes;
+  seg.len = seg.cap = sizeof(data.bytes);
+  memset(&ctx, 0, sizeof(ctx));
+  capn_append_segment(&ctx, &seg);
+
+  p = capn_getp(capn_root(&ctx), 0, 1);
+  EXPECT_EQ(CAPN_NULL, p.type);
 }
 
 int main(int argc, char *argv[]) {
