@@ -40,6 +40,11 @@ target_include_directories(capnp_c
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/lib>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
+if(BUILD_SHARED_LIBS)
+  target_compile_definitions(capnp_c PRIVATE CAPNP_C_BUILDING)
+else()
+  target_compile_definitions(capnp_c PUBLIC CAPNP_C_STATIC)
+endif()
 
 set(capnpc_c_sources
   compiler/capnpc-c.c
