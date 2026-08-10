@@ -9,7 +9,12 @@ noinst_HEADERS =
 include_HEADERS =
 
 
-EXTRA_DIST += README.md
+EXTRA_DIST += README.md KERNEL.md CMakeLists.txt
+EXTRA_DIST += \
+	examples/kernel/GNUmakefile \
+	examples/kernel/Kbuild \
+	examples/kernel/main.c \
+	examples/kernel/runtime.c
 
 EXTRA_DIST += c-capnproto.pc.in
 pkgconfigdir = $(libdir)/pkgconfig

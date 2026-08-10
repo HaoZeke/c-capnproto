@@ -35,8 +35,9 @@ fixes from it; do not switch the canonical remote.
 
 | Source | What |
 |--------|------|
-| Jonah Beckford (`jonahbeckford` / DKML) | MSVC field alignment, `SSIZE_T`, binary stdin, `capnp_use` parens, no left-shift of negatives |
+| Jonah Beckford (`jonahbeckford` / DKML) | MSVC field alignment, `SSIZE_T`, binary stdin, `capnp_use` parens, no left-shift of negatives; optional top-level `CMakeLists.txt` (no `dk`, no CMakePresets, gtest submodule kept) |
 | Rongsong Shen (`shen390s`) | `header_render` memcpy (packed unaligned store), null copy-tree parent |
 | Angelo Haller (`szanni`) | AFL `fuzz-mem` / `fuzz-fp` harness |
+| yeger00 | `__KERNEL__` stdlib replacements (`kmalloc`/`kfree`, no `stdio`); sample under `examples/kernel/` |
 
-Not absorbed (tracked as work, not merged): `shen390s` compiler rewrite/codecgen, DKML CMake/`dk`, yeger Linux-kernel port, Degui XOR/MISRA (wire-incompatible), cbrune `const2` (OSR #54 broke the build and was reverted), commaai prefix hack, `aligned(64)` whole-struct ARM hacks (superseded by field `ALIGNED_(8)`).
+Not absorbed (tracked as work, not merged): `shen390s` compiler rewrite/codecgen, DKML `dk` wrapper / CMakePresets / GitLab CI / gtest-submodule removal, yeger full in-tree kbuild copy, Degui XOR/MISRA (wire-incompatible), cbrune `const2` (OSR #54 broke the build and was reverted), commaai prefix hack, `aligned(64)` whole-struct ARM hacks (superseded by field `ALIGNED_(8)`).

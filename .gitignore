@@ -38,3 +38,23 @@ fuzz/in
 fuzz/out
 fuzz/read-mem*
 fuzz/read-fp*
+
+# CMake (optional)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+CTestCustom.cmake
+Testing/
+build-cmake/
+
+# Kernel module sample
+*.ko
+*.mod
+*.mod.c
+*.mod.o
+Module.symvers
+modules.order
+.tmp_versions
+examples/kernel/modules.order
+examples/kernel/Module.symvers
