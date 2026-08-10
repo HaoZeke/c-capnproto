@@ -553,11 +553,12 @@ TEST(Stream, WriteFdInitFdUnpackedRoundTrip) {
   capn_init_malloc(&ctx1);
   fill_one_segment(&ctx1, val);
 
-  int n = capn_write_fd(&ctx1, test_write_fd, fileno(f), 0);
+  int fd = fileno(f);
+  int n = capn_write_fd(&ctx1, test_write_fd, fd, 0);
   EXPECT_EQ(3 * 8, n);
 
-  rewind(f);
-  ASSERT_EQ(0, capn_init_fd(&ctx2, test_read_fd, fileno(f), 0));
+  ASSERT_EQ((off_t)0, lseek(fd, 0, SEEK_SET));
+  ASSERT_EQ(0, capn_init_fd(&ctx2, test_read_fd, fd, 0));
   EXPECT_EQ(1, ctx2.segnum);
   struct capn_ptr root = capn_root(&ctx2);
   struct capn_ptr ptr = capn_getp(root, 0, 1);
@@ -577,11 +578,12 @@ TEST(Stream, WriteFdInitFdPackedRoundTrip) {
   capn_init_malloc(&ctx1);
   fill_one_segment(&ctx1, val);
 
-  int n = capn_write_fd(&ctx1, test_write_fd, fileno(f), 1);
+  int fd = fileno(f);
+  int n = capn_write_fd(&ctx1, test_write_fd, fd, 1);
   EXPECT_EQ(14, n);
 
-  rewind(f);
-  ASSERT_EQ(0, capn_init_fd(&ctx2, test_read_fd, fileno(f), 1));
+  ASSERT_EQ((off_t)0, lseek(fd, 0, SEEK_SET));
+  ASSERT_EQ(0, capn_init_fd(&ctx2, test_read_fd, fd, 1));
   EXPECT_EQ(1, ctx2.segnum);
   struct capn_ptr root = capn_root(&ctx2);
   struct capn_ptr ptr = capn_getp(root, 0, 1);

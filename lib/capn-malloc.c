@@ -102,18 +102,40 @@ void capn_reset_copy(struct capn *c) {
  * segments cannot be decoded. */
 #define CAPN_MAX_SEGS 1024
 
-static int read_fp(void *p, size_t sz, FILE *f, struct capn_stream *z, uint8_t* zbuf, int packed) {
 #ifndef __KERNEL__
-	if (f && packed) {
+static int read_fd_all(ssize_t (*read_fd)(int fd, void *p, size_t count), int fd, void *p, size_t count)
+{
+	ssize_t ret;
+	size_t got = 0;
+
+	while (got < count) {
+		ret = read_fd(fd, ((uint8_t*)p) + got, count - got);
+		if (ret < 0) {
+			if (errno == EAGAIN || errno == EINTR)
+				continue;
+			return -1;
+		}
+		if (ret == 0)
+			return -1;
+		got += (size_t)ret;
+	}
+	return 0;
+}
+#endif /* !__KERNEL__ */
+
+static int read_fp(void *p, size_t sz, FILE *f,
+		   ssize_t (*read_fd)(int fd, void *p, size_t count), int fd,
+		   struct capn_stream *z, uint8_t* zbuf, int packed) {
+#ifndef __KERNEL__
+	if ((f || read_fd) && packed) {
 		z->next_out = (uint8_t*) p;
 		z->avail_out = sz;
 
 		/* capn_inflate returns 0 (not CAPN_NEED_MORE) when avail_in
-		 * is 0. Seed the stream from f before treating 0 as done,
-		 * and keep next_in on zbuf after each fread. */
+		 * is 0. Seed the stream from f / read_fd before treating 0
+		 * as done, and keep next_in on zbuf after each fill. */
 		while (z->avail_out) {
 			int inf;
-			int r;
 
 			inf = capn_inflate(z);
 			if (inf != 0 && inf != CAPN_NEED_MORE)
@@ -124,15 +146,34 @@ static int read_fp(void *p, size_t sz, FILE *f, struct capn_stream *z, uint8_t* 
 			if (z->avail_in && z->next_in != NULL)
 				memmove(zbuf, z->next_in, z->avail_in);
 			z->next_in = zbuf;
-			r = fread(zbuf + z->avail_in, 1, ZBUF_SZ - z->avail_in, f);
-			if (r <= 0)
-				return -1;
-			z->avail_in += r;
+			if (f) {
+				int r = fread(zbuf + z->avail_in, 1, ZBUF_SZ - z->avail_in, f);
+				if (r <= 0)
+					return -1;
+				z->avail_in += r;
+			} else {
+				ssize_t r;
+				for (;;) {
+					r = read_fd(fd, zbuf + z->avail_in, ZBUF_SZ - z->avail_in);
+					if (r < 0) {
+						if (errno == EAGAIN || errno == EINTR)
+							continue;
+						return -1;
+					}
+					break;
+				}
+				if (r <= 0)
+					return -1;
+				z->avail_in += (size_t)r;
+			}
 		}
 		return 0;
 
 	} else if (f && !packed) {
 		return fread(p, sz, 1, f) != 1;
+
+	} else if (read_fd && !packed) {
+		return read_fd_all(read_fd, fd, p, sz);
 
 	} else
 #endif /* !__KERNEL__ */
@@ -151,7 +192,9 @@ static int read_fp(void *p, size_t sz, FILE *f, struct capn_stream *z, uint8_t* 
 	}
 }
 
-static int init_fp(struct capn *c, FILE *f, struct capn_stream *z, int packed) {
+static int init_fp(struct capn *c, FILE *f,
+		   ssize_t (*read_fd)(int fd, void *p, size_t count), int fd,
+		   struct capn_stream *z, int packed) {
 	/*
 	 * Initialize 'c' from the contents of 'f', assuming the message has been
 	 * serialized with the standard framing format. From https://capnproto.org/encoding.html:
@@ -172,7 +215,7 @@ static int init_fp(struct capn *c, FILE *f, struct capn_stream *z, int packed) {
 	capn_init_malloc(c);
 
 	/* Read the first four bytes to know how many headers we have */
-	if (read_fp(&segnum, 4, f, z, zbuf, packed))
+	if (read_fp(&segnum, 4, f, read_fd, fd, z, zbuf, packed))
 		goto err;
 
 	segnum = capn_flip32(segnum);
@@ -181,7 +224,7 @@ static int init_fp(struct capn *c, FILE *f, struct capn_stream *z, int packed) {
 	segnum++; /* The wire encoding was zero-based */
 
 	/* Read the header list */
-	if (read_fp(hdr, 8 * (segnum/2) + 4, f, z, zbuf, packed))
+	if (read_fp(hdr, 8 * (segnum/2) + 4, f, read_fd, fd, z, zbuf, packed))
 		goto err;
 
 	for (i = 0; i < segnum; i++) {
@@ -199,7 +242,7 @@ static int init_fp(struct capn *c, FILE *f, struct capn_stream *z, int packed) {
 
 	/* Now read the data and setup the capn_segment structs */
 	data = (char*) (s+segnum);
-	if (read_fp(data, total, f, z, zbuf, packed))
+	if (read_fp(data, total, f, read_fd, fd, z, zbuf, packed))
 		goto err;
 
 	for (i = 0; i < segnum; i++) {
@@ -223,7 +266,7 @@ err:
 int capn_init_fp(struct capn *c, FILE *f, int packed) {
 	struct capn_stream z;
 	memset(&z, 0, sizeof(z));
-	return init_fp(c, f, &z, packed);
+	return init_fp(c, f, NULL, -1, &z, packed);
 }
 
 int capn_init_mem(struct capn *c, const uint8_t *p, size_t sz, int packed) {
@@ -231,8 +274,22 @@ int capn_init_mem(struct capn *c, const uint8_t *p, size_t sz, int packed) {
 	memset(&z, 0, sizeof(z));
 	z.next_in = p;
 	z.avail_in = sz;
-	return init_fp(c, NULL, &z, packed);
+	return init_fp(c, NULL, NULL, -1, &z, packed);
 }
+
+#ifndef __KERNEL__
+int capn_init_fd(struct capn *c, ssize_t (*read_fd)(int fd, void *p, size_t count), int fd, int packed) {
+	struct capn_stream z;
+	if (read_fd == NULL)
+		return -1;
+	memset(&z, 0, sizeof(z));
+	return init_fp(c, NULL, read_fd, fd, &z, packed);
+}
+#else /* __KERNEL__ */
+int capn_init_fd(struct capn *c, ssize_t (*read_fd)(int fd, void *p, size_t count), int fd, int packed) {
+	return -1;
+}
+#endif /* !__KERNEL__ */
 
 static void header_calc(struct capn *c, uint32_t *headerlen, size_t *headersz)
 {
