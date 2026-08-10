@@ -9,13 +9,13 @@
 #endif
 
 static const capn_ptr capn_null = {CAPN_NULL};
-int32_t answer = 42;
-unsigned flag = 1;
-uint16_t count = 7;
-uint64_t big = ((uint64_t) 0x1u << 32) | 0u;
-enum Color hue = (enum Color) 1u;
-union capn_conv_f32 ratio = {0x3fc00000u};
-int32_t answerCamel = 99;
+const int32_t answer = ANSWER;
+const unsigned flag = FLAG;
+const uint16_t count = COUNT;
+const uint64_t big = BIG;
+const enum Color hue = (enum Color) HUE;
+const union capn_conv_f32 ratio = {0x3fc00000u};
+const int32_t answerCamel = ANSWER_CAMEL;
 static capn_data capn_val1 = {{CAPN_NULL}};
 static capn_ptr_list capn_val2 = {{CAPN_NULL}};
 

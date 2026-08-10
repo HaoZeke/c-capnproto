@@ -34,13 +34,19 @@ enum Color {
 	Color_green = 1,
 	Color_blue = 2
 };
-extern int32_t answer;
-extern unsigned flag;
-extern uint16_t count;
-extern uint64_t big;
-extern enum Color hue;
-extern union capn_conv_f32 ratio;
-extern int32_t answerCamel;
+#define ANSWER (42)
+extern const int32_t answer;
+#define FLAG (1)
+extern const unsigned flag;
+#define COUNT (7)
+extern const uint16_t count;
+#define BIG (((uint64_t) 0x1u << 32) | 0u)
+extern const uint64_t big;
+#define HUE (1u)
+extern const enum Color hue;
+extern const union capn_conv_f32 ratio;
+#define ANSWER_CAMEL (99)
+extern const int32_t answerCamel;
 
 struct Rec {
 	capn_data info;

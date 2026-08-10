@@ -212,23 +212,33 @@ enum TestNameAnnotation_NestedStruct_DeeplyNestedEnum {
 	TestNameAnnotation_NestedStruct_DeeplyNestedEnum_corge = 1,
 	TestNameAnnotation_NestedStruct_DeeplyNestedEnum_grault = 2
 };
-extern union capn_conv_f32 TestWholeFloatDefault_constant;
-extern union capn_conv_f32 TestWholeFloatDefault_bigConstant;
-extern unsigned TestConstants_boolConst;
-extern int8_t TestConstants_int8Const;
-extern int16_t TestConstants_int16Const;
-extern int32_t TestConstants_int32Const;
-extern int64_t TestConstants_int64Const;
-extern uint8_t TestConstants_uint8Const;
-extern uint16_t TestConstants_uint16Const;
-extern uint32_t TestConstants_uint32Const;
-extern uint64_t TestConstants_uint64Const;
-extern union capn_conv_f32 TestConstants_float32Const;
-extern union capn_conv_f64 TestConstants_float64Const;
+extern const union capn_conv_f32 TestWholeFloatDefault_constant;
+extern const union capn_conv_f32 TestWholeFloatDefault_bigConstant;
+#define TEST_CONSTANTS_BOOL_CONST (1)
+extern const unsigned TestConstants_boolConst;
+#define TEST_CONSTANTS_INT8CONST (-123)
+extern const int8_t TestConstants_int8Const;
+#define TEST_CONSTANTS_INT16CONST (-12345)
+extern const int16_t TestConstants_int16Const;
+#define TEST_CONSTANTS_INT32CONST (-12345678)
+extern const int32_t TestConstants_int32Const;
+#define TEST_CONSTANTS_INT64CONST (((uint64_t) 0xffff8fb7u << 32) | 0x79f22087u)
+extern const int64_t TestConstants_int64Const;
+#define TEST_CONSTANTS_UINT8CONST (234)
+extern const uint8_t TestConstants_uint8Const;
+#define TEST_CONSTANTS_UINT16CONST (45678)
+extern const uint16_t TestConstants_uint16Const;
+#define TEST_CONSTANTS_UINT32CONST (3456789012u)
+extern const uint32_t TestConstants_uint32Const;
+#define TEST_CONSTANTS_UINT64CONST (((uint64_t) 0xab54a98cu << 32) | 0xeb1f0ad2u)
+extern const uint64_t TestConstants_uint64Const;
+extern const union capn_conv_f32 TestConstants_float32Const;
+extern const union capn_conv_f64 TestConstants_float64Const;
 extern capn_text TestConstants_textConst;
 extern capn_data TestConstants_dataConst;
 extern TestAllTypes_ptr TestConstants_structConst;
-extern enum TestEnum TestConstants_enumConst;
+#define TEST_CONSTANTS_ENUM_CONST (5u)
+extern const enum TestEnum TestConstants_enumConst;
 extern capn_ptr TestConstants_voidListConst;
 extern capn_list1 TestConstants_boolListConst;
 extern capn_list8 TestConstants_int8ListConst;
@@ -245,7 +255,8 @@ extern capn_ptr_list TestConstants_textListConst;
 extern capn_ptr_list TestConstants_dataListConst;
 extern TestAllTypes_list TestConstants_structListConst;
 extern capn_list16 TestConstants_enumListConst;
-extern uint32_t globalInt;
+#define GLOBAL_INT (12345u)
+extern const uint32_t globalInt;
 extern capn_text globalText;
 extern TestAllTypes_ptr globalStruct;
 extern TestPrintInlineStructs_ptr globalPrintableStruct;

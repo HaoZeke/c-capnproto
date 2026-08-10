@@ -2,7 +2,8 @@
  *
  * Empty Data/List defaults must compile and round-trip without an
  * undeclared capn_buf. List(Text) fields are capn_ptr_list so capn_len
- * compiles.
+ * compiles. Integer/enum/float constants are const with a SCREAMING_SNAKE
+ * #define.
  */
 
 #include <gtest/gtest.h>
@@ -10,6 +11,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <type_traits>
 
 #include "capnp_c.h"
 #include "codegen-defaults.capnp.h"
@@ -137,4 +139,28 @@ TEST(CodegenDefaults, ListTextCapnLen) {
   EXPECT_EQ(0, memcmp(t0.str, "one", 3));
 
   capn_free(&c);
+}
+
+TEST(CodegenDefaults, GeneratedConstantsAreConst) {
+  EXPECT_TRUE((std::is_const<decltype(answer)>::value));
+  EXPECT_TRUE((std::is_const<decltype(flag)>::value));
+  EXPECT_TRUE((std::is_const<decltype(count)>::value));
+  EXPECT_TRUE((std::is_const<decltype(big)>::value));
+  EXPECT_TRUE((std::is_const<decltype(hue)>::value));
+  EXPECT_TRUE((std::is_const<decltype(ratio)>::value));
+  EXPECT_TRUE((std::is_const<decltype(answerCamel)>::value));
+
+  EXPECT_EQ(42, answer);
+  EXPECT_EQ(42, ANSWER);
+  EXPECT_EQ(1u, flag);
+  EXPECT_EQ(1, FLAG);
+  EXPECT_EQ(7u, count);
+  EXPECT_EQ(7u, COUNT);
+  EXPECT_EQ(UINT64_C(0x100000000), big);
+  EXPECT_EQ(UINT64_C(0x100000000), BIG);
+  EXPECT_EQ(Color_green, hue);
+  EXPECT_EQ(1u, HUE);
+  EXPECT_FLOAT_EQ(1.5f, ratio.f);
+  EXPECT_EQ(99, answerCamel);
+  EXPECT_EQ(99, ANSWER_CAMEL);
 }
