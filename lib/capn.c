@@ -764,6 +764,34 @@ static void vset_leave(struct capn_vset *vs, capn_ptr p)
 		sl->state = CAPN_V_DONE;
 }
 
+/* Like vset_enter, but a DONE object is visited again (canonical
+ * form duplicates shared objects). PATH is still a cycle. */
+static int vset_reenter(struct capn_vset *vs, capn_ptr p)
+{
+	struct capn_vslot *sl;
+
+	if (p.type == CAPN_NULL || p.type == CAPN_INTERFACE || !p.data || !p.seg)
+		return 2;
+	if (vs->n * 3 > vs->cap * 2) {
+		if (vset_grow(vs))
+			return -1;
+	}
+	sl = vset_find(vs, p.seg, p.data, p.type, p.is_composite_list, 1);
+	if (!sl)
+		return -1;
+	if (sl->state == CAPN_V_PATH)
+		return -1;
+	if (sl->state == CAPN_V_EMPTY) {
+		sl->seg = p.seg;
+		sl->data = p.data;
+		sl->type = p.type;
+		sl->is_composite_list = p.is_composite_list;
+		vs->n++;
+	}
+	sl->state = CAPN_V_PATH;
+	return 0;
+}
+
 static int object_nchild(capn_ptr p)
 {
 	switch (p.type) {
@@ -1715,6 +1743,455 @@ capn_ptr capn_root(struct capn *c) {
 
 int capn_set_root(struct capn *c, capn_ptr p) {
 	return capn_setp(capn_root(c), 0, p);
+}
+
+static int word_zero(const char *d)
+{
+	return capn_flip64(*(const uint64_t *) d) == 0;
+}
+
+static int trunc_data_words(const char *data, int datasz)
+{
+	int n = datasz / 8;
+
+	while (n > 0 && word_zero(data + (n - 1) * 8))
+		n--;
+	return n;
+}
+
+static int trunc_ptr_words(const char *data, int datasz, int ptrs)
+{
+	int n = ptrs;
+
+	while (n > 0 && word_zero(data + datasz + (n - 1) * 8))
+		n--;
+	return n;
+}
+
+static void trunc_composite(capn_ptr list, int *out_dw, int *out_pw)
+{
+	int dw = (int) (list.datasz / 8);
+	int pw = (int) list.ptrs;
+	int i, stride;
+
+	stride = (int) list.datasz + 8 * (int) list.ptrs;
+	while (dw > 0) {
+		int allz = 1;
+		for (i = 0; i < list.len; i++) {
+			if (!word_zero(list.data + i * stride + (dw - 1) * 8)) {
+				allz = 0;
+				break;
+			}
+		}
+		if (!allz)
+			break;
+		dw--;
+	}
+	while (pw > 0) {
+		int allz = 1;
+		for (i = 0; i < list.len; i++) {
+			if (!word_zero(list.data + i * stride + list.datasz + (pw - 1) * 8)) {
+				allz = 0;
+				break;
+			}
+		}
+		if (!allz)
+			break;
+		pw--;
+	}
+	*out_dw = dw;
+	*out_pw = pw;
+}
+
+static size_t pad8(size_t n)
+{
+	if (n > (size_t) -1 - 7)
+		return (size_t) -1;
+	return (n + 7) & ~(size_t) 7;
+}
+
+static int load_child(struct capn_segment *s, char *d, int rem, capn_ptr *out)
+{
+	int z;
+
+	if (rem == 0)
+		return -1;
+	z = ptr_word_null(s, d);
+	if (z < 0)
+		return -1;
+	if (z) {
+		memset(out, 0, sizeof(*out));
+		return 0;
+	}
+	*out = read_ptr(s, d, rem);
+	if (out->type == CAPN_NULL)
+		return -1;
+	return 0;
+}
+
+static int canon_add(size_t *total, size_t add, size_t limit)
+{
+	if (add > limit || *total > limit - add)
+		return -1;
+	*total += add;
+	return 0;
+}
+
+static char *canon_alloc(struct capn_segment *s, size_t n)
+{
+	char *p;
+
+	if (n == 0)
+		return s->data + s->len;
+	if (s->len > s->cap || n > s->cap - s->len)
+		return NULL;
+	p = s->data + s->len;
+	s->len += n;
+	return p;
+}
+
+static int canon_emit(struct capn_segment *ds, char *ptr_loc, capn_ptr p,
+		      int rem, struct capn_vset *vs);
+
+static int canon_measure(capn_ptr p, int rem, struct capn_vset *vs,
+			 size_t *total, size_t limit)
+{
+	int i, j, ent, dw, pw, stride;
+	size_t add, nbytes;
+	capn_ptr ch;
+
+	if (p.type == CAPN_NULL || p.type == CAPN_INTERFACE)
+		return 0;
+
+	ent = vset_reenter(vs, p);
+	if (ent < 0)
+		return -1;
+	if (ent == 2)
+		return 0;
+
+	switch (p.type) {
+	case CAPN_STRUCT:
+		dw = trunc_data_words(p.data, (int) p.datasz);
+		pw = trunc_ptr_words(p.data, (int) p.datasz, (int) p.ptrs);
+		if (dw == 0 && pw == 0) {
+			vset_leave(vs, p);
+			return 0;
+		}
+		add = (size_t) dw * 8u + (size_t) pw * 8u;
+		if (canon_add(total, add, limit))
+			goto fail;
+		for (i = 0; i < pw; i++) {
+			if (load_child(p.seg, p.data + p.datasz + 8 * i, rem, &ch))
+				goto fail;
+			if (canon_measure(ch, rem - 1, vs, total, limit))
+				goto fail;
+		}
+		break;
+
+	case CAPN_PTR_LIST:
+		if (!mul_size((size_t) p.len, 8, &add))
+			goto fail;
+		if (canon_add(total, add, limit))
+			goto fail;
+		for (i = 0; i < p.len; i++) {
+			if (load_child(p.seg, p.data + 8 * i, rem, &ch))
+				goto fail;
+			if (canon_measure(ch, rem - 1, vs, total, limit))
+				goto fail;
+		}
+		break;
+
+	case CAPN_BIT_LIST:
+		nbytes = ((size_t) p.len + 7) / 8;
+		add = pad8(nbytes);
+		if (add == (size_t) -1 || canon_add(total, add, limit))
+			goto fail;
+		break;
+
+	case CAPN_LIST:
+		if (p.is_composite_list) {
+			trunc_composite(p, &dw, &pw);
+			if (!mul_size((size_t) p.len, (size_t) dw + (size_t) pw, &add))
+				goto fail;
+			if (!mul_size(add, 8, &add))
+				goto fail;
+			if (add > (size_t) -1 - 8)
+				goto fail;
+			add += 8;
+			if (canon_add(total, add, limit))
+				goto fail;
+			stride = (int) p.datasz + 8 * (int) p.ptrs;
+			for (i = 0; i < p.len; i++) {
+				char *el = p.data + i * stride;
+				for (j = 0; j < pw; j++) {
+					if (load_child(p.seg, el + p.datasz + 8 * j, rem, &ch))
+						goto fail;
+					if (canon_measure(ch, rem - 1, vs, total, limit))
+						goto fail;
+				}
+			}
+		} else {
+			if (p.datasz <= 0 || p.len <= 0) {
+				add = 0;
+			} else {
+				if (!mul_size((size_t) p.len, (size_t) p.datasz, &nbytes))
+					goto fail;
+				add = pad8(nbytes);
+				if (add == (size_t) -1)
+					goto fail;
+			}
+			if (canon_add(total, add, limit))
+				goto fail;
+		}
+		break;
+
+	default:
+		goto fail;
+	}
+
+	vset_leave(vs, p);
+	return 0;
+fail:
+	vset_leave(vs, p);
+	return -1;
+}
+
+static int canon_emit(struct capn_segment *ds, char *ptr_loc, capn_ptr p,
+		      int rem, struct capn_vset *vs)
+{
+	int i, j, ent, dw, pw, stride, tstride;
+	size_t add, nbytes;
+	char *obj, *el, *dst_el;
+	capn_ptr ch, tag;
+	uint64_t hdr;
+
+	if (p.type == CAPN_NULL) {
+		memset(ptr_loc, 0, 8);
+		return 0;
+	}
+	if (p.type == CAPN_INTERFACE)
+		return write_ptr_tag(ptr_loc, p, 0);
+
+	ent = vset_reenter(vs, p);
+	if (ent < 0)
+		return -1;
+	if (ent == 2) {
+		memset(ptr_loc, 0, 8);
+		return 0;
+	}
+
+	switch (p.type) {
+	case CAPN_STRUCT:
+		dw = trunc_data_words(p.data, (int) p.datasz);
+		pw = trunc_ptr_words(p.data, (int) p.datasz, (int) p.ptrs);
+		if (dw == 0 && pw == 0) {
+			tag = p;
+			tag.datasz = 0;
+			tag.ptrs = 0;
+			if (write_ptr_tag(ptr_loc, tag, -8))
+				goto fail;
+			vset_leave(vs, p);
+			return 0;
+		}
+		add = (size_t) dw * 8u + (size_t) pw * 8u;
+		obj = canon_alloc(ds, add);
+		if (!obj)
+			goto fail;
+		tag = p;
+		tag.datasz = (unsigned) dw * 8u;
+		tag.ptrs = (unsigned) pw;
+		if (write_ptr_tag(ptr_loc, tag, (int64_t) (obj - ptr_loc - 8)))
+			goto fail;
+		if (dw)
+			memcpy(obj, p.data, (size_t) dw * 8u);
+		for (i = 0; i < pw; i++) {
+			if (load_child(p.seg, p.data + p.datasz + 8 * i, rem, &ch))
+				goto fail;
+			if (canon_emit(ds, obj + (size_t) dw * 8u + 8 * (size_t) i,
+				       ch, rem - 1, vs))
+				goto fail;
+		}
+		break;
+
+	case CAPN_PTR_LIST:
+		if (!mul_size((size_t) p.len, 8, &add))
+			goto fail;
+		obj = canon_alloc(ds, add);
+		if (!obj && add != 0)
+			goto fail;
+		if (write_ptr_tag(ptr_loc, p, (int64_t) (obj - ptr_loc - 8)))
+			goto fail;
+		for (i = 0; i < p.len; i++) {
+			if (load_child(p.seg, p.data + 8 * i, rem, &ch))
+				goto fail;
+			if (canon_emit(ds, obj + 8 * (size_t) i, ch, rem - 1, vs))
+				goto fail;
+		}
+		break;
+
+	case CAPN_BIT_LIST:
+		nbytes = ((size_t) p.len + 7) / 8;
+		add = pad8(nbytes);
+		if (add == (size_t) -1)
+			goto fail;
+		obj = canon_alloc(ds, add);
+		if (!obj && add != 0)
+			goto fail;
+		if (write_ptr_tag(ptr_loc, p, (int64_t) (obj - ptr_loc - 8)))
+			goto fail;
+		if (nbytes)
+			memcpy(obj, p.data, nbytes);
+		if (p.len & 7)
+			obj[nbytes - 1] = (char) ((unsigned char) obj[nbytes - 1]
+						  & ((1u << (p.len & 7)) - 1u));
+		break;
+
+	case CAPN_LIST:
+		if (p.is_composite_list) {
+			trunc_composite(p, &dw, &pw);
+			if (!mul_size((size_t) p.len, (size_t) dw + (size_t) pw, &add))
+				goto fail;
+			if (!mul_size(add, 8, &add))
+				goto fail;
+			if (add > (size_t) -1 - 8)
+				goto fail;
+			add += 8;
+			obj = canon_alloc(ds, add);
+			if (!obj)
+				goto fail;
+			tag = p;
+			tag.datasz = (unsigned) dw * 8u;
+			tag.ptrs = (unsigned) pw;
+			if (write_ptr_tag(ptr_loc, tag, (int64_t) (obj - ptr_loc - 8)))
+				goto fail;
+			hdr = STRUCT_PTR | (U64(p.len) << 2)
+				| (U64(dw) << 32) | (U64(pw) << 48);
+			*(uint64_t *) obj = capn_flip64(hdr);
+			stride = (int) p.datasz + 8 * (int) p.ptrs;
+			tstride = dw * 8 + pw * 8;
+			for (i = 0; i < p.len; i++) {
+				el = p.data + i * stride;
+				dst_el = obj + 8 + (size_t) i * (size_t) tstride;
+				if (dw)
+					memcpy(dst_el, el, (size_t) dw * 8u);
+			}
+			for (i = 0; i < p.len; i++) {
+				el = p.data + i * stride;
+				dst_el = obj + 8 + (size_t) i * (size_t) tstride;
+				for (j = 0; j < pw; j++) {
+					if (load_child(p.seg, el + p.datasz + 8 * j, rem, &ch))
+						goto fail;
+					if (canon_emit(ds, dst_el + (size_t) dw * 8u
+							    + 8 * (size_t) j,
+						       ch, rem - 1, vs))
+						goto fail;
+				}
+			}
+		} else {
+			if (p.datasz <= 0 || p.len <= 0) {
+				add = 0;
+			} else {
+				if (!mul_size((size_t) p.len, (size_t) p.datasz, &nbytes))
+					goto fail;
+				add = pad8(nbytes);
+				if (add == (size_t) -1)
+					goto fail;
+			}
+			obj = canon_alloc(ds, add);
+			if (!obj && add != 0)
+				goto fail;
+			if (write_ptr_tag(ptr_loc, p, (int64_t) (obj - ptr_loc - 8)))
+				goto fail;
+			if (add && p.datasz > 0 && p.len > 0)
+				memcpy(obj, p.data, (size_t) p.len * (size_t) p.datasz);
+		}
+		break;
+
+	default:
+		goto fail;
+	}
+
+	vset_leave(vs, p);
+	return 0;
+fail:
+	vset_leave(vs, p);
+	return -1;
+}
+
+int capn_canonicalize(struct capn *src, struct capn *dst)
+{
+	size_t saved, limit, need;
+	int rc = -1, nest, z;
+	struct capn_vset vs;
+	struct capn_segment *s;
+	capn_ptr root, first;
+	int64_t create_sz;
+
+	if (!src || !dst || src == dst || !dst->create)
+		return -1;
+	if (dst->segnum != 0)
+		return -1;
+
+	saved = src->traversal_used;
+	memset(&vs, 0, sizeof(vs));
+	memset(&first, 0, sizeof(first));
+	limit = src->traversal_limit ? src->traversal_limit : CAPN_TRAVERSAL_DEFAULT;
+	nest = session_nesting(src);
+	need = 8;
+
+	if (!src->seglist) {
+		first.type = CAPN_NULL;
+		goto alloc;
+	}
+
+	root = capn_root(src);
+	if (!root.seg || !root.data)
+		goto done;
+	z = ptr_word_null(root.seg, root.data);
+	if (z < 0)
+		goto done;
+	if (z) {
+		first.type = CAPN_NULL;
+		goto alloc;
+	}
+	first = read_ptr(root.seg, root.data, nest);
+	if (first.type == CAPN_NULL)
+		goto done;
+
+	if (vset_init(&vs))
+		goto done;
+	if (canon_measure(first, hop_remaining(first), &vs, &need, limit))
+		goto done;
+	vset_free(&vs);
+	memset(&vs, 0, sizeof(vs));
+	src->traversal_used = saved;
+
+alloc:
+	if (need < 8 || need > (size_t) INT_MAX)
+		goto done;
+	create_sz = (int64_t) need;
+	s = dst->create(dst->user, 0, (int) create_sz);
+	if (!s)
+		goto done;
+	capn_append_segment(dst, s);
+	if (s->cap < need)
+		goto done;
+	s->len = 8;
+
+	if (first.type == CAPN_NULL) {
+		rc = 0;
+		goto done;
+	}
+
+	if (vset_init(&vs))
+		goto done;
+	if (canon_emit(s, s->data, first, hop_remaining(first), &vs))
+		goto done;
+	rc = 0;
+done:
+	src->traversal_used = saved;
+	vset_free(&vs);
+	return rc;
 }
 
 capn_ptr capn_new_struct(struct capn_segment *seg, int datasz, int ptrs) {

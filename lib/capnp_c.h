@@ -272,6 +272,17 @@ CAPN_EXPORT int capn_validate(struct capn *c);
 CAPN_EXPORT int capn_ok(const struct capn *c);
 CAPN_EXPORT void capn_clear_err(struct capn *c);
 
+/* capn_canonicalize walks src and writes a single-segment canonical
+ * form into dst (encoding.html): no far pointers, no holes, preorder,
+ * trailing zero data/pointer words truncated, empty struct B=-1.
+ * Shared objects are duplicated. dst must be a fresh
+ * capn_init_malloc session (segnum == 0). Unframed bytes are
+ * dst->seglist->data[0 .. len). capn_write_mem wraps them as a
+ * 1-segment stream. Returns 0 on success, -1 on a bad pointer
+ * graph, cycle, budget overflow, or a dst that is not writable.
+ */
+CAPN_EXPORT int capn_canonicalize(struct capn *src, struct capn *dst);
+
 /* capn_set_root sets the message root to p (capn_setp(capn_root(c), 0, p)).
  * new_* / write_* only fill a struct in a segment; the message is empty
  * until the root pointer is set. Empty messages are valid. */
