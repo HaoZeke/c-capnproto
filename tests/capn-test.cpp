@@ -847,6 +847,24 @@ TEST(WireFormat, Get1Set1OnPtrListOfStructs) {
   EXPECT_EQ(1, capn_read8(capn_getp(list, 1, 1), 0) & 1);
 }
 
+TEST(WireFormat, Get32OnPtrListOfOneWordStructs) {
+  Session ctx;
+  capn_ptr root = capn_root(&ctx.capn);
+  capn_ptr list = capn_new_ptr_list(root.seg, 1);
+  ASSERT_EQ(CAPN_PTR_LIST, list.type);
+  ASSERT_EQ(1, list.len);
+
+  capn_ptr el = capn_new_struct(list.seg, 8, 0);
+  ASSERT_EQ(CAPN_STRUCT, el.type);
+  EXPECT_EQ(8, el.datasz);
+  EXPECT_EQ(0, el.ptrs);
+  EXPECT_EQ(0, capn_write32(el, 0, UINT32_C(0xA1B2C3D4)));
+  EXPECT_EQ(0, capn_setp(list, 0, el));
+
+  capn_list32 list32 = {list};
+  EXPECT_EQ(UINT32_C(0xA1B2C3D4), capn_get32(list32, 0));
+}
+
 int main(int argc, char *argv[]) {
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
