@@ -628,6 +628,225 @@ TEST(WireFormat, GetpHugeOffsetIsNull) {
   EXPECT_EQ(CAPN_NULL, p.type);
 }
 
+/* encoding.html List(Bool): C=1, bits packed little-endian (bit 0 = LSB).
+ * A list pointer with offset 0, C=1, D=10 is 0x0000005100000001
+ * (LE bytes 01 00 00 00 51 00 00 00). Bits 0, 3, 9 set produce 0x09, 0x02. */
+TEST(WireFormat, BitListRawDecode) {
+  AlignedData<2> data = {{
+    0x01, 0x00, 0x00, 0x00, 0x51, 0x00, 0x00, 0x00,
+    0x09, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+  }};
+  struct capn_segment seg;
+  struct capn ctx;
+  memset(&seg, 0, sizeof(seg));
+  seg.data = (char*) data.bytes;
+  seg.len = seg.cap = sizeof(data.bytes);
+  memset(&ctx, 0, sizeof(ctx));
+  capn_append_segment(&ctx, &seg);
+
+  capn_list1 bits = {capn_getp(capn_root(&ctx), 0, 1)};
+  EXPECT_EQ(CAPN_BIT_LIST, bits.p.type);
+  EXPECT_EQ(10, bits.p.len);
+  EXPECT_EQ(1, capn_get1(bits, 0));
+  EXPECT_EQ(0, capn_get1(bits, 1));
+  EXPECT_EQ(0, capn_get1(bits, 2));
+  EXPECT_EQ(1, capn_get1(bits, 3));
+  EXPECT_EQ(0, capn_get1(bits, 8));
+  EXPECT_EQ(1, capn_get1(bits, 9));
+  EXPECT_EQ(0, capn_get1(bits, 10));
+}
+
+TEST(WireFormat, BitListGetpInnerMember) {
+  Session ctx;
+  capn_ptr root = capn_root(&ctx.capn);
+  capn_list1 bits = capn_new_list1(root.seg, 10);
+  ASSERT_EQ(CAPN_BIT_LIST, bits.p.type);
+  EXPECT_EQ(10, bits.p.len);
+  EXPECT_EQ(0, capn_set1(bits, 0, 1));
+  EXPECT_EQ(0, capn_set1(bits, 3, 1));
+  EXPECT_EQ(0, capn_set1(bits, 9, 1));
+
+  capn_ptr inner = capn_getp(bits.p, 3, 0);
+  EXPECT_EQ(CAPN_BIT_LIST, inner.type);
+  EXPECT_EQ(1, inner.is_list_member);
+  EXPECT_EQ(1, inner.len);
+  capn_list1 one = {inner};
+  EXPECT_EQ(1, capn_get1(one, 0));
+  EXPECT_EQ(0, capn_get1(one, 1));
+  EXPECT_EQ(0, capn_set1(one, 0, 0));
+  EXPECT_EQ(0, capn_get1(bits, 3));
+  EXPECT_EQ(0, capn_set1(one, 0, 1));
+  EXPECT_EQ(1, capn_get1(bits, 3));
+
+  capn_ptr zero = capn_getp(bits.p, 1, 1);
+  EXPECT_EQ(CAPN_BIT_LIST, zero.type);
+  EXPECT_EQ(1, zero.is_list_member);
+  capn_list1 z = {zero};
+  EXPECT_EQ(0, capn_get1(z, 0));
+
+  EXPECT_EQ(CAPN_NULL, capn_getp(bits.p, 10, 0).type);
+  EXPECT_EQ(CAPN_NULL, capn_getp(bits.p, -1, 0).type);
+  EXPECT_EQ(1, capn_get1(bits, 3));
+}
+
+TEST(WireFormat, BitListSetpCopiesBit) {
+  Session ctx;
+  capn_ptr root = capn_root(&ctx.capn);
+  capn_list1 src = capn_new_list1(root.seg, 8);
+  capn_list1 dst = capn_new_list1(root.seg, 8);
+  ASSERT_EQ(CAPN_BIT_LIST, src.p.type);
+  ASSERT_EQ(CAPN_BIT_LIST, dst.p.type);
+  EXPECT_EQ(0, capn_set1(src, 2, 1));
+  EXPECT_EQ(0, capn_set1(src, 5, 1));
+  EXPECT_EQ(0, capn_set1(dst, 0, 1));
+  EXPECT_EQ(0, capn_set1(dst, 7, 1));
+
+  EXPECT_EQ(0, capn_setp(dst.p, 1, capn_getp(src.p, 2, 0)));
+  EXPECT_EQ(0, capn_setp(dst.p, 4, capn_getp(src.p, 5, 0)));
+  EXPECT_EQ(0, capn_setp(dst.p, 7, capn_getp(src.p, 0, 0)));
+
+  EXPECT_EQ(1, capn_get1(dst, 0));
+  EXPECT_EQ(1, capn_get1(dst, 1));
+  EXPECT_EQ(0, capn_get1(dst, 2));
+  EXPECT_EQ(1, capn_get1(dst, 4));
+  EXPECT_EQ(0, capn_get1(dst, 7));
+
+  capn_ptr nil;
+  memset(&nil, 0, sizeof(nil));
+  EXPECT_EQ(0, capn_setp(dst.p, 0, nil));
+  EXPECT_EQ(0, capn_get1(dst, 0));
+
+  EXPECT_EQ(-1, capn_setp(dst.p, 8, capn_getp(src.p, 2, 0)));
+  EXPECT_EQ(-1, capn_setp(dst.p, -1, capn_getp(src.p, 2, 0)));
+  EXPECT_EQ(1, capn_get1(dst, 1));
+}
+
+TEST(WireFormat, BitListSetpRejectsBadTgtLeavesBits) {
+  Session ctx;
+  capn_ptr root = capn_root(&ctx.capn);
+  capn_list1 bits = capn_new_list1(root.seg, 4);
+  capn_ptr junk = capn_new_ptr_list(root.seg, 1);
+  EXPECT_EQ(0, capn_set1(bits, 0, 1));
+  EXPECT_EQ(0, capn_set1(bits, 2, 1));
+
+  EXPECT_EQ(-1, capn_setp(bits.p, 1, junk));
+  EXPECT_EQ(1, capn_get1(bits, 0));
+  EXPECT_EQ(0, capn_get1(bits, 1));
+  EXPECT_EQ(1, capn_get1(bits, 2));
+  EXPECT_EQ(0, capn_get1(bits, 3));
+}
+
+TEST(WireFormat, BitListSetpIntoStructPointer) {
+  Session ctx;
+  capn_ptr root = capn_root(&ctx.capn);
+  capn_ptr holder = capn_new_struct(root.seg, 0, 1);
+  capn_list1 bits = capn_new_list1(root.seg, 11);
+  ASSERT_EQ(CAPN_STRUCT, holder.type);
+  EXPECT_EQ(0, capn_set1(bits, 1, 1));
+  EXPECT_EQ(0, capn_set1(bits, 8, 1));
+  EXPECT_EQ(0, capn_set1(bits, 10, 1));
+  EXPECT_EQ(0, capn_setp(holder, 0, bits.p));
+  EXPECT_EQ(0, capn_set_root(&ctx.capn, holder));
+
+  capn_list1 got = {capn_getp(holder, 0, 1)};
+  EXPECT_EQ(CAPN_BIT_LIST, got.p.type);
+  EXPECT_EQ(11, got.p.len);
+  EXPECT_EQ(0, capn_get1(got, 0));
+  EXPECT_EQ(1, capn_get1(got, 1));
+  EXPECT_EQ(1, capn_get1(got, 8));
+  EXPECT_EQ(1, capn_get1(got, 10));
+}
+
+TEST(WireFormat, BitListSetpInnerIntoPointerField) {
+  Session ctx;
+  capn_ptr root = capn_root(&ctx.capn);
+  capn_ptr holder = capn_new_struct(root.seg, 0, 1);
+  capn_list1 bits = capn_new_list1(root.seg, 8);
+  EXPECT_EQ(0, capn_set1(bits, 3, 1));
+  EXPECT_EQ(0, capn_setp(holder, 0, capn_getp(bits.p, 3, 0)));
+
+  capn_list1 got = {capn_getp(holder, 0, 1)};
+  EXPECT_EQ(CAPN_BIT_LIST, got.p.type);
+  EXPECT_EQ(1, got.p.len);
+  EXPECT_EQ(0, got.p.is_list_member);
+  EXPECT_EQ(1, capn_get1(got, 0));
+
+  EXPECT_EQ(0, capn_setp(holder, 0, capn_getp(bits.p, 1, 0)));
+  got.p = capn_getp(holder, 0, 1);
+  EXPECT_EQ(CAPN_BIT_LIST, got.p.type);
+  EXPECT_EQ(1, got.p.len);
+  EXPECT_EQ(0, capn_get1(got, 0));
+}
+
+TEST(WireFormat, BitListCopyAcrossSession) {
+  Session a, b;
+  capn_ptr src_root = capn_root(&a.capn);
+  capn_ptr src = capn_new_struct(src_root.seg, 0, 1);
+  capn_list1 bits = capn_new_list1(src.seg, 5);
+  EXPECT_EQ(0, capn_set1(bits, 0, 1));
+  EXPECT_EQ(0, capn_set1(bits, 4, 1));
+  EXPECT_EQ(0, capn_setp(src, 0, bits.p));
+  EXPECT_EQ(0, capn_set_root(&a.capn, src));
+
+  capn_ptr dst_root = capn_root(&b.capn);
+  EXPECT_EQ(0, capn_setp(dst_root, 0, capn_getp(src_root, 0, 1)));
+  capn_list1 got = {capn_getp(capn_getp(dst_root, 0, 1), 0, 1)};
+  EXPECT_EQ(CAPN_BIT_LIST, got.p.type);
+  EXPECT_EQ(5, got.p.len);
+  EXPECT_EQ(1, capn_get1(got, 0));
+  EXPECT_EQ(0, capn_get1(got, 1));
+  EXPECT_EQ(1, capn_get1(got, 4));
+}
+
+TEST(WireFormat, BitListWritePtrTag) {
+  uint64_t word = 0;
+  capn_ptr p;
+  memset(&p, 0, sizeof(p));
+  p.type = CAPN_BIT_LIST;
+  p.len = 10;
+  p.datasz = 2;
+  EXPECT_EQ(0, write_ptr_tag((char *)&word, p, 0));
+  EXPECT_EQ(UINT64_C(0x5100000001), capn_flip64(word));
+}
+
+TEST(WireFormat, Get1Set1OnCompositeList) {
+  Session ctx;
+  capn_ptr root = capn_root(&ctx.capn);
+  capn_ptr list = capn_new_list(root.seg, 3, 8, 0);
+  ASSERT_EQ(CAPN_LIST, list.type);
+  for (int i = 0; i < 3; i++) {
+    capn_ptr el = capn_getp(list, i, 0);
+    ASSERT_EQ(CAPN_STRUCT, el.type);
+    EXPECT_EQ(0, capn_write1(el, 0, i != 1));
+  }
+  capn_list1 as_bits = {list};
+  EXPECT_EQ(1, capn_get1(as_bits, 0));
+  EXPECT_EQ(0, capn_get1(as_bits, 1));
+  EXPECT_EQ(1, capn_get1(as_bits, 2));
+  EXPECT_EQ(0, capn_set1(as_bits, 1, 1));
+  EXPECT_EQ(1, capn_get1(as_bits, 1));
+  EXPECT_EQ(1, capn_read8(capn_getp(list, 1, 0), 0) & 1);
+}
+
+TEST(WireFormat, Get1Set1OnPtrListOfStructs) {
+  Session ctx;
+  capn_ptr root = capn_root(&ctx.capn);
+  capn_ptr list = capn_new_ptr_list(root.seg, 2);
+  capn_ptr a = capn_new_struct(root.seg, 8, 0);
+  capn_ptr b = capn_new_struct(root.seg, 8, 0);
+  EXPECT_EQ(0, capn_write1(a, 0, 1));
+  EXPECT_EQ(0, capn_write1(b, 0, 0));
+  EXPECT_EQ(0, capn_setp(list, 0, a));
+  EXPECT_EQ(0, capn_setp(list, 1, b));
+
+  capn_list1 as_bits = {list};
+  EXPECT_EQ(1, capn_get1(as_bits, 0));
+  EXPECT_EQ(0, capn_get1(as_bits, 1));
+  EXPECT_EQ(0, capn_set1(as_bits, 1, 1));
+  EXPECT_EQ(1, capn_get1(as_bits, 1));
+  EXPECT_EQ(1, capn_read8(capn_getp(list, 1, 1), 0) & 1);
+}
+
 int main(int argc, char *argv[]) {
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
