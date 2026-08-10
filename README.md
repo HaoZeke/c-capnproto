@@ -11,7 +11,8 @@ a maintained fork of `opensourcerouting/c-capnproto` (itself from
 unreviewed PRs; last real work ~2023). Public forks surveyed 2026-07: no
 active maintainer with a credible commit series. This fork exists as the
 canonical pure-C Cap'n home next to
-[HaoZeke/capnp-fortran](https://github.com/HaoZeke/capnp-fortran).
+[HaoZeke/capnp-fortran](https://github.com/HaoZeke/capnp-fortran) and
+[HaoZeke/capnp-janet](https://github.com/HaoZeke/capnp-janet).
 
 **Upstream lineage:** `jmckaskill` → `opensourcerouting` → **this fork**.
 
@@ -249,4 +250,4 @@ an ILP32 `gcc -m32` exists (N/A on the maintainer builder).
 | pkg-config | `lib/pkgconfig/c-capnproto.pc` |
 | Schema helper | `share/c-capnproto/c.capnp` (`import "/c.capnp"` with `-I` this dir) |
 
-Maintaining: [MAINTAINING.md](MAINTAINING.md). Security: [SECURITY.md](SECURITY.md).
+Changelog: [CHANGELOG.md](CHANGELOG.md). Maintaining: [MAINTAINING.md](MAINTAINING.md). Security: [SECURITY.md](SECURITY.md).
