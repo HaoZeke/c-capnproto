@@ -77,6 +77,7 @@ capn_test_SOURCES = \
 	tests/fieldgetset-test.cpp \
 	tests/codegen-defaults-test.cpp \
 	tests/bounds-test.cpp \
+	tests/interface-test.cpp \
 	tests/addressbook.capnp.c \
 	tests/extraheader.capnp.c \
 	tests/fieldgetset.capnp.c \
@@ -111,6 +112,8 @@ EXTRA_DIST += \
 	tests/fixtures/addressbook.bin \
 	tests/fixtures/addressbook.packed.bin \
 	tests/fixtures/addressbook.canonical.bin \
+	tests/interface-field.capnp \
+	tests/interface-field-test.cpp \
 	fuzz/Person.txt \
 	fuzz/read_mem.c \
 	fuzz/read_fp.c

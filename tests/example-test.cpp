@@ -309,3 +309,38 @@ TEST(Examples, ZeroedNestedStructIsNull) {
     capn_free(&rc);
   }
 }
+
+TEST(Examples, TestAllTypesInterfaceField) {
+  uint8_t buf[8192];
+  int64_t sz = 0;
+
+  {
+    struct capn c;
+    capn_init_malloc(&c);
+    struct capn_segment *cs = capn_root(&c).seg;
+    TestAllTypes_ptr tp = new_TestAllTypes(cs);
+    TestInterface_ptr iface = new_TestInterface(cs);
+    iface.p.len = 9;
+    TestAllTypes_set_interfaceField(tp, iface);
+    ASSERT_EQ(0, capn_set_root(&c, tp.p));
+
+    TestInterface_ptr got = TestAllTypes_get_interfaceField(tp);
+    EXPECT_EQ(CAPN_INTERFACE, got.p.type);
+    EXPECT_EQ(9, got.p.len);
+
+    sz = capn_write_mem(&c, buf, sizeof(buf), 0);
+    ASSERT_GT(sz, 0);
+    capn_free(&c);
+  }
+
+  {
+    struct capn rc;
+    ASSERT_EQ(0, capn_init_mem(&rc, buf, (size_t)sz, 0));
+    TestAllTypes_ptr rp;
+    rp.p = capn_getp(capn_root(&rc), 0, 1);
+    TestInterface_ptr got = TestAllTypes_get_interfaceField(rp);
+    EXPECT_EQ(CAPN_INTERFACE, got.p.type);
+    EXPECT_EQ(9, got.p.len);
+    capn_free(&rc);
+  }
+}

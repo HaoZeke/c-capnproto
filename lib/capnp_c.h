@@ -187,6 +187,9 @@ enum CAPN_TYPE {
 	CAPN_PTR_LIST = 3,
 	CAPN_BIT_LIST = 4,
 	CAPN_FAR_POINTER = 5,
+	/* Capability pointer (encoding.html: A=3, B=0). len is the
+	 * capability table index. There is no object body. */
+	CAPN_INTERFACE = 6,
 };
 
 struct capn_ptr {
@@ -335,6 +338,10 @@ CAPN_EXPORT int capn_setv64(capn_list64 p, int off, const uint64_t *data, int sz
  *   - capn_new_list(seg, n, 0, 1) is List of 0-data/1-pointer *structs*
  *     (composite), not List(Text). capn_set_text on that list returns -1;
  *     use capn_new_ptr_list for List(Text).
+ *   - capn_new_interface(seg, datasz, ptrs) is a capability pointer
+ *     (A=3, B=0). datasz/ptrs are unused (ABI match with capn_new_struct);
+ *     there is no object body. The table index is capn_ptr.len (0 on create).
+ *     A null interface is CAPN_NULL, not index 0.
  * Text is List(UInt8) with a trailing NUL included in the wire element count.
  */
 CAPN_EXPORT capn_ptr capn_new_string(struct capn_segment *seg, const char *str, ssize_t sz);

@@ -295,8 +295,10 @@ static void decode_value(struct value* v, Type_ptr type, Value_ptr value, const 
 		v->tname = strf(&v->tname_buf, "enum %s", find_node(v->t._enum.typeId)->name.str);
 		break;
 	case Type__struct:
-	case Type__interface:
 		v->tname = strf(&v->tname_buf, "%s_ptr", find_node(v->t._struct.typeId)->name.str);
+		break;
+	case Type__interface:
+		v->tname = strf(&v->tname_buf, "%s_ptr", find_node(v->t._interface.typeId)->name.str);
 		break;
 	case Type_anyPointer:
 		v->tname = "capn_ptr";
@@ -337,8 +339,10 @@ static void decode_value(struct value* v, Type_ptr type, Value_ptr value, const 
 			v->tname = "capn_ptr_list";
 			break;
 		case Type__struct:
-		case Type__interface:
 			v->tname = strf(&v->tname_buf, "%s_list", find_node(list_type._struct.typeId)->name.str);
+			break;
+		case Type__interface:
+			v->tname = strf(&v->tname_buf, "%s_list", find_node(list_type._interface.typeId)->name.str);
 			break;
 		}
 	}
@@ -1522,6 +1526,58 @@ static void define_method(struct node *iface, int ord) {
 }
 #endif
 
+static void declare_interfaces(struct node *file_node) {
+	struct node *n;
+	int any = 0;
+
+	for (n = file_node->file_nodes; n != NULL; n = n->next_file_node) {
+		if (n->n.which != Node__interface)
+			continue;
+		if (!any) {
+			str_addf(&HDR, "\n");
+			any = 1;
+		}
+		str_addf(&HDR, "typedef struct {capn_ptr p;} %s_ptr;\n", n->name.str);
+		str_addf(&HDR, "typedef struct {capn_ptr p;} %s_list;\n", n->name.str);
+	}
+}
+
+static void define_interface(struct node *n, const char *extattr, const char *extattr_space) {
+	/* Capability pointer: no struct body. List(Interface) is a pointer list. */
+	str_addf(&SRC, "\n%s%s%s_ptr new_%s(struct capn_segment *s) {\n",
+		 extattr, extattr_space, n->name.str, n->name.str);
+	str_addf(&SRC, "\t%s_ptr p;\n", n->name.str);
+	str_addf(&SRC, "\tp.p = capn_new_interface(s, 0, 0);\n");
+	str_addf(&SRC, "\treturn p;\n");
+	str_addf(&SRC, "}\n");
+
+	str_addf(&SRC, "%s%s%s_list new_%s_list(struct capn_segment *s, int len) {\n",
+		 extattr, extattr_space, n->name.str, n->name.str);
+	str_addf(&SRC, "\t%s_list p;\n", n->name.str);
+	str_addf(&SRC, "\tp.p = capn_new_ptr_list(s, len);\n");
+	str_addf(&SRC, "\treturn p;\n");
+	str_addf(&SRC, "}\n");
+}
+
+static void declare_interface_news(struct node *file_node,
+		const char *extattr, const char *extattr_space) {
+	struct node *n;
+	int any = 0;
+
+	for (n = file_node->file_nodes; n != NULL; n = n->next_file_node) {
+		if (n->n.which != Node__interface)
+			continue;
+		if (!any) {
+			str_addf(&HDR, "\n");
+			any = 1;
+		}
+		str_addf(&HDR, "%s%s%s_ptr new_%s(struct capn_segment*);\n",
+			 extattr, extattr_space, n->name.str, n->name.str);
+		str_addf(&HDR, "%s%s%s_list new_%s_list(struct capn_segment*, int len);\n",
+			 extattr, extattr_space, n->name.str, n->name.str);
+	}
+}
+
 static void declare(struct node *file_node, const char *format, int num) {
 	struct node *n;
 	str_addf(&HDR, "\n");
@@ -1862,6 +1918,7 @@ int main() {
 		declare_ext(file_node, "struct %s%s%s;\n", 1, extattr, extattr_space);
 		declare(file_node, "typedef struct {capn_ptr p;} %s_ptr;\n", 1);
 		declare(file_node, "typedef struct {capn_ptr p;} %s_list;\n", 1);
+		declare_interfaces(file_node);
 
 		for (n = file_node->file_nodes; n != NULL; n = n->next_file_node) {
 			if (n->n.which == Node__enum) {
@@ -1889,8 +1946,14 @@ int main() {
 			}
 		}
 
+		for (n = file_node->file_nodes; n != NULL; n = n->next_file_node) {
+			if (n->n.which == Node__interface)
+				define_interface(n, extattr, extattr_space);
+		}
+
 		declare_ext(file_node, "%s%s%s_ptr new_%s(struct capn_segment*);\n", 2, extattr, extattr_space);
 		declare_ext(file_node, "%s%s%s_list new_%s_list(struct capn_segment*, int len);\n", 2, extattr, extattr_space);
+		declare_interface_news(file_node, extattr, extattr_space);
 		declare_ext(file_node, "%s%svoid read_%s(struct %s*, %s_ptr);\n", 3, extattr, extattr_space);
 		declare_ext(file_node, "%s%svoid write_%s(const struct %s*, %s_ptr);\n", 3, extattr, extattr_space);
 		declare_ext(file_node, "%s%svoid get_%s(struct %s*, %s_list, int i);\n", 3, extattr, extattr_space);
