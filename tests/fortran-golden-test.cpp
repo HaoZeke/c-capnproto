@@ -177,10 +177,9 @@ static void decode_and_check(const uint8_t *buf, size_t sz, int packed,
   capn_free(&rc);
 }
 
-static ssize_t encode_alice_bob(uint8_t *buf, size_t cap, int packed) {
-  struct capn c;
-  capn_init_malloc(&c);
-  struct capn_segment *cs = capn_root(&c).seg;
+static int build_alice_bob(struct capn *c) {
+  capn_init_malloc(c);
+  struct capn_segment *cs = capn_root(c).seg;
 
   AddressBook_ptr ab = new_AddressBook(cs);
   Person_list people = new_Person_list(cs, 2);
@@ -223,8 +222,12 @@ static ssize_t encode_alice_bob(uint8_t *buf, size_t cap, int packed) {
   memset(&book, 0, sizeof(book));
   book.people = people;
   write_AddressBook(&book, ab);
-  int set_ret = capn_set_root(&c, ab.p);
-  if (set_ret != 0) {
+  return capn_set_root(c, ab.p);
+}
+
+static ssize_t encode_alice_bob(uint8_t *buf, size_t cap, int packed) {
+  struct capn c;
+  if (build_alice_bob(&c) != 0) {
     capn_free(&c);
     return -1;
   }
@@ -284,4 +287,138 @@ TEST(FortranGolden, EncodePackedRoundTrip) {
   ssize_t sz = encode_alice_bob(buf, sizeof(buf), 1);
   ASSERT_GT(sz, 0);
   decode_and_check(buf, (size_t) sz, 1, "c-packed");
+}
+
+static void expect_unframed_eq(struct capn *c, const uint8_t *want, size_t want_n,
+                               const char *label) {
+  ASSERT_EQ(1u, c->segnum) << label << ": one segment";
+  ASSERT_NE((struct capn_segment *) NULL, c->seglist) << label;
+  ASSERT_EQ(want_n, c->seglist->len) << label << " unframed size";
+  for (size_t i = 0; i < want_n; i += 8) {
+    if (memcmp(c->seglist->data + i, want + i, 8) != 0) {
+      ADD_FAILURE() << label << " word " << (i / 8);
+      EXPECT_EQ(0, memcmp(c->seglist->data, want, want_n)) << label << " bytes";
+      return;
+    }
+  }
+}
+
+TEST(FortranGolden, CanonicalizeCEncodeMatchesGolden) {
+  struct capn src, dst;
+  ASSERT_EQ(0, build_alice_bob(&src));
+  capn_init_malloc(&dst);
+  ASSERT_EQ(0, capn_canonicalize(&src, &dst));
+  expect_unframed_eq(&dst, kAddressBookCanonical, sizeof(kAddressBookCanonical),
+                     "c-encode");
+
+  uint8_t framed[8 + sizeof(kAddressBookCanonical)];
+  int64_t wsz = capn_write_mem(&dst, framed, sizeof(framed), 0);
+  ASSERT_EQ((int64_t) sizeof(framed), wsz);
+  decode_and_check(framed, (size_t) wsz, 0, "c-canonical-framed");
+
+  capn_ptr people = capn_getp(capn_getp(capn_root(&dst), 0, 1), 0, 1);
+  ASSERT_EQ(CAPN_LIST, people.type);
+  capn_ptr alice = capn_getp(people, 0, 1);
+  capn_ptr phones = capn_getp(alice, 2, 1);
+  ASSERT_EQ(1, phones.is_composite_list);
+  EXPECT_EQ(0u, phones.datasz) << "mobile type word truncated";
+  EXPECT_EQ(1u, phones.ptrs);
+
+  capn_free(&src);
+  capn_free(&dst);
+}
+
+TEST(FortranGolden, CanonicalizeGoldenIsIdempotent) {
+  uint8_t framed[8 + sizeof(kAddressBookCanonical)];
+  memset(framed, 0, sizeof(framed));
+  uint32_t words = (uint32_t) (sizeof(kAddressBookCanonical) / 8);
+  framed[4] = (uint8_t) words;
+  framed[5] = (uint8_t) (words >> 8);
+  framed[6] = (uint8_t) (words >> 16);
+  framed[7] = (uint8_t) (words >> 24);
+  memcpy(framed + 8, kAddressBookCanonical, sizeof(kAddressBookCanonical));
+
+  struct capn src, dst;
+  ASSERT_EQ(0, capn_init_mem(&src, framed, sizeof(framed), 0));
+  capn_init_malloc(&dst);
+  ASSERT_EQ(0, capn_canonicalize(&src, &dst));
+  expect_unframed_eq(&dst, kAddressBookCanonical, sizeof(kAddressBookCanonical),
+                     "golden-again");
+  capn_free(&src);
+  capn_free(&dst);
+}
+
+TEST(Canonicalize, NullArgsAndUsedDstFail) {
+  struct capn src, dst;
+  capn_init_malloc(&src);
+  capn_init_malloc(&dst);
+  EXPECT_NE(0, capn_canonicalize(NULL, &dst));
+  EXPECT_NE(0, capn_canonicalize(&src, NULL));
+  EXPECT_NE(0, capn_canonicalize(&src, &src));
+  (void) capn_root(&dst);
+  EXPECT_NE(0, capn_canonicalize(&src, &dst));
+  capn_free(&src);
+  capn_free(&dst);
+}
+
+TEST(Canonicalize, NullRootIsEightZeroBytes) {
+  struct capn src, dst;
+  capn_init_malloc(&src);
+  (void) capn_root(&src);
+  capn_init_malloc(&dst);
+  ASSERT_EQ(0, capn_canonicalize(&src, &dst));
+  ASSERT_EQ(1u, dst.segnum);
+  ASSERT_EQ((size_t) 8, dst.seglist->len);
+  EXPECT_EQ(0, memcmp(dst.seglist->data, "\0\0\0\0\0\0\0\0", 8));
+  capn_free(&src);
+  capn_free(&dst);
+}
+
+TEST(Canonicalize, EmptyStructOffsetIsMinusOne) {
+  /* Root empty struct with a non-canonical offset (B=1, C=0, D=0). */
+  uint8_t framed[24];
+  struct capn src, dst;
+  memset(framed, 0, sizeof(framed));
+  framed[4] = 2;
+  framed[8] = 0x04; /* B = 1 word */
+  ASSERT_EQ(0, capn_init_mem(&src, framed, sizeof(framed), 0));
+  capn_init_malloc(&dst);
+  ASSERT_EQ(0, capn_canonicalize(&src, &dst));
+  ASSERT_EQ((size_t) 8, dst.seglist->len);
+  EXPECT_EQ((unsigned char) 0xfc, (unsigned char) dst.seglist->data[0]);
+  EXPECT_EQ((unsigned char) 0xff, (unsigned char) dst.seglist->data[1]);
+  EXPECT_EQ((unsigned char) 0xff, (unsigned char) dst.seglist->data[2]);
+  EXPECT_EQ((unsigned char) 0xff, (unsigned char) dst.seglist->data[3]);
+  EXPECT_EQ(0, memcmp(dst.seglist->data + 4, "\0\0\0\0", 4));
+  capn_ptr p = capn_getp(capn_root(&dst), 0, 1);
+  EXPECT_EQ(CAPN_STRUCT, p.type);
+  EXPECT_EQ(0u, p.datasz);
+  EXPECT_EQ(0u, p.ptrs);
+  capn_free(&src);
+  capn_free(&dst);
+}
+
+TEST(Canonicalize, CyclicStructsFail) {
+  uint8_t seg[24];
+  uint8_t framed[32];
+  struct capn src, dst;
+  uint32_t neg;
+  memset(seg, 0, sizeof(seg));
+  /* root -> A (word 1, 0 data 1 ptr); A -> B (word 2); B -> A. */
+  seg[6] = 0x01; /* D=1 */
+  seg[14] = 0x01;
+  neg = 1u + ~(2u << 2);
+  seg[16] = (uint8_t) neg;
+  seg[17] = (uint8_t) (neg >> 8);
+  seg[18] = (uint8_t) (neg >> 16);
+  seg[19] = (uint8_t) (neg >> 24);
+  seg[22] = 0x01;
+  memset(framed, 0, sizeof(framed));
+  framed[4] = 3;
+  memcpy(framed + 8, seg, sizeof(seg));
+  ASSERT_EQ(0, capn_init_mem(&src, framed, sizeof(framed), 0));
+  capn_init_malloc(&dst);
+  EXPECT_NE(0, capn_canonicalize(&src, &dst));
+  capn_free(&src);
+  capn_free(&dst);
 }

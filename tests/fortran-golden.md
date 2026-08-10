@@ -26,3 +26,8 @@ C encode of the same logical book is checked by decoding the C-written
 bytes and asserting the Alice/Bob fields. Raw C encode layout and
 C-packed bytes of a re-serialized golden are not required to match
 `capnp encode` byte for byte; the Fortran goldens are the decode oracle.
+
+`capn_canonicalize` of a C-encoded Alice/Bob book must match
+`addressbook.canonical.bin` (272 unframed bytes). Alice's mobile phone
+drops the trailing zero type word (`PhoneNumber` data size 0). A second
+canonicalize of that output is identical.

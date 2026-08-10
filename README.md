@@ -126,6 +126,20 @@ sz = capn_write_mem(&c, buf, sizeof(buf), 0);
 capn_free(&c);
 ```
 
+Canonical form (`encoding.html`) is a single-segment rewrite with no far
+pointers, no holes, preorder layout, and trailing zero data/pointer words
+truncated (empty struct `B = -1`):
+
+```c
+struct capn canon;
+capn_init_malloc(&canon);
+if (capn_canonicalize(&c, &canon) == 0) {
+    /* unframed: canon.seglist->data[0 .. len) */
+    /* 1-segment stream: capn_write_mem(&canon, buf, sz, 0) */
+}
+capn_free(&canon);
+```
+
 You need to compile these runtime library files and link them into your own project's binaries:
 
 * [`lib/capn.c`](lib/capn.c)
