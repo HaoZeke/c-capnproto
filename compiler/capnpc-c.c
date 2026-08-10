@@ -1325,7 +1325,7 @@ static void define_struct(struct node *n, const char *extattr, const char *extat
 
 	str_addf(&SRC, "%s%s%s_list new_%s_list(struct capn_segment *s, int len) {\n", extattr, extattr_space, n->name.str, n->name.str);
 	str_addf(&SRC, "\t%s_list p;\n", n->name.str);
-	str_addf(&SRC, "\tp.p = capn_new_list(s, len, %d, %d);\n", 8*n->n._struct.dataWordCount, n->n._struct.pointerCount);
+	str_addf(&SRC, "\tp.p = capn_new_struct_list(s, len, %d, %d);\n", 8*n->n._struct.dataWordCount, n->n._struct.pointerCount);
 	str_addf(&SRC, "\treturn p;\n");
 	str_addf(&SRC, "}\n");
 
