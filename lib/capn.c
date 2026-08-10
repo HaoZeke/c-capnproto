@@ -431,41 +431,6 @@ static uint64_t lookup_far(struct capn_segment **s, char **d, uint64_t val) {
 	return capn_flip64(*(uint64_t*)*d);
 }
 
-static char *struct_ptr(struct capn_segment *s, char *d, int minsz) {
-	uint64_t val;
-	uint16_t datasz;
-	size_t nbytes;
-
-	if (!s || !bounds_ok(s, d, 8))
-		return NULL;
-
-	val = capn_flip64(*(uint64_t*)d);
-
-	switch (val&7) {
-	case FAR_PTR:
-		val = lookup_far(&s, &d, val);
-		break;
-	case DOUBLE_PTR:
-		val = lookup_double(&s, &d, val);
-		break;
-	}
-
-	if (!s || !val)
-		return NULL;
-
-	if (!apply_offset(s, &d, val))
-		return NULL;
-
-	datasz = U16(val >> 32);
-	nbytes = minsz < 0 ? 0 : (size_t) minsz;
-	if (val != 0 && (val&3) != STRUCT_PTR && datasz >= minsz
-	    && bounds_ok(s, d, nbytes)) {
-		return d;
-	}
-
-	return NULL;
-}
-
 /* rem is remaining hops including this one. rem==0 rejects.
  * rem<0 skips the nesting check (copy path). */
 static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
@@ -624,6 +589,22 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 err:
 	memset(&ret, 0, sizeof(ret));
 	return ret;
+}
+
+/* First data word of a struct pointer, or NULL. minsz is bytes.
+ * read_ptr checks A=0 and converts C (words) to datasz (bytes). */
+static char *struct_ptr(struct capn_segment *s, char *d, int minsz) {
+	capn_ptr p;
+
+	if (!s)
+		return NULL;
+
+	p = read_ptr(s, d, -1);
+	if (p.type != CAPN_STRUCT || !p.data)
+		return NULL;
+	if (minsz > 0 && p.datasz < minsz)
+		return NULL;
+	return p.data;
 }
 
 void capn_resolve(capn_ptr *p) {
