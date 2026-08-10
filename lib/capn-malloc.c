@@ -443,6 +443,53 @@ static int _write_fd(ssize_t (*write_fd)(int fd, const void *p, size_t count), i
 	return 0;
 }
 
+/* Packed encoding can grow (a dense 4096-byte segment becomes 4098).
+ * Stream through buf: on CAPN_NEED_MORE, emit the filled chunk and
+ * reuse the buffer. Keep z so a raw run that spans a chunk continues. */
+static int packed_emit_seg(struct capn_stream *z,
+	unsigned char *buf, size_t bufcap,
+	const uint8_t *src, size_t len,
+	int (*emit)(void *ctx, const void *p, size_t n),
+	void *ctx,
+	size_t *written)
+{
+	memset(z, 0, sizeof(*z));
+	z->next_in = src;
+	z->avail_in = len;
+
+	while (z->avail_in) {
+		size_t n;
+		int ret;
+
+		z->next_out = buf;
+		z->avail_out = bufcap;
+		ret = capn_deflate(z);
+		if (ret != 0 && ret != CAPN_NEED_MORE)
+			return -1;
+		n = bufcap - z->avail_out;
+		if (n == 0)
+			return -1;
+		if (emit(ctx, buf, n) < 0)
+			return -1;
+		*written += n;
+		if (ret == 0)
+			return 0;
+	}
+
+	return 0;
+}
+
+struct write_fd_ctx {
+	ssize_t (*write_fd)(int fd, const void *p, size_t count);
+	int fd;
+};
+
+static int emit_fd(void *ctx, const void *p, size_t n)
+{
+	struct write_fd_ctx *e = (struct write_fd_ctx *)ctx;
+	return _write_fd(e->write_fd, e->fd, (void *)p, n);
+}
+
 int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, size_t count), int fd, int packed)
 {
 	unsigned char buf[4096];
@@ -494,26 +541,21 @@ int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, siz
 
 	datasz = headersz;
 	for (seg = root.seg; seg; seg = seg->next) {
-		size_t bufsz;
 		if (packed) {
-			memset(&z, 0, sizeof(z));
-			z.next_in = (uint8_t*)seg->data;
-			z.avail_in = seg->len;
-			z.next_out = buf;
-			z.avail_out = sizeof(buf);
-			ret = capn_deflate(&z);
-			if (ret != 0)
+			struct write_fd_ctx e;
+			e.write_fd = write_fd;
+			e.fd = fd;
+			ret = packed_emit_seg(&z, buf, sizeof(buf),
+				(const uint8_t *)seg->data, seg->len,
+				emit_fd, &e, &datasz);
+			if (ret < 0)
 				return -1;
-			p = buf;
-			bufsz = sizeof(buf) - z.avail_out;
 		} else {
-			p = (uint8_t*)seg->data;
-			bufsz = seg->len;
+			ret = _write_fd(write_fd, fd, (uint8_t *)seg->data, seg->len);
+			if (ret < 0)
+				return -1;
+			datasz += seg->len;
 		}
-		ret = _write_fd(write_fd, fd, p, bufsz);
-		if (ret < 0)
-			return -1;
-		datasz += bufsz;
 	}
 
 	return datasz;
@@ -532,6 +574,11 @@ static int _write_fp(FILE *f, const void *p, size_t count)
 	}
 
 	return 0;
+}
+
+static int emit_fp(void *ctx, const void *p, size_t n)
+{
+	return _write_fp((FILE *)ctx, p, n);
 }
 
 int capn_write_fp(struct capn *c, FILE *f, int packed)
@@ -585,26 +632,18 @@ int capn_write_fp(struct capn *c, FILE *f, int packed)
 
 	datasz = headersz;
 	for (seg = root.seg; seg; seg = seg->next) {
-		size_t bufsz;
 		if (packed) {
-			memset(&z, 0, sizeof(z));
-			z.next_in = (uint8_t*)seg->data;
-			z.avail_in = seg->len;
-			z.next_out = buf;
-			z.avail_out = sizeof(buf);
-			ret = capn_deflate(&z);
-			if (ret != 0)
+			ret = packed_emit_seg(&z, buf, sizeof(buf),
+				(const uint8_t *)seg->data, seg->len,
+				emit_fp, f, &datasz);
+			if (ret < 0)
 				return -1;
-			p = buf;
-			bufsz = sizeof(buf) - z.avail_out;
 		} else {
-			p = (uint8_t*)seg->data;
-			bufsz = seg->len;
+			ret = _write_fp(f, seg->data, seg->len);
+			if (ret < 0)
+				return -1;
+			datasz += seg->len;
 		}
-		ret = _write_fp(f, p, bufsz);
-		if (ret < 0)
-			return -1;
-		datasz += bufsz;
 	}
 
 	if (fflush(f) != 0)
