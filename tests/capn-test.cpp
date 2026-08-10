@@ -673,6 +673,10 @@ TEST(WireFormat, BitListGetpInnerMember) {
   capn_list1 one = {inner};
   EXPECT_EQ(1, capn_get1(one, 0));
   EXPECT_EQ(0, capn_get1(one, 1));
+  EXPECT_EQ(0, capn_set1(one, 0, 0));
+  EXPECT_EQ(0, capn_get1(bits, 3));
+  EXPECT_EQ(0, capn_set1(one, 0, 1));
+  EXPECT_EQ(1, capn_get1(bits, 3));
 
   capn_ptr zero = capn_getp(bits.p, 1, 1);
   EXPECT_EQ(CAPN_BIT_LIST, zero.type);
