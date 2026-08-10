@@ -1358,14 +1358,19 @@ static void define_struct(struct node *n, const char *extattr, const char *extat
 
 		str_addf(&SRC, "\nvoid encode_%s(struct capn_segment *cs,struct %s *d, %s *s) {\n",
 			 n->name.str, n->name.str, buf.str);
-		str_addf(&SRC, "%s\n", s.encoder.str);
+		str_addf(&SRC, "%s\n", s.encoder.str ? s.encoder.str : "");
 		str_addf(&SRC, "}\n");
 		str_addf(&SRC, "\nvoid decode_%s(%s *d, struct %s *s) {\n",
 			 n->name.str, buf.str, n->name.str);
-		str_addf(&SRC, "%s\n", s.decoder.str);
+		str_addf(&SRC, "%s\n", s.decoder.str ? s.decoder.str : "");
 		str_addf(&SRC, "}\n");
 		str_addf(&SRC, "\nvoid free_%s(%s *d) {\n", n->name.str, buf.str);
-		str_addf(&SRC, "%s\n", s.freeup.str);
+		/* A struct with only scalars never fills freeup; glibc
+		 * printf("%s", NULL) would emit the token (null). */
+		if (s.freeup.str && s.freeup.len)
+			str_addf(&SRC, "%s\n", s.freeup.str);
+		else
+			str_addf(&SRC, "\tcapnp_use(d);\n");
 		str_addf(&SRC, "}\n");
 		str_release(&buf);
 	}

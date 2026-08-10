@@ -70,7 +70,7 @@ static void mk_simple_list_encoder(struct str *func, const char *tab,
   str_addf(func, "\tint i_;\n");
   if (strcmp(list_type, "text") == 0) {
     str_add(func, tab, -1);
-    str_addf(func, "\td->%s = capn_new_ptr_list(cs, s->%s);\n", dvar, cvar);
+    str_addf(func, "\td->%s.p = capn_new_ptr_list(cs, s->%s);\n", dvar, cvar);
     str_add(func, tab, -1);
     str_addf(func, "\tfor(i_ = 0; i_ < s->%s; i_ ++) {\n", cvar);
     str_add(func, tab, -1);
@@ -80,12 +80,12 @@ static void mk_simple_list_encoder(struct str *func, const char *tab,
              "= NULL};\n",
              svar, svar);
     str_add(func, tab, -1);
-    str_addf(func, "\t\tcapn_set_text(d->%s, i_, text_);\n", dvar);
+    str_addf(func, "\t\tcapn_set_text(d->%s.p, i_, text_);\n", dvar);
     str_add(func, tab, -1);
     str_addf(func, "\t}\n");
   } else if (strcmp(list_type, "data") == 0) {
     str_add(func, tab, -1);
-    str_addf(func, "\td->%s = capn_new_ptr_list(cs, s->%s);\n", dvar, cvar);
+    str_addf(func, "\td->%s.p = capn_new_ptr_list(cs, s->%s);\n", dvar, cvar);
     str_add(func, tab, -1);
     str_addf(func, "\tfor(i_ = 0; i_ < s->%s; i_ ++) {\n", cvar);
     str_add(func, tab, -1);
@@ -97,7 +97,7 @@ static void mk_simple_list_encoder(struct str *func, const char *tab,
              "\t\tcapn_setv8(item_, 0, s->%s[i_].data, s->%s[i_].len);\n",
              svar, svar);
     str_add(func, tab, -1);
-    str_addf(func, "\t\tcapn_setp(d->%s, i_, item_.p);\n", dvar);
+    str_addf(func, "\t\tcapn_setp(d->%s.p, i_, item_.p);\n", dvar);
     str_add(func, tab, -1);
     str_addf(func, "\t}\n");
   } else {
@@ -125,9 +125,9 @@ static void mk_simple_list_decoder(struct str *func, const char *tab,
   str_addf(func, "\tint i_, nc_;\n");
   if (strcmp(list_type, "text") == 0) {
     str_add(func, tab, -1);
-    str_addf(func, "\tcapn_resolve(&(s->%s));\n", svar);
+    str_addf(func, "\tcapn_resolve(&(s->%s.p));\n", svar);
     str_add(func, tab, -1);
-    str_addf(func, "\tnc_ = s->%s.len;\n", svar);
+    str_addf(func, "\tnc_ = s->%s.p.len;\n", svar);
     str_add(func, tab, -1);
     str_addf(func, "\tif (nc_ == 0) {\n");
     str_add(func, tab, -1);
@@ -142,7 +142,7 @@ static void mk_simple_list_decoder(struct str *func, const char *tab,
     str_addf(func, "\t\tfor(i_ = 0; i_ < nc_; i_ ++) {\n");
     str_add(func, tab, -1);
     str_addf(func,
-             "\t\t\tcapn_text text_ = capn_get_text(s->%s, i_, capn_val0);\n",
+             "\t\t\tcapn_text text_ = capn_get_text(s->%s.p, i_, capn_val0);\n",
              svar);
     str_add(func, tab, -1);
     str_addf(func, "\t\t\td->%s[i_] = STRING_DUP(text_.str);\n", dvar);
@@ -152,9 +152,9 @@ static void mk_simple_list_decoder(struct str *func, const char *tab,
     str_addf(func, "\t}\n");
   } else if (strcmp(list_type, "data") == 0) {
     str_add(func, tab, -1);
-    str_addf(func, "\tcapn_resolve(&(s->%s));\n", svar);
+    str_addf(func, "\tcapn_resolve(&(s->%s.p));\n", svar);
     str_add(func, tab, -1);
-    str_addf(func, "\tnc_ = s->%s.len;\n", svar);
+    str_addf(func, "\tnc_ = s->%s.p.len;\n", svar);
     str_add(func, tab, -1);
     str_addf(func, "\tif (nc_ == 0) {\n");
     str_add(func, tab, -1);
@@ -170,7 +170,7 @@ static void mk_simple_list_decoder(struct str *func, const char *tab,
     str_add(func, tab, -1);
     str_addf(func, "\t\tfor(i_ = 0; i_ < nc_; i_ ++) {\n");
     str_add(func, tab, -1);
-    str_addf(func, "\t\t\tcapn_ptr item_ = capn_getp(s->%s, i_, 1);\n", svar);
+    str_addf(func, "\t\t\tcapn_ptr item_ = capn_getp(s->%s.p, i_, 1);\n", svar);
     str_add(func, tab, -1);
     str_addf(func, "\t\t\td->%s[i_].len = item_.len;\n", dvar);
     str_add(func, tab, -1);
@@ -326,6 +326,10 @@ static void gen_call_list_decoder(capnp_ctx_t *ctx, struct str *func,
   if (info) {
     mk_simple_list_decoder(func, tab, info->ctype, info->getf, var, countvar,
                            var2);
+    /* List(Text) decoder emits capn_get_text(..., capn_val0). Schemas
+     * with no top-level Text field never set this via the getter path. */
+    if (type->which == Type_text)
+      *(ctx->g_val0used) = 1;
   } else if (type->which == Type__struct) {
     struct node *n = find_node(type->_struct.typeId);
     if (n != NULL) {
