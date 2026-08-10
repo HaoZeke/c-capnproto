@@ -84,6 +84,12 @@ EXTRA_DIST += \
 	compiler/test.capnp \
 	tests/addressbook.capnp \
 	tests/extraheader.capnp \
+	tests/codec-roundtrip.capnp \
+	tests/codec-roundtrip.h \
+	tests/codec-roundtrip-test.cpp \
+	tests/group-in-union.capnp \
+	tests/group-in-union.h \
+	tests/group-in-union-test.cpp \
 	fuzz/Person.txt \
 	fuzz/read_mem.c \
 	fuzz/read_fp.c
