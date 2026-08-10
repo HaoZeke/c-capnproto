@@ -551,6 +551,30 @@ TEST(WireFormat, NullStructPointerEncodesAsNull) {
   EXPECT_EQ(CAPN_NULL, capn_getp(outer, 0, 1).type);
 }
 
+TEST(WireFormat, EmptyStructEncodesAsOffsetMinusOne) {
+  Session ctx;
+  capn_ptr root = capn_root(&ctx.capn);
+  capn_ptr outer = capn_new_struct(root.seg, 0, 1);
+  ASSERT_EQ(CAPN_STRUCT, outer.type);
+  ASSERT_EQ(0, capn_set_root(&ctx.capn, outer));
+
+  capn_ptr empty = capn_new_struct(outer.seg, 0, 0);
+  ASSERT_EQ(CAPN_STRUCT, empty.type);
+  ASSERT_TRUE(empty.data != NULL);
+  EXPECT_EQ(0, empty.datasz);
+  EXPECT_EQ(0, empty.ptrs);
+  EXPECT_EQ(0, capn_setp(outer, 0, empty));
+
+  /* Spec: null is all-zero; a real empty struct is A=0 B=-1 C=D=0. */
+  uint64_t word = capn_flip64(*(uint64_t *)(outer.data + outer.datasz));
+  EXPECT_EQ(UINT64_C(0xFFFFFFFC), word);
+
+  capn_ptr got = capn_getp(outer, 0, 1);
+  EXPECT_EQ(CAPN_STRUCT, got.type);
+  EXPECT_EQ(0, got.datasz);
+  EXPECT_EQ(0, got.ptrs);
+}
+
 TEST(WireFormat, WritePtrTagNegativeOffsetRoundTrip) {
   Session ctx;
   capn_ptr root = capn_root(&ctx.capn);
