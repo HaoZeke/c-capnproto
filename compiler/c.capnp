@@ -39,6 +39,9 @@ annotation fieldgetset @0xf72bc690355d66de (file): Void;
 # generate getter & setter functions for accessing fields
 #
 # allows grabbing/putting values without de-/encoding the entire struct.
+# Pointer fields also get Foo_has_bar(p): nonzero iff capn_getp is not
+# CAPN_NULL. That is C++ hasFoo(). Empty Text/Data is present; a null
+# pointer is not. get_/read_ still substitute schema defaults.
 
 annotation donotinclude @0x8c99797357b357e9 (file): UInt64;
 # do not generate an include directive for an import statement for the file with

@@ -7,10 +7,15 @@
  *
  * new_Leaf_list is List of a 1-word 0-pointer struct. Spec requires
  * C=7 plus a tag word (B = element count), including the empty list.
+ *
+ * Pointer fields also get Foo_has_bar: nonzero iff capn_getp is not
+ * CAPN_NULL (C++ hasFoo). Empty Text/Data is present; a null pointer
+ * is not. get_ still substitutes the empty default.
  */
 
 #include <gtest/gtest.h>
 #include <cstdint>
+#include <cstring>
 
 #include "capnp_c.h"
 #include "fieldgetset.capnp.h"
@@ -55,6 +60,77 @@ TEST(FieldGetSet, NestedInnerGetAfterSet) {
   EXPECT_EQ(2, TreeNode_get_nodeType(root));
   EXPECT_EQ(3, TreeNode_get_nodeType(Inner_get_left(TreeNode_get_inner(root))));
   EXPECT_EQ(7, Leaf_get_value(TreeNode_get_leaf(Inner_get_left(TreeNode_get_inner(root)))));
+  EXPECT_NE(0, TreeNode_has_inner(root));
+  EXPECT_NE(0, Inner_has_left(TreeNode_get_inner(root)));
+  EXPECT_EQ(0, Inner_has_right(TreeNode_get_inner(root)));
+  EXPECT_NE(0, TreeNode_has_leaf(Inner_get_left(TreeNode_get_inner(root))));
+
+  capn_free(&c);
+}
+
+TEST(FieldGetSet, HasPointerNullVsSet) {
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *cs = capn_root(&c).seg;
+
+  TreeNode_ptr n = new_TreeNode(cs);
+  EXPECT_EQ(0, TreeNode_has_leaf(n));
+  EXPECT_EQ(0, TreeNode_has_inner(n));
+
+  Leaf_ptr l = new_Leaf(cs);
+  TreeNode_set_leaf(n, l);
+  EXPECT_NE(0, TreeNode_has_leaf(n));
+  EXPECT_EQ(0, TreeNode_has_inner(n));
+
+  Leaf_ptr none;
+  memset(&none, 0, sizeof(none));
+  TreeNode_set_leaf(n, none);
+  EXPECT_EQ(0, TreeNode_has_leaf(n));
+
+  capn_free(&c);
+}
+
+TEST(FieldGetSet, HasTextAndDataMatchCppHasFoo) {
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *cs = capn_root(&c).seg;
+
+  Bag_ptr b = new_Bag(cs);
+  EXPECT_EQ(0, Bag_has_note(b));
+  EXPECT_EQ(0, Bag_has_blob(b));
+
+  capn_text empty_text;
+  memset(&empty_text, 0, sizeof(empty_text));
+  empty_text.str = "";
+  empty_text.len = 0;
+  Bag_set_note(b, empty_text);
+  EXPECT_NE(0, Bag_has_note(b));
+  capn_ptr note = capn_getp(b.p, 0, 1);
+  EXPECT_EQ(CAPN_LIST, note.type);
+  EXPECT_EQ(1, note.len);
+
+  capn_text nil_text;
+  memset(&nil_text, 0, sizeof(nil_text));
+  Bag_set_note(b, nil_text);
+  EXPECT_EQ(0, Bag_has_note(b));
+  EXPECT_EQ(CAPN_NULL, capn_getp(b.p, 0, 1).type);
+  capn_text got = Bag_get_note(b);
+  ASSERT_TRUE(got.str != NULL);
+  EXPECT_STREQ(got.str, "");
+
+  capn_data empty_data;
+  empty_data.p = capn_new_list8(cs, 0).p;
+  Bag_set_blob(b, empty_data);
+  EXPECT_NE(0, Bag_has_blob(b));
+  capn_ptr blob = capn_getp(b.p, 1, 1);
+  EXPECT_EQ(CAPN_LIST, blob.type);
+  EXPECT_EQ(0, blob.len);
+
+  capn_data nil_data;
+  memset(&nil_data, 0, sizeof(nil_data));
+  Bag_set_blob(b, nil_data);
+  EXPECT_EQ(0, Bag_has_blob(b));
+  EXPECT_EQ(CAPN_NULL, capn_getp(b.p, 1, 1).type);
 
   capn_free(&c);
 }

@@ -22,3 +22,9 @@ struct TreeNode {
   leaf @1 :Leaf;
   inner @2 :Inner;
 }
+
+# Pointer has_ accessors: empty Text/Data is present, null is not.
+struct Bag {
+  note @0 :Text;
+  blob @1 :Data;
+}

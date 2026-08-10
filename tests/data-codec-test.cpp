@@ -192,6 +192,8 @@ TEST(DataCodec, EmptyDataField) {
   DataMessage_ptr ptr;
   encode_DataMessage_ptr(cs, &ptr, &src);
   capn_setp(capn_root(&c), 0, ptr.p);
+  EXPECT_EQ(0, DataMessage_has_payload(ptr));
+  EXPECT_EQ(CAPN_NULL, capn_getp(ptr.p, 0, 1).type);
 
   // Serialize
   int64_t sz = capn_size(&c);
@@ -278,4 +280,70 @@ TEST(DataCodec, BinaryDataWithZeros) {
   free_DataMessage_ptr(&dst);
   capn_free(&c2);
   free(buf);
+}
+
+TEST(DataCodec, EmptyNonNullPayloadIsWireList) {
+  uint8_t dummy = 0;
+  data_message_t src;
+  memset(&src, 0, sizeof(src));
+  src.payload = &dummy;
+  src.payload_len = 0;
+  src.name = (char *)"empty-non-null";
+  src.tag = 1;
+  src.n_chunks = 0;
+  src.chunks = NULL;
+
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *cs = capn_root(&c).seg;
+
+  DataMessage_ptr ptr;
+  encode_DataMessage_ptr(cs, &ptr, &src);
+  capn_setp(capn_root(&c), 0, ptr.p);
+
+  EXPECT_NE(0, DataMessage_has_payload(ptr));
+  capn_ptr wire = capn_getp(ptr.p, 0, 1);
+  EXPECT_EQ(CAPN_LIST, wire.type);
+  EXPECT_EQ(1, wire.datasz);
+  EXPECT_EQ(0, wire.len);
+
+  capn_free(&c);
+}
+
+TEST(DataCodec, HasPayloadEmptyVsNull) {
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *cs = capn_root(&c).seg;
+
+  DataMessage_ptr p = new_DataMessage(cs);
+  EXPECT_EQ(0, DataMessage_has_payload(p));
+  EXPECT_EQ(0, DataMessage_has_name(p));
+  EXPECT_EQ(0, DataMessage_has_chunks(p));
+
+  capn_data empty;
+  empty.p = capn_new_list8(cs, 0).p;
+  DataMessage_set_payload(p, empty);
+  EXPECT_NE(0, DataMessage_has_payload(p));
+  capn_data got = DataMessage_get_payload(p);
+  EXPECT_EQ(CAPN_LIST, got.p.type);
+  EXPECT_EQ(0, got.p.len);
+
+  capn_data nil;
+  memset(&nil, 0, sizeof(nil));
+  DataMessage_set_payload(p, nil);
+  EXPECT_EQ(0, DataMessage_has_payload(p));
+  EXPECT_EQ(CAPN_NULL, capn_getp(p.p, 0, 1).type);
+
+  capn_text empty_name;
+  memset(&empty_name, 0, sizeof(empty_name));
+  empty_name.str = "";
+  DataMessage_set_name(p, empty_name);
+  EXPECT_NE(0, DataMessage_has_name(p));
+
+  capn_text nil_name;
+  memset(&nil_name, 0, sizeof(nil_name));
+  DataMessage_set_name(p, nil_name);
+  EXPECT_EQ(0, DataMessage_has_name(p));
+
+  capn_free(&c);
 }

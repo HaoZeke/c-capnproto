@@ -9,7 +9,7 @@
 #include <gtest/gtest.h>
 #include <cstddef>
 #include <cstdint>
-#include <cstddef>
+#include <cstring>
 
 static int g_AddTag = 1;
 #define ADD_TAG g_AddTag
@@ -938,6 +938,46 @@ TEST(WireFormat, PrimitiveListHelpersKeepElementSize) {
   capn_list64 b64 = capn_new_list64(holder.seg, 3);
   ASSERT_EQ(0, capn_setp(holder, 0, b64.p));
   expect_list_c(holder, 5);
+}
+
+TEST(Runtime, SetDataEmptyVsNull) {
+  Session ctx;
+  capn_ptr root = capn_root(&ctx.capn);
+  capn_ptr s = capn_new_struct(root.seg, 0, 1);
+  ASSERT_EQ(CAPN_STRUCT, s.type);
+  ASSERT_EQ(0, capn_setp(root, 0, s));
+
+  capn_data nil;
+  memset(&nil, 0, sizeof(nil));
+  ASSERT_EQ(0, capn_set_data(s, 0, nil));
+  EXPECT_EQ(CAPN_NULL, capn_getp(s, 0, 1).type);
+  EXPECT_EQ(CAPN_NULL, capn_get_data(s, 0).p.type);
+
+  capn_data empty;
+  empty.p = capn_new_list8(root.seg, 0).p;
+  ASSERT_EQ(CAPN_LIST, empty.p.type);
+  ASSERT_EQ(0, empty.p.len);
+  ASSERT_TRUE(empty.p.data != NULL);
+  ASSERT_EQ(0, capn_set_data(s, 0, empty));
+  capn_ptr got = capn_getp(s, 0, 1);
+  EXPECT_EQ(CAPN_LIST, got.type);
+  EXPECT_EQ(1, got.datasz);
+  EXPECT_EQ(0, got.len);
+  capn_data rd = capn_get_data(s, 0);
+  EXPECT_EQ(CAPN_LIST, rd.p.type);
+  EXPECT_EQ(0, rd.p.len);
+
+  uint8_t bytes[] = {1, 2, 3};
+  capn_list8 lst = capn_new_list8(root.seg, 3);
+  ASSERT_EQ(3, capn_setv8(lst, 0, bytes, 3));
+  capn_data payload;
+  payload.p = lst.p;
+  ASSERT_EQ(0, capn_set_data(s, 0, payload));
+  rd = capn_get_data(s, 0);
+  EXPECT_EQ(3, rd.p.len);
+  uint8_t out[3];
+  ASSERT_EQ(3, capn_getv8((capn_list8){rd.p}, 0, out, 3));
+  EXPECT_EQ(0, memcmp(out, bytes, 3));
 }
 
 TEST(WireFormat, Get1Set1OnPtrListOfStructs) {

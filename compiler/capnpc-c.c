@@ -685,6 +685,15 @@ static void set_member(struct str *func, struct field *f, const char *ptr, const
 		}
 		break;
 	case Type_data:
+		if (!f->v.intval) {
+			str_addf(func, "capn_set_data(%s, %d, %s);\n",
+					ptr, f->f.slot.offset, var);
+		} else {
+			g_nullused = 1;
+			str_addf(func, "capn_setp(%s, %d, (%s.data != capn_val%d.p.data) ? %s : capn_null);\n",
+					ptr, f->f.slot.offset, pvar, (int)f->v.intval, pvar);
+		}
+		break;
 	case Type__struct:
 	case Type__interface:
 	case Type__list:
@@ -1158,6 +1167,41 @@ static void define_setter_functions(struct node* node, struct field* field,
         str_release(&setter_body);
 }
 
+static int is_pointer_slot(struct field *f)
+{
+	switch (f->v.t.which) {
+	case Type_text:
+	case Type_data:
+	case Type__struct:
+	case Type__interface:
+	case Type__list:
+	case Type_anyPointer:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static void define_has_function(struct node* node, struct field* field,
+                        struct strings* s, const char *extattr, const char *extattr_space)
+{
+	/* C++ hasFoo(): nonzero iff the wire pointer is not CAPN_NULL.
+	 * get_/read_ still substitute schema defaults. */
+	str_addf(&s->pub_get_header, "\n%s%sint %s_has_%s(%s_ptr p);\n",
+	         extattr, extattr_space,
+	         node->name.str, field_name(field), node->name.str);
+	str_addf(&s->pub_get, "\n%s%sint %s_has_%s(%s_ptr p)\n",
+	         extattr, extattr_space,
+	         node->name.str, field_name(field), node->name.str);
+	str_addf(&s->pub_get, "{\n");
+	str_addf(&s->pub_get, "%scapn_resolve(&p.p);\n", s->ftab.str);
+	str_addf(&s->pub_get, "%scapn_ptr %s;\n", s->ftab.str, field_name(field));
+	str_addf(&s->pub_get, "%s%s = capn_getp(p.p, %d, 1);\n",
+	         s->ftab.str, field_name(field), field->f.slot.offset);
+	str_addf(&s->pub_get, "%sreturn %s.type != CAPN_NULL;\n}\n",
+	         s->ftab.str, field_name(field));
+}
+
 static void define_group(struct strings *s, struct node *n, const char *group_name, bool enclose_unions,
 		const char *extattr, const char *extattr_space, const char *uniontag) {
 	struct field *f;
@@ -1209,6 +1253,8 @@ static void define_group(struct strings *s, struct node *n, const char *group_na
 		}
 
 		define_getter_functions(n, f, s, extattr, extattr_space);
+		if (is_pointer_slot(f))
+			define_has_function(n, f, s, extattr, extattr_space);
 		define_setter_functions(n, f, s, extattr, extattr_space);
 	}
 

@@ -1,8 +1,10 @@
 /* null-text-test.cpp
  *
  * Codecgen regression: a NULL Text pointer must encode without SEGV (no
- * strlen(NULL)) and decode as "". A NULL nested struct pointer must encode
- * as CAPN_NULL (not a zero-filled object) and decode as NULL.
+ * strlen(NULL)) as a wire null (capn_getp type CAPN_NULL; has_ is 0).
+ * read_/decode still substitute the empty default (""). An empty string
+ * encodes as a non-null 1-byte list (has_ is 1; C++ hasFoo() is true).
+ * A NULL nested struct pointer must encode as CAPN_NULL and decode as NULL.
  */
 
 #include <gtest/gtest.h>
@@ -28,6 +30,11 @@ TEST(NullText, NullNoteEncodesWithoutSegvAndDecodesEmpty) {
   Wrap_ptr ptr;
   encode_Wrap_ptr(cs, &ptr, &src);
   capn_setp(capn_root(&c), 0, ptr.p);
+
+  capn_ptr note = capn_getp(ptr.p, 0, 1);
+  EXPECT_EQ(note.type, CAPN_NULL);
+  EXPECT_EQ(0, Wrap_has_note(ptr));
+  EXPECT_EQ(0, Wrap_has_child(ptr));
 
   int64_t sz = capn_size(&c);
   ASSERT_GT(sz, 0);
@@ -76,6 +83,8 @@ TEST(NullText, NullChildEncodesAsCapnNullAndDecodesNull) {
   read_Wrap(&encoded, ptr);
   capn_resolve(&encoded.child.p);
   EXPECT_EQ(encoded.child.p.type, CAPN_NULL);
+  EXPECT_EQ(0, Wrap_has_child(ptr));
+  EXPECT_NE(0, Wrap_has_note(ptr));
 
   int64_t sz = capn_size(&c);
   ASSERT_GT(sz, 0);
@@ -103,4 +112,43 @@ TEST(NullText, NullChildEncodesAsCapnNullAndDecodesNull) {
 
   capn_free(&c2);
   free(buf);
+}
+
+TEST(NullText, EmptyNoteEncodesAsNonNullList) {
+  wrap_t src;
+  memset(&src, 0, sizeof(src));
+  src.note = (char *)"";
+  src.child = NULL;
+
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *cs = capn_root(&c).seg;
+
+  Wrap_ptr ptr;
+  encode_Wrap_ptr(cs, &ptr, &src);
+  capn_setp(capn_root(&c), 0, ptr.p);
+
+  capn_ptr note = capn_getp(ptr.p, 0, 1);
+  EXPECT_EQ(note.type, CAPN_LIST);
+  EXPECT_EQ(1, note.datasz);
+  EXPECT_EQ(1, note.len);
+  EXPECT_NE(0, Wrap_has_note(ptr));
+  EXPECT_EQ(0, Wrap_has_child(ptr));
+
+  struct Wrap encoded;
+  memset(&encoded, 0, sizeof(encoded));
+  read_Wrap(&encoded, ptr);
+  ASSERT_NE(encoded.note.str, nullptr);
+  EXPECT_STREQ(encoded.note.str, "");
+  EXPECT_EQ(encoded.note.len, 0);
+
+  wrap_t *dst = NULL;
+  decode_Wrap_ptr(&dst, ptr);
+  ASSERT_NE(dst, nullptr);
+  ASSERT_NE(dst->note, nullptr);
+  EXPECT_STREQ(dst->note, "");
+  EXPECT_EQ(dst->child, nullptr);
+  free_Wrap_ptr(&dst);
+
+  capn_free(&c);
 }
