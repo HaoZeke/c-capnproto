@@ -7,6 +7,7 @@
  */
 
 #include <gtest/gtest.h>
+#include <cstddef>
 #include <cstdint>
 
 static int g_AddTag = 1;
@@ -449,6 +450,29 @@ TEST(WireFormat, CopyStruct) {
   EXPECT_EQ(0, capn_setp(root, 0, capn_getp(capn_root(&ctx1.capn), 0, 1)));
 
   checkStruct(&ctx2.capn);
+}
+
+TEST(Alignment, SegmentSizeMultipleOf8) {
+  /* ARM/Sparc (and 32-bit x86): sizeof(capn_segment) must be a multiple of 8.
+   * lib/capn-malloc.c check_segment_alignment is the compile-time twin. */
+  EXPECT_EQ(size_t{0}, sizeof(struct capn_segment) % 8);
+}
+
+TEST(Alignment, SegmentFieldOffsets) {
+  EXPECT_EQ(size_t{0}, offsetof(struct capn_segment, data) % 8);
+  EXPECT_EQ(size_t{0}, offsetof(struct capn_segment, len) % 8);
+  EXPECT_EQ(size_t{0}, offsetof(struct capn_segment, cap) % 8);
+  EXPECT_EQ(size_t{0}, offsetof(struct capn_segment, user) % 8);
+}
+
+TEST(Alignment, MallocSegmentData) {
+  struct capn c;
+  capn_init_malloc(&c);
+  capn_ptr root = capn_root(&c);
+  ASSERT_TRUE(root.seg != NULL);
+  EXPECT_EQ(uintptr_t{0}, reinterpret_cast<uintptr_t>(root.seg) % 8);
+  EXPECT_EQ(uintptr_t{0}, reinterpret_cast<uintptr_t>(root.seg->data) % 8);
+  capn_free(&c);
 }
 
 int main(int argc, char *argv[]) {
