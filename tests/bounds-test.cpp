@@ -79,7 +79,9 @@ TEST(DecodeBounds, NullRootIsNull) {
 	struct capn c;
 	memset(seg, 0, sizeof(seg));
 	ASSERT_EQ(0, init_one_seg(&c, seg, sizeof(seg), framed, sizeof(framed)));
+	EXPECT_EQ(1, capn_ok(&c));
 	EXPECT_EQ(CAPN_NULL, root_getp(&c).type);
+	EXPECT_EQ(1, capn_ok(&c));
 	capn_free(&c);
 }
 
@@ -91,7 +93,11 @@ TEST(DecodeBounds, HugeStructOffsetIsNull) {
 	memset(seg, 0, sizeof(seg));
 	wr64(seg, (UINT64_C(0x00FFFFFF) << 2) | (UINT64_C(1) << 32));
 	ASSERT_EQ(0, init_one_seg(&c, seg, sizeof(seg), framed, sizeof(framed)));
+	EXPECT_EQ(1, capn_ok(&c));
 	EXPECT_EQ(CAPN_NULL, root_getp(&c).type);
+	EXPECT_EQ(0, capn_ok(&c));
+	capn_clear_err(&c);
+	EXPECT_EQ(1, capn_ok(&c));
 	capn_free(&c);
 }
 
@@ -104,6 +110,7 @@ TEST(DecodeBounds, StructTargetPastSegmentIsNull) {
 	wr64(seg, UINT64_C(10) << 32);
 	ASSERT_EQ(0, init_one_seg(&c, seg, sizeof(seg), framed, sizeof(framed)));
 	EXPECT_EQ(CAPN_NULL, root_getp(&c).type);
+	EXPECT_EQ(0, capn_ok(&c));
 	capn_free(&c);
 }
 
@@ -120,6 +127,7 @@ TEST(DecodeBounds, HugeListCountIsNull) {
 	wr64(seg, val);
 	ASSERT_EQ(0, init_one_seg(&c, seg, sizeof(seg), framed, sizeof(framed)));
 	EXPECT_EQ(CAPN_NULL, root_getp(&c).type);
+	EXPECT_EQ(0, capn_ok(&c));
 	capn_free(&c);
 }
 
@@ -132,6 +140,7 @@ TEST(DecodeBounds, FarPointerMissingSegmentIsNull) {
 	wr64(seg, UINT64_C(2) | (UINT64_C(99) << 32));
 	ASSERT_EQ(0, init_one_seg(&c, seg, sizeof(seg), framed, sizeof(framed)));
 	EXPECT_EQ(CAPN_NULL, root_getp(&c).type);
+	EXPECT_EQ(0, capn_ok(&c));
 	capn_free(&c);
 }
 
@@ -144,6 +153,7 @@ TEST(DecodeBounds, FarPointerLandingPadOOBIsNull) {
 	wr64(seg, UINT64_C(2) | (UINT64_C(100) << 3));
 	ASSERT_EQ(0, init_one_seg(&c, seg, sizeof(seg), framed, sizeof(framed)));
 	EXPECT_EQ(CAPN_NULL, root_getp(&c).type);
+	EXPECT_EQ(0, capn_ok(&c));
 	capn_free(&c);
 }
 
@@ -156,6 +166,7 @@ TEST(DecodeBounds, DoubleFarMissingSegmentIsNull) {
 	wr64(seg, UINT64_C(6) | (UINT64_C(5) << 32));
 	ASSERT_EQ(0, init_one_seg(&c, seg, sizeof(seg), framed, sizeof(framed)));
 	EXPECT_EQ(CAPN_NULL, root_getp(&c).type);
+	EXPECT_EQ(0, capn_ok(&c));
 	capn_free(&c);
 }
 
@@ -171,6 +182,7 @@ TEST(DecodeBounds, VoidListAmplificationIsNull) {
 	wr64(seg, val);
 	ASSERT_EQ(0, init_one_seg(&c, seg, sizeof(seg), framed, sizeof(framed)));
 	EXPECT_EQ(CAPN_NULL, root_getp(&c).type);
+	EXPECT_EQ(0, capn_ok(&c));
 	capn_free(&c);
 }
 
@@ -189,6 +201,7 @@ TEST(DecodeBounds, ValidStructStillReads) {
 	EXPECT_EQ(8, p.datasz);
 	EXPECT_EQ(0, p.ptrs);
 	EXPECT_EQ(UINT64_C(0xefcdab8967452301), capn_read64(p, 0));
+	EXPECT_EQ(1, capn_ok(&c));
 	capn_free(&c);
 }
 
@@ -247,6 +260,7 @@ TEST(DecodeGraph, OverDeepNestingGetpIsNull) {
 	EXPECT_EQ(CAPN_STRUCT, p.type);
 	p = capn_getp(p, 0, 1);
 	EXPECT_EQ(CAPN_NULL, p.type);
+	EXPECT_EQ(0, capn_ok(&c));
 	capn_free(&c);
 }
 
@@ -285,17 +299,48 @@ TEST(DecodeGraph, DefaultNestingAllows64Rejects65) {
 
 	ASSERT_EQ(0, init_struct_chain(&c, 65, seg, sizeof(seg), framed, sizeof(framed)));
 	EXPECT_EQ(0, c.nesting_limit);
+	EXPECT_EQ(1, capn_ok(&c));
 	p = follow_ptrs(root_getp(&c), 63);
 	EXPECT_EQ(CAPN_STRUCT, p.type);
+	EXPECT_EQ(1, capn_ok(&c));
 	p = capn_getp(p, 0, 1);
 	EXPECT_EQ(CAPN_NULL, p.type);
+	EXPECT_EQ(0, capn_ok(&c));
 	EXPECT_NE(0, capn_validate(&c));
 	capn_free(&c);
 
 	ASSERT_EQ(0, init_struct_chain(&c, 64, seg, sizeof(seg), framed, sizeof(framed)));
+	EXPECT_EQ(1, capn_ok(&c));
 	p = follow_ptrs(root_getp(&c), 63);
 	EXPECT_EQ(CAPN_STRUCT, p.type);
+	EXPECT_EQ(1, capn_ok(&c));
 	EXPECT_EQ(0, capn_validate(&c));
+	EXPECT_EQ(1, capn_ok(&c));
+	capn_free(&c);
+}
+
+TEST(DecodeGraph, MissingOptionalPtrFieldKeepsOk) {
+	/* Struct: 0 data words, 1 pointer, that pointer is a wire-null word. */
+	uint8_t seg[16];
+	uint8_t framed[24];
+	struct capn c;
+	capn_ptr p, child;
+
+	memset(seg, 0, sizeof(seg));
+	wr64(seg, UINT64_C(1) << 48);
+	ASSERT_EQ(0, init_one_seg(&c, seg, sizeof(seg), framed, sizeof(framed)));
+	EXPECT_EQ(1, capn_ok(&c));
+	p = root_getp(&c);
+	EXPECT_EQ(CAPN_STRUCT, p.type);
+	EXPECT_EQ(1, (int) p.ptrs);
+	EXPECT_EQ(1, capn_ok(&c));
+	child = capn_getp(p, 0, 1);
+	EXPECT_EQ(CAPN_NULL, child.type);
+	EXPECT_EQ(1, capn_ok(&c));
+	/* Schema evolution: a slot past ptrs is missing, not broken. */
+	child = capn_getp(p, 1, 1);
+	EXPECT_EQ(CAPN_NULL, child.type);
+	EXPECT_EQ(1, capn_ok(&c));
 	capn_free(&c);
 }
 

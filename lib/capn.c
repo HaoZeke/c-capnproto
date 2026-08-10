@@ -432,11 +432,14 @@ static uint64_t lookup_far(struct capn_segment **s, char **d, uint64_t val) {
 }
 
 /* rem is remaining hops including this one. rem==0 rejects.
- * rem<0 skips the nesting check (copy path). */
+ * rem<0 skips the nesting check (copy path).
+ * err (OOB / budget / nesting / broken) sets decode_err. A wire-null
+ * pointer word returns CAPN_NULL without taking this path. */
 static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 	capn_ptr ret = {CAPN_NULL};
 	uint64_t val;
 	size_t nbytes = 0;
+	struct capn *c = s ? s->capn : NULL;
 
 	if (rem == 0)
 		goto err;
@@ -587,6 +590,8 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 	}
 	return ret;
 err:
+	if (c)
+		c->decode_err = 1;
 	memset(&ret, 0, sizeof(ret));
 	return ret;
 }
@@ -925,6 +930,17 @@ done:
 	capn_freemem(stack);
 	vset_free(&vs);
 	return rc;
+}
+
+int capn_ok(const struct capn *c)
+{
+	return c != NULL && c->decode_err == 0;
+}
+
+void capn_clear_err(struct capn *c)
+{
+	if (c)
+		c->decode_err = 0;
 }
 
 capn_ptr capn_getp(capn_ptr p, int off, int resolve) {
