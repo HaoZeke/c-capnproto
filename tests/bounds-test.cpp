@@ -401,6 +401,121 @@ TEST(DecodeGraph, ValidStructValidateOk) {
 	capn_free(&c);
 }
 
+/* Composite List(T): tag + two structs, each 0 data / 1 pointer.
+ * Decode sets list.data to T[0], the same address as the list body.
+ * A vset keyed only by (seg, data) therefore aliases List(T) and T[0]. */
+static void wr_composite_list_of_two(uint8_t *seg, size_t t0_ptr, size_t t1_ptr) {
+	/* word 0: list pointer, offset 0, C=7 composite, D=2 words */
+	wr64(seg + 0, UINT64_C(1) | (UINT64_C(7) << 32) | (UINT64_C(2) << 35));
+	/* word 1: tag, count=2, data=0, ptrs=1 */
+	wr64(seg + 8, (UINT64_C(2) << 2) | (UINT64_C(1) << 48));
+	wr64(seg + 16, t0_ptr);
+	wr64(seg + 24, t1_ptr);
+}
+
+TEST(DecodeGraph, CompositeListAfterElem0StillWalksTail) {
+	/* Root struct (2 ptrs): ptr[0] = T[0], ptr[1] = List(T).
+	 * T[1] is a self-cycle. After visiting T[0], validate must still
+	 * walk T[1] and fail. A (seg, data) vset marks List(T) done. */
+	uint8_t seg[48];
+	uint8_t framed[56];
+	struct capn c;
+	uint32_t neg;
+	capn_ptr root, t0, list, t1;
+
+	memset(seg, 0, sizeof(seg));
+	/* word 0: root struct, offset 0, 0 data, 2 ptrs */
+	wr64(seg + 0, UINT64_C(2) << 48);
+	/* word 1: struct ptr to T[0] at word 4; offset from word 2 is 2 */
+	wr64(seg + 8, (UINT64_C(2) << 2) | (UINT64_C(1) << 48));
+	/* word 2: list ptr to tag at word 3; offset 0, C=7, D=2 */
+	wr64(seg + 16, UINT64_C(1) | (UINT64_C(7) << 32) | (UINT64_C(2) << 35));
+	/* word 3: composite tag, count=2, data=0, ptrs=1 */
+	wr64(seg + 24, (UINT64_C(2) << 2) | (UINT64_C(1) << 48));
+	/* word 4: T[0].ptr null */
+	/* word 5: T[1] self-cycle, offset -1 */
+	neg = 1u + ~(1u << 2);
+	wr64(seg + 40, (uint64_t) neg | (UINT64_C(1) << 48));
+
+	ASSERT_EQ(0, init_one_seg(&c, seg, sizeof(seg), framed, sizeof(framed)));
+	root = root_getp(&c);
+	ASSERT_EQ(CAPN_STRUCT, root.type);
+	EXPECT_EQ(0, root.datasz);
+	EXPECT_EQ(2, root.ptrs);
+
+	t0 = capn_getp(root, 0, 1);
+	ASSERT_EQ(CAPN_STRUCT, t0.type);
+	EXPECT_EQ(0, t0.datasz);
+	EXPECT_EQ(1, t0.ptrs);
+
+	list = capn_getp(root, 1, 1);
+	ASSERT_EQ(CAPN_LIST, list.type);
+	EXPECT_EQ(1, list.is_composite_list);
+	EXPECT_EQ(2, list.len);
+	EXPECT_EQ(t0.data, list.data);
+
+	t1 = capn_getp(list, 1, 1);
+	ASSERT_EQ(CAPN_STRUCT, t1.type);
+	EXPECT_EQ(CAPN_STRUCT, capn_getp(t1, 0, 1).type);
+
+	EXPECT_NE(0, capn_validate(&c));
+	capn_free(&c);
+}
+
+TEST(DecodeGraph, CompositeListElem0FromTailIsNotFalseCycle) {
+	/* List(T) of 2; T[1].ptr -> T[0]. Shared subobject, not a cycle.
+	 * While List(T) is on the path, a (seg, data) vset treats T[0] as
+	 * re-entering the list. */
+	uint8_t seg[32];
+	uint8_t framed[40];
+	struct capn c;
+	uint32_t neg;
+	capn_ptr list, t0, t1;
+
+	memset(seg, 0, sizeof(seg));
+	neg = 1u + ~(2u << 2);
+	wr_composite_list_of_two(seg, 0, (uint64_t) neg | (UINT64_C(1) << 48));
+
+	ASSERT_EQ(0, init_one_seg(&c, seg, sizeof(seg), framed, sizeof(framed)));
+	list = root_getp(&c);
+	ASSERT_EQ(CAPN_LIST, list.type);
+	EXPECT_EQ(1, list.is_composite_list);
+	EXPECT_EQ(2, list.len);
+	t0 = capn_getp(list, 0, 1);
+	t1 = capn_getp(list, 1, 1);
+	ASSERT_EQ(CAPN_STRUCT, t0.type);
+	ASSERT_EQ(CAPN_STRUCT, t1.type);
+	EXPECT_EQ(t0.data, capn_getp(t1, 0, 1).data);
+	EXPECT_EQ(t0.data, list.data);
+
+	EXPECT_EQ(0, capn_validate(&c));
+	capn_free(&c);
+}
+
+TEST(DecodeGraph, CompositeListAndElem0BothCleanValidateOk) {
+	/* Same layout as CompositeListAfterElem0StillWalksTail, T[1] null. */
+	uint8_t seg[48];
+	uint8_t framed[56];
+	struct capn c;
+	capn_ptr root, t0, list;
+
+	memset(seg, 0, sizeof(seg));
+	wr64(seg + 0, UINT64_C(2) << 48);
+	wr64(seg + 8, (UINT64_C(2) << 2) | (UINT64_C(1) << 48));
+	wr64(seg + 16, UINT64_C(1) | (UINT64_C(7) << 32) | (UINT64_C(2) << 35));
+	wr64(seg + 24, (UINT64_C(2) << 2) | (UINT64_C(1) << 48));
+
+	ASSERT_EQ(0, init_one_seg(&c, seg, sizeof(seg), framed, sizeof(framed)));
+	root = root_getp(&c);
+	t0 = capn_getp(root, 0, 1);
+	list = capn_getp(root, 1, 1);
+	ASSERT_EQ(CAPN_STRUCT, t0.type);
+	ASSERT_EQ(CAPN_LIST, list.type);
+	EXPECT_EQ(t0.data, list.data);
+	EXPECT_EQ(0, capn_validate(&c));
+	capn_free(&c);
+}
+
 TEST(DecodeBounds, AddressBookRoundTrip) {
 	uint8_t buf[4096];
 	ssize_t sz = 0;
