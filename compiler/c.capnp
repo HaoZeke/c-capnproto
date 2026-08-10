@@ -49,3 +49,9 @@ annotation typedefto @0xcefaf27713042144 (struct, enum): Text;
 
 annotation namespace @0xf2c035025fec7c2b (file): Text;
 # prefix structs with a name space string
+
+annotation extraheader @0xbadb496d09cf4612 (file): Text;
+# add extra preprocessor directives to the header
+
+annotation extendedattribute @0xd187bca5c6844c24 (file): Text;
+# add an extended attribute to each generated function
