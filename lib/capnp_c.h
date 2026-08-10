@@ -344,10 +344,11 @@ CAPN_INLINE int capn_write64(capn_ptr p, int off, uint64_t val);
  * allocates segments on the heap using malloc.
  *
  * Each session's first write (e.g. capn_root) allocates at least one
- * 4096-byte segment. For many small messages that per-message malloc is
- * the main cost: reuse one arena (one capn and its segments) across
- * messages, or skip the heap allocator and call capn_init_mem /
- * capn_append_segment on a caller buffer instead.
+ * 4096-byte segment. Override the floor when compiling capn-malloc.c
+ * with -DCAPN_CREATE_MIN_SZ=<power of two>. For many small messages that
+ * per-message malloc is the main cost: reuse one arena (one capn and its
+ * segments) across messages, or skip the heap allocator and call
+ * capn_init_mem / capn_append_segment on a caller buffer instead.
  *
  * capn_init_(fp|mem) inits by reading segments in from the file/memory buffer
  * in serialized form (optionally packed). It will then setup the create
