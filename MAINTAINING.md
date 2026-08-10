@@ -13,9 +13,11 @@
 
 1. `meson setup build && meson compile -C build && meson test -C build`
 2. ASan job green in CI
-3. Bump `project(... version: ...)` in `meson.build`
-4. Tag `vX.Y.Z` and push tag
-5. Bump vendored snapshot in GrokOS `grok-policyd/third_party/c-capnproto` if needed
+3. Bump `project(... version: ...)` in `meson.build`, `VERSION`, and
+   `AC_INIT` in `configure.ac` to the same `X.Y.Z`
+4. Tag `vX.Y.Z` (annotated, signed) and push the tag
+5. `gh release create vX.Y.Z` with notes
+6. Bump vendored snapshot in GrokOS `grok-policyd/third_party/c-capnproto` if needed
 
 ## Consumers
 
