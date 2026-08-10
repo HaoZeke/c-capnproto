@@ -204,6 +204,9 @@ typedef struct {capn_ptr p;} capn_list8;
 typedef struct {capn_ptr p;} capn_list16;
 typedef struct {capn_ptr p;} capn_list32;
 typedef struct {capn_ptr p;} capn_list64;
+/* List(Text) / List(Data) / List(AnyPointer) / List(List(...)) wrapper so
+ * capn_len(list) compiles. Bare capn_ptr lists use capn_ptr_len(p). */
+typedef struct {capn_ptr p;} capn_ptr_list;
 
 /* capnp_data_t is the decoded representation of a Data field.
  * Used by codec-generated encode/decode functions to represent
@@ -228,6 +231,7 @@ CAPN_EXPORT capn_ptr capn_root(struct capn *c);
 CAPN_EXPORT void capn_resolve(capn_ptr *p);
 
 #define capn_len(list) ((list).p.type == CAPN_FAR_POINTER ? (capn_resolve(&(list).p), (list).p.len) : (list).p.len)
+#define capn_ptr_len(p) ((p).type == CAPN_FAR_POINTER ? (capn_resolve(&(p)), (p).len) : (p).len)
 
 /* capn_getp|setp functions get/set ptrs in list/structs
  * off is the list index or pointer index in a struct
@@ -285,6 +289,7 @@ CAPN_EXPORT int capn_setv64(capn_list64 p, int off, const uint64_t *data, int sz
  *
  * List encoding (capnproto.org/encoding.html, matching C++):
  *   - List(Text), List(Data), List(AnyPointer): pointer list, element size C=6.
+ *     Generated type is capn_ptr_list (has .p) so capn_len works.
  *     Use capn_new_ptr_list(seg, n). Then capn_set_text / capn_setp per index.
  *   - List(Struct): composite list, element size C=7. Use
  *     capn_new_list(seg, n, struct_datasz_bytes, struct_ptrs).

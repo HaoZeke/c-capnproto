@@ -1,7 +1,8 @@
 /* codegen-defaults-test.cpp
  *
  * Empty Data/List defaults must compile and round-trip without an
- * undeclared capn_buf.
+ * undeclared capn_buf. List(Text) fields are capn_ptr_list so capn_len
+ * compiles.
  */
 
 #include <gtest/gtest.h>
@@ -12,6 +13,14 @@
 
 #include "capnp_c.h"
 #include "codegen-defaults.capnp.h"
+
+static capn_text chars_to_text(const char *chars) {
+  return (capn_text) {
+    .len = (int) strlen(chars),
+    .str = chars,
+    .seg = NULL,
+  };
+}
 
 #ifndef CODEGEN_DEFAULTS_GENERATED_C
 #define CODEGEN_DEFAULTS_GENERATED_C "codegen-defaults.capnp.c"
@@ -79,7 +88,7 @@ TEST(CodegenDefaults, EmptyDataDefaultRoundTrip) {
   read_Rec(&r, p);
   EXPECT_EQ(0, r.info.p.len);
   EXPECT_EQ(0, capn_len(r.info));
-  EXPECT_EQ(0, r.tags.type == 0 ? 0 : r.tags.len);
+  EXPECT_EQ(0, capn_len(r.tags));
 
   uint8_t buf[4096];
   ssize_t sz = capn_write_mem(&c, buf, sizeof(buf), 0);
@@ -95,5 +104,37 @@ TEST(CodegenDefaults, EmptyDataDefaultRoundTrip) {
   EXPECT_EQ(0, capn_len(rr.info));
 
   capn_free(&rc);
+  capn_free(&c);
+}
+
+TEST(CodegenDefaults, ListTextCapnLen) {
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *cs = capn_root(&c).seg;
+
+  struct Event e;
+  memset(&e, 0, sizeof(e));
+  e.args.p = capn_new_ptr_list(cs, 3);
+  ASSERT_EQ(0, capn_set_text(e.args.p, 0, chars_to_text("one")));
+  ASSERT_EQ(0, capn_set_text(e.args.p, 1, chars_to_text("two")));
+  ASSERT_EQ(0, capn_set_text(e.args.p, 2, chars_to_text("three")));
+  EXPECT_EQ(3, capn_len(e.args));
+  EXPECT_EQ(3, capn_ptr_len(e.args.p));
+
+  Event_ptr ep = new_Event(cs);
+  write_Event(&e, ep);
+  int setp_ret = capn_setp(capn_root(&c), 0, ep.p);
+  ASSERT_EQ(0, setp_ret);
+
+  struct Event r;
+  read_Event(&r, ep);
+  EXPECT_EQ(3, capn_len(r.args));
+  EXPECT_EQ(3, capn_ptr_len(r.args.p));
+
+  capn_text t0 = capn_get_text(r.args.p, 0, (capn_text){0, NULL, NULL});
+  EXPECT_EQ(3, t0.len);
+  ASSERT_TRUE(t0.str != NULL);
+  EXPECT_EQ(0, memcmp(t0.str, "one", 3));
+
   capn_free(&c);
 }

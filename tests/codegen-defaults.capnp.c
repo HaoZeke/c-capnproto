@@ -17,7 +17,7 @@ enum Color hue = (enum Color) 1u;
 union capn_conv_f32 ratio = {0x3fc00000u};
 int32_t answerCamel = 99;
 static capn_data capn_val1 = {{CAPN_NULL}};
-static capn_ptr capn_val2 = {CAPN_NULL};
+static capn_ptr_list capn_val2 = {{CAPN_NULL}};
 
 Rec_ptr new_Rec(struct capn_segment *s) {
 	Rec_ptr p;
@@ -36,8 +36,8 @@ void read_Rec(struct Rec *s capnp_unused, Rec_ptr p) {
 	if (!s->info.p.type) {
 		s->info = capn_val1;
 	}
-	s->tags = capn_getp(p.p, 1, 0);
-	if (!s->tags.type) {
+	s->tags.p = capn_getp(p.p, 1, 0);
+	if (!s->tags.p.type) {
 		s->tags = capn_val2;
 	}
 }
@@ -45,7 +45,7 @@ void write_Rec(const struct Rec *s capnp_unused, Rec_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_setp(p.p, 0, (s->info.p.data != capn_val1.p.data) ? s->info.p : capn_null);
-	capn_setp(p.p, 1, (s->tags.data != capn_val2.data) ? s->tags : capn_null);
+	capn_setp(p.p, 1, (s->tags.p.data != capn_val2.p.data) ? s->tags.p : capn_null);
 }
 void get_Rec(struct Rec *s, Rec_list l, int i) {
 	Rec_ptr p;
@@ -68,11 +68,11 @@ if (!info.p.type) {
 	return info;
 }
 
-capn_ptr Rec_get_tags(Rec_ptr p)
+capn_ptr_list Rec_get_tags(Rec_ptr p)
 {
-	capn_ptr tags;
-	tags = capn_getp(p.p, 1, 0);
-if (!tags.type) {
+	capn_ptr_list tags;
+	tags.p = capn_getp(p.p, 1, 0);
+if (!tags.p.type) {
 	tags = capn_val2;
 }
 	return tags;
@@ -83,9 +83,9 @@ void Rec_set_info(Rec_ptr p, capn_data info)
 	capn_setp(p.p, 0, (info.p.data != capn_val1.p.data) ? info.p : capn_null);
 }
 
-void Rec_set_tags(Rec_ptr p, capn_ptr tags)
+void Rec_set_tags(Rec_ptr p, capn_ptr_list tags)
 {
-	capn_setp(p.p, 1, (tags.data != capn_val2.data) ? tags : capn_null);
+	capn_setp(p.p, 1, (tags.p.data != capn_val2.p.data) ? tags.p : capn_null);
 }
 
 Event_ptr new_Event(struct capn_segment *s) {
@@ -101,12 +101,12 @@ Event_list new_Event_list(struct capn_segment *s, int len) {
 void read_Event(struct Event *s capnp_unused, Event_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
-	s->args = capn_getp(p.p, 0, 0);
+	s->args.p = capn_getp(p.p, 0, 0);
 }
 void write_Event(const struct Event *s capnp_unused, Event_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
-	capn_setp(p.p, 0, s->args);
+	capn_setp(p.p, 0, s->args.p);
 }
 void get_Event(struct Event *s, Event_list l, int i) {
 	Event_ptr p;
@@ -119,14 +119,14 @@ void set_Event(const struct Event *s, Event_list l, int i) {
 	write_Event(s, p);
 }
 
-capn_ptr Event_get_args(Event_ptr p)
+capn_ptr_list Event_get_args(Event_ptr p)
 {
-	capn_ptr args;
-	args = capn_getp(p.p, 0, 0);
+	capn_ptr_list args;
+	args.p = capn_getp(p.p, 0, 0);
 	return args;
 }
 
-void Event_set_args(Event_ptr p, capn_ptr args)
+void Event_set_args(Event_ptr p, capn_ptr_list args)
 {
-	capn_setp(p.p, 0, args);
+	capn_setp(p.p, 0, args.p);
 }

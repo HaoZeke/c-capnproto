@@ -334,7 +334,7 @@ static void decode_value(struct value* v, Type_ptr type, Value_ptr value, const 
 		case Type_data:
 		case Type_anyPointer:
 		case Type__list:
-			v->tname = "capn_ptr";
+			v->tname = "capn_ptr_list";
 			break;
 		case Type__struct:
 		case Type__interface:
