@@ -26,6 +26,11 @@ unchanged.
 
 `printk` is not used in the library; the sample module uses it.
 
+Some runtime functions keep 4k stack buffers (`init_fp`, `capn_write_fd`).
+kbuild may warn `-Wframe-larger-than=2048` on those paths. The sample
+heap-allocates its encode buffer; a production module should do the same
+or raise the frame limit.
+
 ## Sample module
 
 `examples/kernel/` encodes the addressbook example at `insmod` time.

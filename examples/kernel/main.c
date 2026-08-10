@@ -7,6 +7,7 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/slab.h>
 #include <linux/string.h>
 
 #include "capnp_c.h"
@@ -23,7 +24,7 @@ static capn_text chars_to_text(const char *chars)
 
 static void test_capn(void)
 {
-	uint8_t buf[4096];
+	uint8_t *buf;
 	ssize_t sz;
 	const char *name = "Firstname Lastname";
 	const char *email = "username@domain.com";
@@ -35,6 +36,12 @@ static void test_capn(void)
 	struct Person_PhoneNumber pn0, pn1;
 	Person_ptr pp;
 	int setp_ret;
+
+	buf = kmalloc(4096, GFP_KERNEL);
+	if (!buf) {
+		pr_err("c-capnproto sample: kmalloc failed\n");
+		return;
+	}
 
 	capn_init_malloc(&c);
 	cr = capn_root(&c);
@@ -63,6 +70,7 @@ static void test_capn(void)
 	sz = capn_write_mem(&c, buf, sizeof(buf), 0);
 	pr_info("c-capnproto sample: setp_ret=%d bytes=%zd\n", setp_ret, sz);
 	capn_free(&c);
+	kfree(buf);
 }
 
 static int __init capnp_addressbook_init(void)
