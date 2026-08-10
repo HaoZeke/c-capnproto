@@ -108,6 +108,7 @@ if get_option('enable_tests') and not meson.is_subproject()
     'tests' / 'bounds-test.cpp',
     'tests' / 'interface-test.cpp',
     'tests' / 'testunion-union1-test.cpp',
+    'tests' / 'list-c6-upgrade-test.cpp',
     'tests' / 'addressbook.capnp.c',
     'tests' / 'extraheader.capnp.c',
     'tests' / 'fieldgetset.capnp.c',

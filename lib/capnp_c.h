@@ -289,8 +289,12 @@ CAPN_EXPORT int capn_set_root(struct capn *c, capn_ptr p);
  * capn_getp returns a 1-element inner bit-list member (is_list_member=1;
  * ptrs holds the bit-within-byte 0..7). capn_setp copies one bit (from
  * another bit list, a struct's first bit, or CAPN_NULL=0).
- * A tgt of type CAPN_NULL, or with data == NULL, is encoded as a null
- * pointer. Zero-init C structs so optional pointer fields stay unset.
+ * For CAPN_PTR_LIST (wire C=6): resolve=1 chases the element pointer
+ * (List(Text) / List(Data) / List(AnyPointer)). resolve=0 returns an
+ * inner 0-data/1-pointer struct so List(Struct) can upgrade a C=6 list
+ * (get_Foo then read_Foo). A tgt of type CAPN_NULL, or with data == NULL,
+ * is encoded as a null pointer. Zero-init C structs so optional pointer
+ * fields stay unset.
  */
 CAPN_EXPORT capn_ptr capn_getp(capn_ptr p, int off, int resolve);
 CAPN_EXPORT int capn_setp(capn_ptr p, int off, capn_ptr tgt);
