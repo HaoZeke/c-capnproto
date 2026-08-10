@@ -195,9 +195,6 @@ struct capn_ptr {
 	unsigned int is_list_member : 1;
 	unsigned int is_composite_list : 1;
 	unsigned int datasz : 19;
-	/* bit-within-byte for an inner CAPN_BIT_LIST member from capn_getp.
-	 * Zero on a full bit list. Occupies padding in the first word. */
-	unsigned int bitoff : 3;
 	unsigned int ptrs : 16;
 	int len;
 	char *data;
@@ -271,8 +268,9 @@ CAPN_EXPORT int capn_set_root(struct capn *c, capn_ptr p);
  * is in a different segment/context.
  * Both of these will use/return inner pointers for composite lists.
  * For CAPN_BIT_LIST (List(Bool), wire C=1) off is a bit index.
- * capn_getp returns a 1-element inner bit-list member; capn_setp copies
- * one bit (from another bit list, a struct's first bit, or CAPN_NULL=0).
+ * capn_getp returns a 1-element inner bit-list member (is_list_member=1;
+ * ptrs holds the bit-within-byte 0..7). capn_setp copies one bit (from
+ * another bit list, a struct's first bit, or CAPN_NULL=0).
  * A tgt of type CAPN_NULL, or with data == NULL, is encoded as a null
  * pointer. Zero-init C structs so optional pointer fields stay unset.
  */

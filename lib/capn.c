@@ -941,18 +941,18 @@ capn_ptr capn_getp(capn_ptr p, int off, int resolve) {
 
 	case CAPN_BIT_LIST: {
 		/* Inner 1-bit view. data points at the containing byte;
-		 * bitoff is the bit within that byte. Not a pointer. */
+		 * ptrs is the bit within that byte. Not a pointer. */
 		int bit;
 		capn_ptr inner = {CAPN_BIT_LIST};
 		if (off < 0 || off >= p.len || !p.data)
 			goto err;
-		bit = off + (int) p.bitoff;
+		bit = off + (int) p.ptrs;
 		inner.is_list_member = 1;
 		inner.seg = p.seg;
 		inner.data = p.data + (bit >> 3);
 		inner.datasz = 1;
 		inner.len = 1;
-		inner.bitoff = (unsigned) (bit & 7);
+		inner.ptrs = (unsigned) (bit & 7);
 		inner.nesting_valid = 1;
 		inner.nesting = rem;
 		return inner;
@@ -1172,8 +1172,7 @@ static int is_ptr_equal(const struct capn_ptr *a, const struct capn_ptr *b) {
 		&& a->type == b->type
 		&& a->len == b->len
 		&& a->datasz == b->datasz
-		&& a->ptrs == b->ptrs
-		&& a->bitoff == b->bitoff;
+		&& a->ptrs == b->ptrs;
 }
 
 static int data_size(struct capn_ptr p) {
@@ -1469,7 +1468,7 @@ int capn_get1(capn_list1 l, int off) {
 	case CAPN_BIT_LIST:
 		if (off >= p.len || !p.data)
 			return 0;
-		bit = off + (int) p.bitoff;
+		bit = off + (int) p.ptrs;
 		return (p.data[bit / 8] & (1 << (bit % 8))) != 0;
 
 	case CAPN_LIST:
@@ -1511,7 +1510,7 @@ int capn_set1(capn_list1 l, int off, int val) {
 	case CAPN_BIT_LIST:
 		if (off >= p.len || !p.data)
 			return -1;
-		bit = off + (int) p.bitoff;
+		bit = off + (int) p.ptrs;
 		if (val) {
 			p.data[bit / 8] |= 1 << (bit % 8);
 		} else {
@@ -1560,7 +1559,7 @@ int capn_getv1(capn_list1 l, int off, uint8_t *data, int sz) {
 	capn_ptr p;
 	capn_resolve(&l.p);
 	p = l.p;
-	if (p.type != CAPN_BIT_LIST || (off & 7) != 0 || p.bitoff != 0)
+	if (p.type != CAPN_BIT_LIST || (off & 7) != 0 || p.is_list_member)
 		return -1;
 
 	bsz = (sz + 7) / 8;
@@ -1579,7 +1578,7 @@ int capn_setv1(capn_list1 l, int off, const uint8_t *data, int sz) {
 	/* Note we only support aligned writes */
 	int bsz;
 	capn_ptr p = l.p;
-	if (p.type != CAPN_BIT_LIST || (off & 7) != 0 || p.bitoff != 0)
+	if (p.type != CAPN_BIT_LIST || (off & 7) != 0 || p.is_list_member)
 		return -1;
 
 	bsz = (sz + 7) / 8;
