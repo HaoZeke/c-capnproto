@@ -69,21 +69,22 @@ The `compiler` directory contains the C language plugin (`capnpc-c`) for use wit
 `capnp` will by default search `$PATH` for `capnpc-c` - if it's on your PATH, you can generate code for your schema as follows:
 
 ```sh
-capnp compile -o c myschema.capnp
+# after meson install; ${prefix} is /usr/local by default
+capnp compile -I${prefix}/share/c-capnproto -o c schema.capnp
 ```
 
-Otherwise, you can specify the path to the c plugin:
+Otherwise, you can specify the path to the c plugin. From a source checkout, `-Icompiler` finds the same schema:
 
 ```sh
-capnp compile -o ./capnpc-c myschema.capnp
+capnp compile -Icompiler -o ./capnpc-c schema.capnp
 ```
 
-`capnp` generates a C struct that corresponds to each capn proto struct, along with read/write functions that convert to/from capn proto form.
+`capnp` generates a C struct that corresponds to each capn proto struct, along with read/write functions that convert to/from capn proto form. Generated headers `#include "c.capnp.h"` (installed next to `capnp_c.h`).
 
-If you want accessor functions for struct members, use attribute  `fieldgetset` in your `.capnp` file as follows:
+If you want accessor functions for struct members, import the C annotations (`/c.capnp`) and use `$C.fieldgetset`:
 
 ```capnp
-using C = import "${c-capnproto}/compiler/c.capnp";
+using C = import "/c.capnp";
 
 $C.fieldgetset;
 
@@ -124,7 +125,33 @@ The runtime can be compiled into a kernel module (`__KERNEL__`). This is
 not the default and is not covered by CI. See [KERNEL.md](KERNEL.md) and
 the sample in [`examples/kernel`](examples/kernel).
 
-## Fuzzing (AFL)
+### Small messages
+
+`capn_init_malloc` allocates a new 4096-byte segment on the first write of
+each session. Calling it once per small message pays that malloc every time.
+Reuse one `struct capn` (and its arena) across messages, or skip the heap
+allocator and feed a caller buffer with `capn_init_mem` /
+`capn_append_segment`.
+
+## Fuzzing
+
+Harnesses live in [`fuzz/read_mem.c`](fuzz/read_mem.c) (memory reader) and
+[`fuzz/read_fp.c`](fuzz/read_fp.c) (`FILE*` reader). They link the addressbook
+example schema. Seed corpus: `fuzz/in/` (the autotools `fuzz-mem` / `fuzz-fp`
+targets create it).
+
+### Meson (libFuzzer or AFL++)
+
+```sh
+meson setup build-fuzz -Dfuzz=true -Denable_tests=false
+meson compile -C build-fuzz
+# harnesses: build-fuzz/fuzz-mem  build-fuzz/fuzz-fp
+```
+
+libFuzzer: configure with clang and `-Db_sanitize=fuzzer,address`. AFL++: set
+`CC`/`CXX` to `afl-clang-fast` (or `afl-clang`) before `meson setup`.
+
+### Autotools (AFL)
 
 With `afl-clang` and `capnp` on `PATH`:
 
@@ -149,9 +176,9 @@ Haller (AFL harness). See [MAINTAINING.md](MAINTAINING.md).
 | Artifact | Path |
 |----------|------|
 | Plugin | `bin/capnpc-c` |
-| Header | `include/capnp_c.h` |
+| Header | `include/capnp_c.h`, `include/c.capnp.h` |
 | Library | `lib/libcapnp_c.a` / `.so` |
 | pkg-config | `lib/pkgconfig/c-capnproto.pc` |
-| Schema helper | `share/c-capnproto/c.capnp` |
+| Schema helper | `share/c-capnproto/c.capnp` (`import "/c.capnp"` with `-I` this dir) |
 
 Maintaining: [MAINTAINING.md](MAINTAINING.md). Security: [SECURITY.md](SECURITY.md).

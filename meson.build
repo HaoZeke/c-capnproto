@@ -18,21 +18,36 @@ libcapnp_src = [
   'lib' / 'capn.c',
 ]
 
+# MSVC shared builds only emit capnp_c.lib when something is dllexport.
+# CAPNP_C_BUILDING marks library objects; CAPNP_C_STATIC keeps the header
+# from dllimport when the archive is static.
+capnp_c_consumer_args = []
+if get_option('default_library') == 'static'
+  capnp_c_consumer_args += '-DCAPNP_C_STATIC'
+endif
+
 # Library name libcapnp_c matches historical pc and avoids clashing with C++ libcapnp.
 libcapnp_c = library(
   'capnp_c',
   libcapnp_src,
-  c_args: common_c_args + libcapnp_c_args,
+  c_args: common_c_args + libcapnp_c_args + capnp_c_consumer_args,
+  c_shared_args: ['-DCAPNP_C_BUILDING'],
+  c_static_args: ['-DCAPNP_C_STATIC'],
   include_directories: include_directories(['lib']),
   implicit_include_directories: false,
   install: true,
 )
 
-install_headers('lib' / 'capnp_c.h')
+# Generated user headers #include "c.capnp.h"; ship it next to capnp_c.h.
+install_headers(
+  'lib' / 'capnp_c.h',
+  'compiler' / 'c.capnp.h',
+)
 
 libcapnp_dep = declare_dependency(
   link_with: libcapnp_c,
   include_directories: include_directories(['lib']),
+  compile_args: capnp_c_consumer_args,
 )
 
 pkg = import('pkgconfig')
@@ -168,4 +183,29 @@ if get_option('enable_tests') and not meson.is_subproject()
     )
     test('group-in-union-test', group_in_union_test)
   endif
+endif
+
+if get_option('fuzz')
+  fuzz_inc = include_directories(['lib', 'tests', 'compiler'])
+  # read_mem.c uses lstat; strict c99 hides POSIX declarations.
+  executable(
+    'fuzz-mem',
+    ['fuzz' / 'read_mem.c', 'tests' / 'addressbook.capnp.c'],
+    include_directories: fuzz_inc,
+    dependencies: [libcapnp_dep],
+    c_args: common_c_args,
+    override_options: ['c_std=gnu99'],
+    install: false,
+    implicit_include_directories: false,
+  )
+  executable(
+    'fuzz-fp',
+    ['fuzz' / 'read_fp.c', 'tests' / 'addressbook.capnp.c'],
+    include_directories: fuzz_inc,
+    dependencies: [libcapnp_dep],
+    c_args: common_c_args,
+    override_options: ['c_std=gnu99'],
+    install: false,
+    implicit_include_directories: false,
+  )
 endif

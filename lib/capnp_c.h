@@ -57,6 +57,23 @@ typedef SSIZE_T ssize_t;
 #define ALIGNED_(x) __attribute__ ((aligned(x)))
 #endif
 
+/* Shared-library export. MSVC only writes an import library (capnp_c.lib)
+ * when at least one symbol is __declspec(dllexport). Static builds
+ * (CAPNP_C_STATIC) and non-Windows leave this empty. Define
+ * CAPNP_C_BUILDING when compiling the library objects.
+ */
+#if defined(CAPNP_C_STATIC)
+#define CAPN_EXPORT
+#elif defined(_WIN32) || defined(__CYGWIN__)
+#ifdef CAPNP_C_BUILDING
+#define CAPN_EXPORT __declspec(dllexport)
+#else
+#define CAPN_EXPORT __declspec(dllimport)
+#endif
+#else
+#define CAPN_EXPORT
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -112,7 +129,7 @@ struct capn_tree {
 	unsigned int red : 1;
 };
 
-struct capn_tree *capn_tree_insert(struct capn_tree *root, struct capn_tree *n);
+CAPN_EXPORT struct capn_tree *capn_tree_insert(struct capn_tree *root, struct capn_tree *n);
 
 /* struct capn_segment contains the information about a single segment.
  *
@@ -205,10 +222,10 @@ struct capn_msg {
 };
 
 /* capn_append_segment appends a segment to a session */
-void capn_append_segment(struct capn*, struct capn_segment*);
+CAPN_EXPORT void capn_append_segment(struct capn*, struct capn_segment*);
 
-capn_ptr capn_root(struct capn *c);
-void capn_resolve(capn_ptr *p);
+CAPN_EXPORT capn_ptr capn_root(struct capn *c);
+CAPN_EXPORT void capn_resolve(capn_ptr *p);
 
 #define capn_len(list) ((list).p.type == CAPN_FAR_POINTER ? (capn_resolve(&(list).p), (list).p.len) : (list).p.len)
 
@@ -218,12 +235,12 @@ void capn_resolve(capn_ptr *p);
  * is in a different segment/context.
  * Both of these will use/return inner pointers for composite lists.
  */
-capn_ptr capn_getp(capn_ptr p, int off, int resolve);
-int capn_setp(capn_ptr p, int off, capn_ptr tgt);
+CAPN_EXPORT capn_ptr capn_getp(capn_ptr p, int off, int resolve);
+CAPN_EXPORT int capn_setp(capn_ptr p, int off, capn_ptr tgt);
 
-capn_text capn_get_text(capn_ptr p, int off, capn_text def);
-capn_data capn_get_data(capn_ptr p, int off);
-int capn_set_text(capn_ptr p, int off, capn_text tgt);
+CAPN_EXPORT capn_text capn_get_text(capn_ptr p, int off, capn_text def);
+CAPN_EXPORT capn_data capn_get_data(capn_ptr p, int off);
+CAPN_EXPORT int capn_set_text(capn_ptr p, int off, capn_text tgt);
 /* there is no set_data -- use capn_new_list8 + capn_setv8 instead
  * and set data.p = list.p */
 
@@ -234,16 +251,16 @@ int capn_set_text(capn_ptr p, int off, capn_text tgt);
  * The function returns the number of elements read or -1 on an error.
  * off must be byte aligned for capn_getv1
  */
-int capn_get1(capn_list1 p, int off);
-uint8_t capn_get8(capn_list8 p, int off);
-uint16_t capn_get16(capn_list16 p, int off);
-uint32_t capn_get32(capn_list32 p, int off);
-uint64_t capn_get64(capn_list64 p, int off);
-int capn_getv1(capn_list1 p, int off, uint8_t *data, int sz);
-int capn_getv8(capn_list8 p, int off, uint8_t *data, int sz);
-int capn_getv16(capn_list16 p, int off, uint16_t *data, int sz);
-int capn_getv32(capn_list32 p, int off, uint32_t *data, int sz);
-int capn_getv64(capn_list64 p, int off, uint64_t *data, int sz);
+CAPN_EXPORT int capn_get1(capn_list1 p, int off);
+CAPN_EXPORT uint8_t capn_get8(capn_list8 p, int off);
+CAPN_EXPORT uint16_t capn_get16(capn_list16 p, int off);
+CAPN_EXPORT uint32_t capn_get32(capn_list32 p, int off);
+CAPN_EXPORT uint64_t capn_get64(capn_list64 p, int off);
+CAPN_EXPORT int capn_getv1(capn_list1 p, int off, uint8_t *data, int sz);
+CAPN_EXPORT int capn_getv8(capn_list8 p, int off, uint8_t *data, int sz);
+CAPN_EXPORT int capn_getv16(capn_list16 p, int off, uint16_t *data, int sz);
+CAPN_EXPORT int capn_getv32(capn_list32 p, int off, uint32_t *data, int sz);
+CAPN_EXPORT int capn_getv64(capn_list64 p, int off, uint64_t *data, int sz);
 
 /* capn_set* functions set data in a list
  * off specifies how far into the list to start
@@ -251,16 +268,16 @@ int capn_getv64(capn_list64 p, int off, uint64_t *data, int sz);
  * The function returns the number of elemnts written or -1 on an error.
  * off must be byte aligned for capn_setv1
  */
-int capn_set1(capn_list1 p, int off, int v);
-int capn_set8(capn_list8 p, int off, uint8_t v);
-int capn_set16(capn_list16 p, int off, uint16_t v);
-int capn_set32(capn_list32 p, int off, uint32_t v);
-int capn_set64(capn_list64 p, int off, uint64_t v);
-int capn_setv1(capn_list1 p, int off, const uint8_t *data, int sz);
-int capn_setv8(capn_list8 p, int off, const uint8_t *data, int sz);
-int capn_setv16(capn_list16 p, int off, const uint16_t *data, int sz);
-int capn_setv32(capn_list32 p, int off, const uint32_t *data, int sz);
-int capn_setv64(capn_list64 p, int off, const uint64_t *data, int sz);
+CAPN_EXPORT int capn_set1(capn_list1 p, int off, int v);
+CAPN_EXPORT int capn_set8(capn_list8 p, int off, uint8_t v);
+CAPN_EXPORT int capn_set16(capn_list16 p, int off, uint16_t v);
+CAPN_EXPORT int capn_set32(capn_list32 p, int off, uint32_t v);
+CAPN_EXPORT int capn_set64(capn_list64 p, int off, uint64_t v);
+CAPN_EXPORT int capn_setv1(capn_list1 p, int off, const uint8_t *data, int sz);
+CAPN_EXPORT int capn_setv8(capn_list8 p, int off, const uint8_t *data, int sz);
+CAPN_EXPORT int capn_setv16(capn_list16 p, int off, const uint16_t *data, int sz);
+CAPN_EXPORT int capn_setv32(capn_list32 p, int off, const uint32_t *data, int sz);
+CAPN_EXPORT int capn_setv64(capn_list64 p, int off, const uint64_t *data, int sz);
 
 /* capn_new_* functions create a new object
  * datasz is in bytes, ptrs is # of pointers, sz is # of elements in the list
@@ -276,18 +293,18 @@ int capn_setv64(capn_list64 p, int off, const uint64_t *data, int sz);
  *     use capn_new_ptr_list for List(Text).
  * Text is List(UInt8) with a trailing NUL included in the wire element count.
  */
-capn_ptr capn_new_string(struct capn_segment *seg, const char *str, ssize_t sz);
-capn_ptr capn_new_struct(struct capn_segment *seg, int datasz, int ptrs);
-capn_ptr capn_new_interface(struct capn_segment *seg, int datasz, int ptrs);
-capn_ptr capn_new_ptr_list(struct capn_segment *seg, int sz);
+CAPN_EXPORT capn_ptr capn_new_string(struct capn_segment *seg, const char *str, ssize_t sz);
+CAPN_EXPORT capn_ptr capn_new_struct(struct capn_segment *seg, int datasz, int ptrs);
+CAPN_EXPORT capn_ptr capn_new_interface(struct capn_segment *seg, int datasz, int ptrs);
+CAPN_EXPORT capn_ptr capn_new_ptr_list(struct capn_segment *seg, int sz);
 /* Alias for List(Text) / List(Data) / List(AnyPointer) (wire C=6). */
 #define capn_new_text_list(seg, sz) capn_new_ptr_list((seg), (sz))
-capn_ptr capn_new_list(struct capn_segment *seg, int sz, int datasz, int ptrs);
-capn_list1 capn_new_list1(struct capn_segment *seg, int sz);
-capn_list8 capn_new_list8(struct capn_segment *seg, int sz);
-capn_list16 capn_new_list16(struct capn_segment *seg, int sz);
-capn_list32 capn_new_list32(struct capn_segment *seg, int sz);
-capn_list64 capn_new_list64(struct capn_segment *seg, int sz);
+CAPN_EXPORT capn_ptr capn_new_list(struct capn_segment *seg, int sz, int datasz, int ptrs);
+CAPN_EXPORT capn_list1 capn_new_list1(struct capn_segment *seg, int sz);
+CAPN_EXPORT capn_list8 capn_new_list8(struct capn_segment *seg, int sz);
+CAPN_EXPORT capn_list16 capn_new_list16(struct capn_segment *seg, int sz);
+CAPN_EXPORT capn_list32 capn_new_list32(struct capn_segment *seg, int sz);
+CAPN_EXPORT capn_list64 capn_new_list64(struct capn_segment *seg, int sz);
 
 /* capn_read|write* functions read/write struct values
  * off is the offset into the structure in bytes
@@ -306,7 +323,13 @@ CAPN_INLINE int capn_write32(capn_ptr p, int off, uint32_t val);
 CAPN_INLINE int capn_write64(capn_ptr p, int off, uint64_t val);
 
 /* capn_init_malloc inits the capn struct with a create function which
- * allocates segments on the heap using malloc
+ * allocates segments on the heap using malloc.
+ *
+ * Each session's first write (e.g. capn_root) allocates at least one
+ * 4096-byte segment. For many small messages that per-message malloc is
+ * the main cost: reuse one arena (one capn and its segments) across
+ * messages, or skip the heap allocator and call capn_init_mem /
+ * capn_append_segment on a caller buffer instead.
  *
  * capn_init_(fp|mem) inits by reading segments in from the file/memory buffer
  * in serialized form (optionally packed). It will then setup the create
@@ -315,9 +338,9 @@ CAPN_INLINE int capn_write64(capn_ptr p, int off, uint64_t val);
  * capn_free frees all the segment headers and data created by the create
  * function setup by capn_init_*
  */
-void capn_init_malloc(struct capn *c);
-int capn_init_fp(struct capn *c, FILE *f, int packed);
-int capn_init_mem(struct capn *c, const uint8_t *p, size_t sz, int packed);
+CAPN_EXPORT void capn_init_malloc(struct capn *c);
+CAPN_EXPORT int capn_init_fp(struct capn *c, FILE *f, int packed);
+CAPN_EXPORT int capn_init_mem(struct capn *c, const uint8_t *p, size_t sz, int packed);
 
 /* capn_size() calculates the amount of memory required to serialise the given
  * Cap'n Proto structure in the unpacked format. It does NOT apply to packed
@@ -325,18 +348,18 @@ int capn_init_mem(struct capn *c, const uint8_t *p, size_t sz, int packed);
  * input. A buffer of this size can then be passed to capn_write_mem() without
  * fear of truncation (again, only in the unpacked case).
  */
-int64_t capn_size(struct capn *c);
+CAPN_EXPORT int64_t capn_size(struct capn *c);
 
 /* capn_write_(fp|mem) writes segments to the file/memory buffer in
  * serialized form and returns the number of bytes written.
  */
 /* TODO */
 /*int capn_write_fp(struct capn *c, FILE *f, int packed);*/
-int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, size_t count), int fd, int packed);
-int64_t capn_write_mem(struct capn *c, uint8_t *p, size_t sz, int packed);
+CAPN_EXPORT int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, size_t count), int fd, int packed);
+CAPN_EXPORT int64_t capn_write_mem(struct capn *c, uint8_t *p, size_t sz, int packed);
 
-void capn_free(struct capn *c);
-void capn_reset_copy(struct capn *c);
+CAPN_EXPORT void capn_free(struct capn *c);
+CAPN_EXPORT void capn_reset_copy(struct capn *c);
 
 /* Inline functions */
 

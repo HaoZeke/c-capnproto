@@ -28,6 +28,7 @@ AM_CPPFLAGS = \
 
 lib_LTLIBRARIES += libcapnp_c.la
 libcapnp_c_la_LDFLAGS = -version-info 0:0:0
+libcapnp_c_la_CPPFLAGS = $(AM_CPPFLAGS) -DCAPNP_C_BUILDING
 libcapnp_c_la_SOURCES = \
 	lib/capn-malloc.c \
 	lib/capn-stream.c \
@@ -43,14 +44,14 @@ capnpc_c_SOURCES = \
 	compiler/str.c
 capnpc_c_LDADD = libcapnp_c.la
 include_HEADERS += \
-	lib/capnp_c.h
+	lib/capnp_c.h \
+	compiler/c.capnp.h
 
 noinst_HEADERS += \
 	lib/capnp_priv.h \
 	compiler/str.h \
 	compiler/codecgen.h \
 	compiler/schema.capnp.h \
-	compiler/c.capnp.h \
 	compiler/c++.capnp.h
 
 # Don't try to generate any *.capnp files. Otherwise make wants to compile them

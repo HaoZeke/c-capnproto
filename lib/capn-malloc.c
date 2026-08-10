@@ -29,14 +29,16 @@
 #endif /* __KERNEL__ */
 
 /*
- * 8 byte alignment is required for struct capn_segment.
- * This struct check_segment_alignment verifies this at compile time.
+ * 8-byte alignment is required for struct capn_segment (Cap'n Proto
+ * words are 8 bytes). This is the ARM/Sparc (and 32-bit x86) compile-time
+ * check: a negative bitfield width fails the build if
+ * sizeof(struct capn_segment) is not a multiple of 8.
  *
- * Unless capn_segment is defined with 8 byte alignment, check_segment_alignment
- * fails to compile in x86 mode (or on another CPU with 32-bit pointers),
- * as (sizeof(struct capn_segment)&7) -> (44 & 7) evaluates to 4.
- * It compiles in x64 mode (or on another CPU with 64-bit pointers),
- * as (sizeof(struct capn_segment)&7) -> (80 & 7) evaluates to 0.
+ * Field ALIGNED_(8) on data/len/cap/user (see capnp_c.h) is the portable
+ * fix. Do not apply aligned(64) to the whole struct.
+ *
+ * Without 8-byte size/alignment, (sizeof(struct capn_segment)&7) is 4 on
+ * 32-bit pointers (e.g. 44 & 7) and 0 on 64-bit (e.g. 80 & 7).
  */
 struct check_segment_alignment {
 	unsigned int foo : (sizeof(struct capn_segment)&7) ? -1 : 1;
