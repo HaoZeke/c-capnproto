@@ -186,6 +186,9 @@ Lineage: [James McKaskill](https://github.com/jmckaskill/c-capnproto) merged wit
 This fork also carries C-level fixes from Jonah Beckford (DKML/MSVC),
 Rongsong Shen (packed-header alignment, copy-tree parent), and Angelo
 Haller (AFL harness). See [MAINTAINING.md](MAINTAINING.md).
+Windows CI is x64; 32-bit coverage is the compile-time
+`sizeof(capn_segment)%8` check. Optional `scripts/smoke-m32.sh` when
+an ILP32 `gcc -m32` exists (N/A on the maintainer builder).
 
 ## Install layout
 
