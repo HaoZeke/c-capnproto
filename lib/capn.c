@@ -1847,6 +1847,13 @@ capn_data capn_get_data(capn_ptr p, int off) {
 	return ret;
 }
 
+int capn_set_data(capn_ptr p, int off, capn_data tgt) {
+	if (tgt.p.type != CAPN_LIST || tgt.p.datasz != 1) {
+		memset(&tgt, 0, sizeof(tgt));
+	}
+	return capn_setp(p, off, tgt.p);
+}
+
 #define SZ 8
 #include "capn-list.inc"
 #undef SZ

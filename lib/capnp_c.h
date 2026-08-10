@@ -298,8 +298,12 @@ CAPN_EXPORT int capn_setp(capn_ptr p, int off, capn_ptr tgt);
 CAPN_EXPORT capn_text capn_get_text(capn_ptr p, int off, capn_text def);
 CAPN_EXPORT capn_data capn_get_data(capn_ptr p, int off);
 CAPN_EXPORT int capn_set_text(capn_ptr p, int off, capn_text tgt);
-/* there is no set_data -- use capn_new_list8 + capn_setv8 instead
- * and set data.p = list.p */
+/* capn_set_data writes tgt.p (generated Data setters call this).
+ * A CAPN_NULL tgt, or data == NULL, is a wire null (C++ hasFoo() is
+ * false). A 0-length List(UInt8) from capn_new_list8(seg, 0) is empty
+ * non-null Data (hasFoo() is true). Build non-empty Data with
+ * capn_new_list8 + capn_setv8, then pass the list as capn_data. */
+CAPN_EXPORT int capn_set_data(capn_ptr p, int off, capn_data tgt);
 
 /* capn_get* functions get data from a list
  * The length of the list is given by p->size
