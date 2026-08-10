@@ -9,7 +9,11 @@
 
 #include "capnp_c.h"
 #include "capnp_priv.h"
+#ifndef __KERNEL__
 #include <string.h>
+#else /* __KERNEL__ */
+#include <linux/string.h>
+#endif /* __KERNEL__ */
 
 #ifndef min
 static unsigned min(unsigned a, unsigned b) { return (a < b) ? a : b; }

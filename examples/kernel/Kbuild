@@ -1,0 +1,4 @@
+ccflags-y := -I$(src)/../../lib -I$(src)/../../tests -I$(src)/../../compiler
+
+obj-m += capnp_addressbook.o
+capnp_addressbook-y := main.o runtime.o

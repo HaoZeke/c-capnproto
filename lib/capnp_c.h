@@ -11,6 +11,15 @@
 #ifndef CAPNP_C_H
 #define CAPNP_C_H
 
+#ifdef __KERNEL__
+#include <linux/types.h>
+#include <linux/limits.h>
+#ifndef UINT32_MAX
+#define UINT32_MAX UINT_MAX
+#endif
+/* capn_init_fp is a userspace FILE* entry; keep the prototype valid. */
+#define FILE void
+#else /* !__KERNEL__ */
 #include <stdint.h>
 #include <stdio.h>
 #ifndef _MSC_VER
@@ -32,6 +41,7 @@ typedef SSIZE_T ssize_t;
 #else
 #include <stddef.h>
 #endif
+#endif /* __KERNEL__ */
 
 /* Cross-platform macro ALIGNED_(x) aligns a struct or a field
  * by `x` bytes. When applied to a struct, it applies to the
@@ -444,6 +454,7 @@ CAPN_INLINE int capn_write64(capn_ptr p, int off, uint64_t val) {
 	}
 }
 
+#ifndef __KERNEL__
 union capn_conv_f32 {
 	uint32_t u;
 	float f;
@@ -474,6 +485,7 @@ CAPN_INLINE uint64_t capn_from_f64(double v) {
 	u.f = v;
 	return u.u;
 }
+#endif /* !__KERNEL__ */
 
 #ifdef __cplusplus
 }
