@@ -1,0 +1,15 @@
+(
+  textField = "hello-cli",
+  dataField = 0x"01 02 03 ff",
+  structField = (textField = "nested"),
+  enumField = baz,
+  boolList = [true, false, true],
+  int32List = [1, -2, 3, 0, 42],
+  textList = ["alpha", "beta"],
+  dataList = [0x"aa", 0x"bb cc"],
+  structList = [
+    (textField = "s0"),
+    (textField = "s1")
+  ],
+  enumList = [foo, bar]
+)

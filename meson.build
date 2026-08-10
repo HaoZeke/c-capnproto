@@ -157,6 +157,34 @@ if get_option('enable_tests') and not meson.is_subproject()
 
   capnp = find_program('capnp', required: false)
   if capnp.found()
+    # Official `capnp` CLI interop. Skip these tests only when the
+    # binary is missing (this branch is not taken). Do not GTEST_SKIP
+    # when meson found capnp.
+    cli_interop_test = executable(
+      'capnp-cli-interop-test',
+      [
+        'tests' / 'capnp-cli-interop-test.cpp',
+        'tests' / 'addressbook.capnp.c',
+        'compiler' / 'test.capnp.c',
+      ],
+      include_directories: include_directories(['lib', 'tests', 'compiler']),
+      dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
+      cpp_args: common_cpp_args + [
+        '-DCAPNP_CLI="' + capnp.full_path() + '"',
+        '-DCAPNP_SOURCE_ROOT="' + meson.project_source_root() + '"',
+      ],
+      install: false,
+      implicit_include_directories: false,
+    )
+    test(
+      'capnp-cli-interop-test',
+      cli_interop_test,
+      env: {
+        'CAPNP_CLI': capnp.full_path(),
+        'CAPNP_SOURCE_ROOT': meson.project_source_root(),
+      },
+    )
+
     codec_c_args = common_c_args + ['-D_POSIX_C_SOURCE=200809L']
 
     codec_roundtrip_gen = custom_target(

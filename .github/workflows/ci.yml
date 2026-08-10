@@ -39,7 +39,7 @@ jobs:
       - name: Install meson ninja
         run: pip install meson ninja
       - name: Install capnproto
-        if: matrix.fuzz_smoke
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y capnproto
       - name: Configure
         run: meson setup build -Dbuildtype=release ${{ matrix.meson_opts }}
@@ -101,6 +101,8 @@ jobs:
           python-version: "3.12"
       - name: Install meson ninja
         run: pip install meson ninja
+      - name: Install capnproto
+        run: sudo apt-get update && sudo apt-get install -y capnproto
       - name: Configure
         run: meson setup build -Dbuildtype=debugoptimized -Db_sanitize=address,undefined -Denable_tests=true
       - name: Build

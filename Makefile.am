@@ -112,6 +112,9 @@ EXTRA_DIST += \
 	tests/fixtures/addressbook.bin \
 	tests/fixtures/addressbook.packed.bin \
 	tests/fixtures/addressbook.canonical.bin \
+	tests/fixtures/addressbook.txt \
+	tests/fixtures/testalltypes.txt \
+	tests/capnp-cli-interop-test.cpp \
 	tests/interface-field.capnp \
 	tests/interface-field-test.cpp \
 	fuzz/Person.txt \
