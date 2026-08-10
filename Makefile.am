@@ -75,6 +75,7 @@ capn_test_SOURCES = \
 	tests/extraheader-test.cpp \
 	tests/fieldgetset-test.cpp \
 	tests/codegen-defaults-test.cpp \
+	tests/bounds-test.cpp \
 	tests/addressbook.capnp.c \
 	tests/extraheader.capnp.c \
 	tests/fieldgetset.capnp.c \
