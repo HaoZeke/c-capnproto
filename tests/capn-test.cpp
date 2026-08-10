@@ -629,11 +629,11 @@ TEST(WireFormat, GetpHugeOffsetIsNull) {
 }
 
 /* encoding.html List(Bool): C=1, bits packed little-endian (bit 0 = LSB).
- * A list pointer with offset 0, C=1, D=10 is 0x5100000001. Bits 0, 3, 9
- * set produce bytes 0x09, 0x02. */
+ * A list pointer with offset 0, C=1, D=10 is 0x0000005100000001
+ * (LE bytes 01 00 00 00 51 00 00 00). Bits 0, 3, 9 set produce 0x09, 0x02. */
 TEST(WireFormat, BitListRawDecode) {
   AlignedData<2> data = {{
-    0x01, 0x00, 0x00, 0x00, 0x01, 0x05, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x51, 0x00, 0x00, 0x00,
     0x09, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
   }};
   struct capn_segment seg;
