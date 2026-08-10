@@ -102,15 +102,25 @@ The project [`quagga-capnproto`](https://github.com/opensourcerouting/quagga-cap
 * Serialization in function [`bgp_notify_send()`](https://github.com/opensourcerouting/quagga-capnproto/blob/27061648f3418fac0d217b16a46add534343e841/bgpd/bgp_zmq.c#L81-L96) in file `quagga-capnproto/bgpd/bgp_zmq.c`
 * Deserialization in function [`qzc_callback()`](https://github.com/opensourcerouting/quagga-capnproto/blob/27061648f3418fac0d217b16a46add534343e841/lib/qzc.c#L249-L257) in file `quagga-capnproto/lib/qzc.c`
 
+## Fuzzing (AFL)
+
+With `afl-clang` and `capnp` on `PATH`:
+
+```sh
+make fuzz-mem    # packed-memory reader
+make fuzz-fp     # FILE* reader
+```
+
 ## Status
 
-This is a merge of 3 forks of [James McKaskill's great
-work](https://github.com/jmckaskill/c-capnproto), which has been untouched for
-a while:
-
-- [liamstask's fork](https://github.com/liamstask/c-capnproto)
-- [baruch's fork](https://github.com/baruch/c-capnproto)
-- [kylemanna's fork](https://github.com/kylemanna/c-capnproto)
+Lineage: [James McKaskill](https://github.com/jmckaskill/c-capnproto) merged with
+[liamstask](https://github.com/liamstask/c-capnproto),
+[baruch](https://github.com/baruch/c-capnproto), and
+[kylemanna](https://github.com/kylemanna/c-capnproto), then
+[opensourcerouting](https://github.com/opensourcerouting/c-capnproto).
+This fork also carries C-level fixes from Jonah Beckford (DKML/MSVC),
+Rongsong Shen (packed-header alignment, copy-tree parent), and Angelo
+Haller (AFL harness). See [MAINTAINING.md](MAINTAINING.md).
 
 ## Install layout
 

@@ -26,3 +26,17 @@
 
 Do not treat `opensourcerouting/c-capnproto` as living upstream for merges
 without review; it is unmaintained. Cherry-pick useful PRs deliberately.
+
+OSR #63 pointed at `gitlab.com/dkml/ext/c-capnproto` (Jonah Beckford).
+That tree is a CMake/MSVC port, not a second living C home. Pull C-level
+fixes from it; do not switch the canonical remote.
+
+## Absorbed patches (keep author)
+
+| Source | What |
+|--------|------|
+| Jonah Beckford (`jonahbeckford` / DKML) | MSVC field alignment, `SSIZE_T`, binary stdin, `capnp_use` parens, no left-shift of negatives |
+| Rongsong Shen (`shen390s`) | `header_render` memcpy (packed unaligned store), null copy-tree parent |
+| Angelo Haller (`szanni`) | AFL `fuzz-mem` / `fuzz-fp` harness |
+
+Not absorbed (tracked as work, not merged): `shen390s` compiler rewrite/codecgen, DKML CMake/`dk`, yeger Linux-kernel port, Degui XOR/MISRA (wire-incompatible), cbrune `const2` (OSR #54 broke the build and was reverted), commaai prefix hack, `aligned(64)` whole-struct ARM hacks (superseded by field `ALIGNED_(8)`).

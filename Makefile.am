@@ -76,7 +76,10 @@ EXTRA_DIST += \
 	compiler/c++.capnp \
 	compiler/schema.capnp \
 	compiler/test.capnp \
-	tests/addressbook.capnp
+	tests/addressbook.capnp \
+	fuzz/Person.txt \
+	fuzz/read_mem.c \
+	fuzz/read_fp.c
 capn_test_CPPFLAGS = $(AM_CPPFLAGS) $(GTEST_CPPFLAGS)
 capn_test_CXXFLAGS = -std=gnu++11 -pthread
 capn_test_LDADD = libcapnp_c.la $(GTEST_LDADD)
@@ -98,6 +101,7 @@ AFLCC ?= afl-clang
 AFL-FUZZ ?= afl-fuzz
 
 fuzz/in/Person.bin: fuzz/Person.txt
+	mkdir -p fuzz/in
 	$(CAPNP) encode tests/addressbook.capnp Person < $< > $@
 
 fuzz/read-mem: fuzz/read_mem.c tests/addressbook.capnp.c lib/capn-malloc.c lib/capn-stream.c lib/capn.c
