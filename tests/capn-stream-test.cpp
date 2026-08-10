@@ -847,6 +847,53 @@ TEST(Stream, PackingSpecVectorUncompressedSpan) {
   EXPECT_EQ(0, memcmp(round, unpacked.bytes, sizeof(round)));
 }
 
+TEST(Stream, DeflateFfIncludesWordWithOneZero) {
+  /* C++ serialize-packed: after 0xFF, extra words may contain one
+   * zero byte. Two or more zeros end the uncompressed span.
+   * word0 all 0x61; word1 seven 0x62 + trailing NUL. */
+  AlignedData<2> unpacked;
+  memset(unpacked.bytes, 0x61, 8);
+  memset(unpacked.bytes + 8, 0x62, 7);
+  unpacked.bytes[15] = 0;
+  uint8_t packed_spec[18];
+  packed_spec[0] = 0xff;
+  memset(packed_spec + 1, 0x61, 8);
+  packed_spec[9] = 0x01;
+  memset(packed_spec + 10, 0x62, 7);
+  packed_spec[17] = 0;
+  uint8_t packed[32];
+  size_t n = 0;
+  ASSERT_EQ(0, deflate_all(unpacked.bytes, sizeof(unpacked.bytes), packed,
+                           sizeof(packed), &n));
+  ASSERT_EQ(sizeof(packed_spec), n);
+  EXPECT_EQ(0, memcmp(packed, packed_spec, n));
+
+  uint8_t round[16];
+  ASSERT_EQ(0, inflate_all(packed, n, round, sizeof(round)));
+  EXPECT_EQ(0, memcmp(round, unpacked.bytes, sizeof(round)));
+}
+
+TEST(Stream, DeflateFfStopsAtWordWithTwoZeros) {
+  /* Two zeros in the next word: pack that word separately. */
+  AlignedData<2> unpacked;
+  memset(unpacked.bytes, 0x61, 8);
+  memset(unpacked.bytes + 8, 0x62, 6);
+  unpacked.bytes[14] = 0;
+  unpacked.bytes[15] = 0;
+  uint8_t packed[32];
+  size_t n = 0;
+  ASSERT_EQ(0, deflate_all(unpacked.bytes, sizeof(unpacked.bytes), packed,
+                           sizeof(packed), &n));
+  ASSERT_GE(n, 10u);
+  EXPECT_EQ(0xff, packed[0]);
+  EXPECT_EQ(0x00, packed[9]);
+  EXPECT_EQ(0x3f, packed[10]);
+
+  uint8_t round[16];
+  ASSERT_EQ(0, inflate_all(packed, n, round, sizeof(round)));
+  EXPECT_EQ(0, memcmp(round, unpacked.bytes, sizeof(round)));
+}
+
 TEST(Stream, DeflateFfExtraWordsCappedAt255) {
   /* 256 all-nonzero words: one 0xFF span with N=255 extra words. */
   const size_t words256 = 256;

@@ -28,7 +28,6 @@ int capn_deflate(struct capn_stream* s) {
 		int i;
 		size_t sz;
 		uint8_t hdr = 0;
-		uint8_t *p;
 
 		if (!s->avail_out)
 			return CAPN_NEED_MORE;
@@ -83,11 +82,28 @@ int capn_deflate(struct capn_stream* s) {
 			s->next_in += 8;
 			s->avail_in -= 8;
 
-			/* encoding.html: N is one byte, so 0-255 extra words
-			 * (256 words = 2 KiB per span). */
-			s->raw = min(s->avail_in, 255*8);
-			if ((p = (uint8_t*) memchr(s->next_in, 0, s->raw)) != NULL) {
-				s->raw = (p - s->next_in) & ~7;
+			/* encoding.html: N is one byte, so 0-255 extra words.
+			 * C++ serialize-packed includes a following word when
+			 * it has fewer than two zero bytes (one zero is not a
+			 * pack win). Stop at two or more zeros. */
+			{
+				size_t maxw = s->avail_in / 8;
+				size_t nw = 0;
+				if (maxw > 255)
+					maxw = 255;
+				while (nw < maxw) {
+					const uint8_t *w = s->next_in + nw * 8;
+					int zeros = 0;
+					int b;
+					for (b = 0; b < 8; b++) {
+						if (w[b] == 0)
+							zeros++;
+					}
+					if (zeros >= 2)
+						break;
+					nw++;
+				}
+				s->raw = nw * 8;
 			}
 
 			s->next_out[9] = (uint8_t) (s->raw/8);
