@@ -212,23 +212,33 @@ enum TestNameAnnotation_NestedStruct_DeeplyNestedEnum {
 	TestNameAnnotation_NestedStruct_DeeplyNestedEnum_corge = 1,
 	TestNameAnnotation_NestedStruct_DeeplyNestedEnum_grault = 2
 };
-extern union capn_conv_f32 TestWholeFloatDefault_constant;
-extern union capn_conv_f32 TestWholeFloatDefault_bigConstant;
-extern unsigned TestConstants_boolConst;
-extern int8_t TestConstants_int8Const;
-extern int16_t TestConstants_int16Const;
-extern int32_t TestConstants_int32Const;
-extern int64_t TestConstants_int64Const;
-extern uint8_t TestConstants_uint8Const;
-extern uint16_t TestConstants_uint16Const;
-extern uint32_t TestConstants_uint32Const;
-extern uint64_t TestConstants_uint64Const;
-extern union capn_conv_f32 TestConstants_float32Const;
-extern union capn_conv_f64 TestConstants_float64Const;
+extern const union capn_conv_f32 TestWholeFloatDefault_constant;
+extern const union capn_conv_f32 TestWholeFloatDefault_bigConstant;
+#define TEST_CONSTANTS_BOOL_CONST (1)
+extern const unsigned TestConstants_boolConst;
+#define TEST_CONSTANTS_INT8CONST (-123)
+extern const int8_t TestConstants_int8Const;
+#define TEST_CONSTANTS_INT16CONST (-12345)
+extern const int16_t TestConstants_int16Const;
+#define TEST_CONSTANTS_INT32CONST (-12345678)
+extern const int32_t TestConstants_int32Const;
+#define TEST_CONSTANTS_INT64CONST (((uint64_t) 0xffff8fb7u << 32) | 0x79f22087u)
+extern const int64_t TestConstants_int64Const;
+#define TEST_CONSTANTS_UINT8CONST (234)
+extern const uint8_t TestConstants_uint8Const;
+#define TEST_CONSTANTS_UINT16CONST (45678)
+extern const uint16_t TestConstants_uint16Const;
+#define TEST_CONSTANTS_UINT32CONST (3456789012u)
+extern const uint32_t TestConstants_uint32Const;
+#define TEST_CONSTANTS_UINT64CONST (((uint64_t) 0xab54a98cu << 32) | 0xeb1f0ad2u)
+extern const uint64_t TestConstants_uint64Const;
+extern const union capn_conv_f32 TestConstants_float32Const;
+extern const union capn_conv_f64 TestConstants_float64Const;
 extern capn_text TestConstants_textConst;
 extern capn_data TestConstants_dataConst;
 extern TestAllTypes_ptr TestConstants_structConst;
-extern enum TestEnum TestConstants_enumConst;
+#define TEST_CONSTANTS_ENUM_CONST (5u)
+extern const enum TestEnum TestConstants_enumConst;
 extern capn_ptr TestConstants_voidListConst;
 extern capn_list1 TestConstants_boolListConst;
 extern capn_list8 TestConstants_int8ListConst;
@@ -241,11 +251,12 @@ extern capn_list32 TestConstants_uint32ListConst;
 extern capn_list64 TestConstants_uint64ListConst;
 extern capn_list32 TestConstants_float32ListConst;
 extern capn_list64 TestConstants_float64ListConst;
-extern capn_ptr TestConstants_textListConst;
-extern capn_ptr TestConstants_dataListConst;
+extern capn_ptr_list TestConstants_textListConst;
+extern capn_ptr_list TestConstants_dataListConst;
 extern TestAllTypes_list TestConstants_structListConst;
 extern capn_list16 TestConstants_enumListConst;
-extern uint32_t globalInt;
+#define GLOBAL_INT (12345u)
+extern const uint32_t globalInt;
 extern capn_text globalText;
 extern TestAllTypes_ptr globalStruct;
 extern TestPrintInlineStructs_ptr globalPrintableStruct;
@@ -279,8 +290,8 @@ struct TestAllTypes {
 	capn_list64 uInt64List;
 	capn_list32 float32List;
 	capn_list64 float64List;
-	capn_ptr textList;
-	capn_ptr dataList;
+	capn_ptr_list textList;
+	capn_ptr_list dataList;
 	TestAllTypes_list structList;
 	capn_list16 enumList;
 	capn_ptr interfaceList;
@@ -347,9 +358,9 @@ capn_list32 TestAllTypes_get_float32List(TestAllTypes_ptr p);
 
 capn_list64 TestAllTypes_get_float64List(TestAllTypes_ptr p);
 
-capn_ptr TestAllTypes_get_textList(TestAllTypes_ptr p);
+capn_ptr_list TestAllTypes_get_textList(TestAllTypes_ptr p);
 
-capn_ptr TestAllTypes_get_dataList(TestAllTypes_ptr p);
+capn_ptr_list TestAllTypes_get_dataList(TestAllTypes_ptr p);
 
 TestAllTypes_list TestAllTypes_get_structList(TestAllTypes_ptr p);
 
@@ -411,9 +422,9 @@ void TestAllTypes_set_float32List(TestAllTypes_ptr p, capn_list32 float32List);
 
 void TestAllTypes_set_float64List(TestAllTypes_ptr p, capn_list64 float64List);
 
-void TestAllTypes_set_textList(TestAllTypes_ptr p, capn_ptr textList);
+void TestAllTypes_set_textList(TestAllTypes_ptr p, capn_ptr_list textList);
 
-void TestAllTypes_set_dataList(TestAllTypes_ptr p, capn_ptr dataList);
+void TestAllTypes_set_dataList(TestAllTypes_ptr p, capn_ptr_list dataList);
 
 void TestAllTypes_set_structList(TestAllTypes_ptr p, TestAllTypes_list structList);
 
@@ -449,8 +460,8 @@ struct TestDefaults {
 	capn_list64 uInt64List;
 	capn_list32 float32List;
 	capn_list64 float64List;
-	capn_ptr textList;
-	capn_ptr dataList;
+	capn_ptr_list textList;
+	capn_ptr_list dataList;
 	TestAllTypes_list structList;
 	capn_list16 enumList;
 	capn_ptr interfaceList;
@@ -517,9 +528,9 @@ capn_list32 TestDefaults_get_float32List(TestDefaults_ptr p);
 
 capn_list64 TestDefaults_get_float64List(TestDefaults_ptr p);
 
-capn_ptr TestDefaults_get_textList(TestDefaults_ptr p);
+capn_ptr_list TestDefaults_get_textList(TestDefaults_ptr p);
 
-capn_ptr TestDefaults_get_dataList(TestDefaults_ptr p);
+capn_ptr_list TestDefaults_get_dataList(TestDefaults_ptr p);
 
 TestAllTypes_list TestDefaults_get_structList(TestDefaults_ptr p);
 
@@ -581,9 +592,9 @@ void TestDefaults_set_float32List(TestDefaults_ptr p, capn_list32 float32List);
 
 void TestDefaults_set_float64List(TestDefaults_ptr p, capn_list64 float64List);
 
-void TestDefaults_set_textList(TestDefaults_ptr p, capn_ptr textList);
+void TestDefaults_set_textList(TestDefaults_ptr p, capn_ptr_list textList);
 
-void TestDefaults_set_dataList(TestDefaults_ptr p, capn_ptr dataList);
+void TestDefaults_set_dataList(TestDefaults_ptr p, capn_ptr_list dataList);
 
 void TestDefaults_set_structList(TestDefaults_ptr p, TestAllTypes_list structList);
 
@@ -1058,9 +1069,9 @@ struct TestLists {
 	TestLists_Struct32_list list32;
 	TestLists_Struct64_list list64;
 	TestLists_StructP_list listP;
-	capn_ptr int32ListList;
-	capn_ptr textListList;
-	capn_ptr structListList;
+	capn_ptr_list int32ListList;
+	capn_ptr_list textListList;
+	capn_ptr_list structListList;
 };
 
 static const size_t TestLists_word_count = 0;
@@ -1084,11 +1095,11 @@ TestLists_Struct64_list TestLists_get_list64(TestLists_ptr p);
 
 TestLists_StructP_list TestLists_get_listP(TestLists_ptr p);
 
-capn_ptr TestLists_get_int32ListList(TestLists_ptr p);
+capn_ptr_list TestLists_get_int32ListList(TestLists_ptr p);
 
-capn_ptr TestLists_get_textListList(TestLists_ptr p);
+capn_ptr_list TestLists_get_textListList(TestLists_ptr p);
 
-capn_ptr TestLists_get_structListList(TestLists_ptr p);
+capn_ptr_list TestLists_get_structListList(TestLists_ptr p);
 
 void TestLists_set_list0(TestLists_ptr p, TestLists_Struct0_list list0);
 
@@ -1104,11 +1115,11 @@ void TestLists_set_list64(TestLists_ptr p, TestLists_Struct64_list list64);
 
 void TestLists_set_listP(TestLists_ptr p, TestLists_StructP_list listP);
 
-void TestLists_set_int32ListList(TestLists_ptr p, capn_ptr int32ListList);
+void TestLists_set_int32ListList(TestLists_ptr p, capn_ptr_list int32ListList);
 
-void TestLists_set_textListList(TestLists_ptr p, capn_ptr textListList);
+void TestLists_set_textListList(TestLists_ptr p, capn_ptr_list textListList);
 
-void TestLists_set_structListList(TestLists_ptr p, capn_ptr structListList);
+void TestLists_set_structListList(TestLists_ptr p, capn_ptr_list structListList);
 
 capnp_nowarn struct TestLists_Struct0 {
 };
