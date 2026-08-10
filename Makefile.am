@@ -72,6 +72,7 @@ capn_test_SOURCES = \
 	tests/capn-test.cpp \
 	tests/capn-stream-test.cpp \
 	tests/example-test.cpp \
+	tests/fortran-golden-test.cpp \
 	tests/extraheader-test.cpp \
 	tests/fieldgetset-test.cpp \
 	tests/codegen-defaults-test.cpp \
@@ -106,13 +107,18 @@ EXTRA_DIST += \
 	tests/group-in-union-test.cpp \
 	tests/fieldgetset.capnp \
 	tests/create-min-sz-test.cpp \
+	tests/fortran-golden.md \
+	tests/fixtures/addressbook.bin \
+	tests/fixtures/addressbook.packed.bin \
+	tests/fixtures/addressbook.canonical.bin \
 	fuzz/Person.txt \
 	fuzz/read_mem.c \
 	fuzz/read_fp.c
 capn_test_CPPFLAGS = $(AM_CPPFLAGS) $(GTEST_CPPFLAGS) \
 	-DEXTRAHEADER_GENERATED_H=\"$(abs_srcdir)/tests/extraheader.capnp.h\" \
 	-DCODEGEN_DEFAULTS_GENERATED_C=\"$(abs_srcdir)/tests/codegen-defaults.capnp.c\" \
-	-DCODEGEN_DEFAULTS_GENERATED_H=\"$(abs_srcdir)/tests/codegen-defaults.capnp.h\"
+	-DCODEGEN_DEFAULTS_GENERATED_H=\"$(abs_srcdir)/tests/codegen-defaults.capnp.h\" \
+	-DFORTRAN_GOLDEN_DIR=\"$(abs_srcdir)/tests/fixtures\"
 capn_test_CXXFLAGS = -std=gnu++11 -pthread
 capn_test_LDADD = libcapnp_c.la $(GTEST_LDADD)
 capn_test_LDFLAGS = -pthread
