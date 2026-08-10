@@ -41,6 +41,11 @@ enum TestEnum {
   garply @7;
 }
 
+# Capability type for interfaceField / interfaceList. Encoded as A=3
+# capability pointers; the C runtime stores the table index in capn_ptr.len.
+interface TestInterface {
+}
+
 struct TestAllTypes {
   voidField      @0  : Void;
   boolField      @1  : Bool;
@@ -58,7 +63,7 @@ struct TestAllTypes {
   dataField      @13 : Data;
   structField    @14 : TestAllTypes;
   enumField      @15 : TestEnum;
-  interfaceField @16 : Void;  # TODO
+  interfaceField @16 : TestInterface;
 
   voidList      @17 : List(Void);
   boolList      @18 : List(Bool);
@@ -76,7 +81,7 @@ struct TestAllTypes {
   dataList      @30 : List(Data);
   structList    @31 : List(TestAllTypes);
   enumList      @32 : List(TestEnum);
-  interfaceList @33 : List(Void);  # TODO
+  interfaceList @33 : List(TestInterface);
 }
 
 struct TestDefaults {
@@ -137,7 +142,7 @@ struct TestDefaults {
       # interfaceList can't have a default
       );
   enumField      @15 : TestEnum = corge;
-  interfaceField @16 : Void;  # TODO
+  interfaceField @16 : TestInterface;
 
   voidList      @17 : List(Void)    = [void, void, void, void, void, void];
   boolList      @18 : List(Bool)    = [true, false, false, true];
@@ -158,7 +163,7 @@ struct TestDefaults {
       (textField = "structlist 2"),
       (textField = "structlist 3")];
   enumList      @32 : List(TestEnum) = [foo, garply];
-  interfaceList @33 : List(Void);  # TODO
+  interfaceList @33 : List(TestInterface);
 }
 
 struct TestAnyPointer {
