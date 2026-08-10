@@ -78,6 +78,7 @@ capn_test_SOURCES = \
 	tests/codegen-defaults-test.cpp \
 	tests/bounds-test.cpp \
 	tests/interface-test.cpp \
+	tests/list-c6-upgrade-test.cpp \
 	tests/addressbook.capnp.c \
 	tests/extraheader.capnp.c \
 	tests/fieldgetset.capnp.c \

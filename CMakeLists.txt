@@ -115,6 +115,7 @@ if(BUILD_TESTING)
       tests/example-test.cpp
       tests/fortran-golden-test.cpp
       tests/interface-test.cpp
+      tests/list-c6-upgrade-test.cpp
       tests/addressbook.capnp.c
       compiler/test.capnp.c
       compiler/schema-test.cpp
