@@ -102,15 +102,19 @@ if get_option('enable_tests') and not meson.is_subproject()
     'tests' / 'example-test.cpp',
     'tests' / 'extraheader-test.cpp',
     'tests' / 'fieldgetset-test.cpp',
+    'tests' / 'codegen-defaults-test.cpp',
     'tests' / 'addressbook.capnp.c',
     'tests' / 'extraheader.capnp.c',
     'tests' / 'fieldgetset.capnp.c',
+    'tests' / 'codegen-defaults.capnp.c',
     'compiler' / 'test.capnp.c',
     'compiler' / 'schema-test.cpp',
     'compiler' / 'schema.capnp.c',
   ]
 
   extraheader_h = meson.project_source_root() / 'tests' / 'extraheader.capnp.h'
+  codegen_defaults_c = meson.project_source_root() / 'tests' / 'codegen-defaults.capnp.c'
+  codegen_defaults_h = meson.project_source_root() / 'tests' / 'codegen-defaults.capnp.h'
 
   exe = executable(
     'capn-test',
@@ -120,6 +124,8 @@ if get_option('enable_tests') and not meson.is_subproject()
     c_args: common_c_args,
     cpp_args: common_cpp_args + [
       '-DEXTRAHEADER_GENERATED_H="' + extraheader_h + '"',
+      '-DCODEGEN_DEFAULTS_GENERATED_C="' + codegen_defaults_c + '"',
+      '-DCODEGEN_DEFAULTS_GENERATED_H="' + codegen_defaults_h + '"',
     ],
     install: false,
     implicit_include_directories: false,

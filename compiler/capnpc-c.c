@@ -419,19 +419,32 @@ static void decode_value(struct value* v, Type_ptr type, Value_ptr value, const 
 				symbol = strf(&buf, "capn_val%d", (int) v->intval);
 			}
 
+			/* Empty Data/List defaults have a typed pointer with no
+			 * payload. capn_buf is only emitted when g_valseg.len > 8,
+			 * so a zero-length list must not reference it.
+			 */
+			int off = (p.seg && p.data) ? (int) (p.data - p.seg->data - 8) : -1;
+			int empty_list = (p.type == CAPN_LIST || p.type == CAPN_PTR_LIST
+					|| p.type == CAPN_BIT_LIST) && p.len == 0;
+			int use_buf = !empty_list && off >= 0;
+
 			str_addf(&SRC, "%s%s %s = {", symbol_provided ? "" : "static ", v->tname, symbol);
 			if (strcmp(v->tname, "capn_ptr"))
 				str_addf(&SRC, "{");
 
-			str_addf(&SRC, "%d,%d,%d,%d,%d,%d,%d,(char*)&capn_buf[%d],(struct capn_segment*)&capn_seg",
-					p.type,
-					p.has_ptr_tag,
-					p.is_list_member,
-					p.is_composite_list,
-					p.datasz,
-					p.ptrs,
-					p.len,
-					(int) (p.data-p.seg->data-8));
+			if (use_buf) {
+				str_addf(&SRC, "%d,%d,%d,%d,%d,%d,%d,(char*)&capn_buf[%d],(struct capn_segment*)&capn_seg",
+						p.type,
+						p.has_ptr_tag,
+						p.is_list_member,
+						p.is_composite_list,
+						p.datasz,
+						p.ptrs,
+						p.len,
+						off);
+			} else {
+				str_addf(&SRC, "CAPN_NULL");
+			}
 
 			if (strcmp(v->tname, "capn_ptr"))
 				str_addf(&SRC, "}");
