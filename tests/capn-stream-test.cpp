@@ -669,3 +669,271 @@ TEST(Stream, WriteFdInitFdTwoSegmentsPackedRoundTrip) {
   ASSERT_EQ(0, close(fds[0]));
 }
 #endif /* !_MSC_VER */
+
+/* encoding.html packing: tag 0xFF is followed by 8 bytes then a count N
+ * of extra uncompressed words. N is one byte, so 0..255 extra words
+ * (256 words = 2 KiB per span). Walk a packed buffer by those rules. */
+static int packed_popcount(uint8_t tag) {
+  int n = 0;
+  for (int i = 0; i < 8; i++) {
+    if (tag & (1u << i))
+      n++;
+  }
+  return n;
+}
+
+static bool walk_packed(const uint8_t *p, size_t n, size_t *words, int *ff_spans) {
+  size_t i = 0;
+  *words = 0;
+  *ff_spans = 0;
+  while (i < n) {
+    uint8_t tag = p[i++];
+    if (tag == 0x00) {
+      if (i >= n)
+        return false;
+      *words += 1u + p[i++];
+    } else if (tag == 0xFF) {
+      if (i + 9 > n)
+        return false;
+      i += 8;
+      uint8_t extra = p[i++];
+      if (i + (size_t)extra * 8 > n)
+        return false;
+      i += (size_t)extra * 8;
+      *words += 1u + extra;
+      (*ff_spans)++;
+    } else {
+      int cnt = packed_popcount(tag);
+      if (i + (size_t)cnt > n)
+        return false;
+      i += (size_t)cnt;
+      (*words)++;
+    }
+  }
+  return true;
+}
+
+static int deflate_all(const uint8_t *in, size_t inlen, uint8_t *out, size_t outcap,
+                       size_t *outlen) {
+  struct capn_stream s;
+  memset(&s, 0, sizeof(s));
+  s.next_in = in;
+  s.avail_in = inlen;
+  s.next_out = out;
+  s.avail_out = outcap;
+  int r = capn_deflate(&s);
+  if (r != 0)
+    return r;
+  if (s.avail_in != 0)
+    return -1;
+  *outlen = outcap - s.avail_out;
+  return 0;
+}
+
+static int inflate_all(const uint8_t *in, size_t inlen, uint8_t *out, size_t outlen) {
+  struct capn_stream s;
+  memset(&s, 0, sizeof(s));
+  s.next_in = in;
+  s.avail_in = inlen;
+  s.next_out = out;
+  s.avail_out = outlen;
+  int r = capn_inflate(&s);
+  if (r != 0)
+    return r;
+  if (s.avail_out != 0)
+    return -1;
+  return 0;
+}
+
+TEST(Stream, PackingSpecVectorStructPointers) {
+  /* encoding.html: struct pointer + text pointer. */
+  AlignedData<2> unpacked = {{
+      0x08, 0x00, 0x00, 0x00, 0x03, 0x00, 0x02, 0x00,
+      0x19, 0x00, 0x00, 0x00, 0xaa, 0x01, 0x00, 0x00,
+  }};
+  const uint8_t packed_spec[] = {
+      0x51, 0x08, 0x03, 0x02, 0x31, 0x19, 0xaa, 0x01,
+  };
+  uint8_t packed[32];
+  size_t n = 0;
+  ASSERT_EQ(0, deflate_all(unpacked.bytes, sizeof(unpacked.bytes), packed, sizeof(packed), &n));
+  ASSERT_EQ(sizeof(packed_spec), n);
+  EXPECT_EQ(0, memcmp(packed, packed_spec, n));
+
+  uint8_t round[16];
+  ASSERT_EQ(0, inflate_all(packed_spec, sizeof(packed_spec), round, sizeof(round)));
+  EXPECT_EQ(0, memcmp(round, unpacked.bytes, sizeof(round)));
+}
+
+TEST(Stream, PackingSpecVectorZeroRun) {
+  /* encoding.html: 32 zero bytes -> 00 03 (N+1 = 4 zero words). */
+  AlignedData<4> unpacked;
+  memset(unpacked.bytes, 0, sizeof(unpacked.bytes));
+  const uint8_t packed_spec[] = {0x00, 0x03};
+  uint8_t packed[16];
+  size_t n = 0;
+  ASSERT_EQ(0, deflate_all(unpacked.bytes, sizeof(unpacked.bytes), packed, sizeof(packed), &n));
+  ASSERT_EQ(sizeof(packed_spec), n);
+  EXPECT_EQ(0, memcmp(packed, packed_spec, n));
+
+  uint8_t round[32];
+  ASSERT_EQ(0, inflate_all(packed_spec, sizeof(packed_spec), round, sizeof(round)));
+  EXPECT_EQ(0, memcmp(round, unpacked.bytes, sizeof(round)));
+}
+
+TEST(Stream, PackingSpecVectorUncompressedSpan) {
+  /* encoding.html: 32 bytes of 0x8a -> ff 8a{8} 03 8a{24}. */
+  AlignedData<4> unpacked;
+  memset(unpacked.bytes, 0x8a, sizeof(unpacked.bytes));
+  uint8_t packed_spec[2 + 8 + 24];
+  packed_spec[0] = 0xff;
+  memset(packed_spec + 1, 0x8a, 8);
+  packed_spec[9] = 0x03;
+  memset(packed_spec + 10, 0x8a, 24);
+  uint8_t packed[64];
+  size_t n = 0;
+  ASSERT_EQ(0, deflate_all(unpacked.bytes, sizeof(unpacked.bytes), packed, sizeof(packed), &n));
+  ASSERT_EQ(sizeof(packed_spec), n);
+  EXPECT_EQ(0, memcmp(packed, packed_spec, n));
+
+  uint8_t round[32];
+  ASSERT_EQ(0, inflate_all(packed_spec, sizeof(packed_spec), round, sizeof(round)));
+  EXPECT_EQ(0, memcmp(round, unpacked.bytes, sizeof(round)));
+}
+
+TEST(Stream, DeflateFfExtraWordsCappedAt255) {
+  /* 256 all-nonzero words: one 0xFF span with N=255 extra words. */
+  const size_t words256 = 256;
+  AlignedData<256> in256;
+  memset(in256.bytes, 0x8a, sizeof(in256.bytes));
+  uint8_t packed[8192];
+  size_t n = 0;
+  ASSERT_EQ(0, deflate_all(in256.bytes, sizeof(in256.bytes), packed, sizeof(packed), &n));
+
+  size_t unpacked_words = 0;
+  int ff_spans = 0;
+  ASSERT_TRUE(walk_packed(packed, n, &unpacked_words, &ff_spans));
+  EXPECT_EQ(words256, unpacked_words);
+  EXPECT_EQ(1, ff_spans);
+  ASSERT_GE(n, 10u);
+  EXPECT_EQ(0xFF, packed[0]);
+  EXPECT_EQ(255, packed[9]);
+
+  uint8_t round[256 * 8];
+  ASSERT_EQ(0, inflate_all(packed, n, round, sizeof(round)));
+  EXPECT_EQ(0, memcmp(round, in256.bytes, sizeof(round)));
+}
+
+TEST(Stream, DeflateFfRunSplitsAfter255ExtraWords) {
+  /* 257 all-nonzero words: first span takes 1+255, leftover word is a
+   * second 0xFF span. A 256-extra cap stores N as 0 and is not spec. */
+  const size_t words257 = 257;
+  AlignedData<257> in257;
+  memset(in257.bytes, 0x8a, sizeof(in257.bytes));
+  uint8_t packed[8192];
+  size_t n = 0;
+  ASSERT_EQ(0, deflate_all(in257.bytes, sizeof(in257.bytes), packed, sizeof(packed), &n));
+
+  size_t unpacked_words = 0;
+  int ff_spans = 0;
+  ASSERT_TRUE(walk_packed(packed, n, &unpacked_words, &ff_spans)) << "n=" << n;
+  EXPECT_EQ(words257, unpacked_words);
+  EXPECT_GE(ff_spans, 2);
+  ASSERT_GE(n, 10u);
+  EXPECT_EQ(0xFF, packed[0]);
+  EXPECT_EQ(255, packed[9]);
+
+  uint8_t round[257 * 8];
+  ASSERT_EQ(0, inflate_all(packed, n, round, sizeof(round)));
+  EXPECT_EQ(0, memcmp(round, in257.bytes, sizeof(round)));
+}
+
+TEST(Stream, DeflateFfRun512WordsTwoFullSpans) {
+  const size_t words512 = 512;
+  AlignedData<512> in512;
+  memset(in512.bytes, 0x8a, sizeof(in512.bytes));
+  uint8_t packed[8192];
+  size_t n = 0;
+  ASSERT_EQ(0, deflate_all(in512.bytes, sizeof(in512.bytes), packed, sizeof(packed), &n));
+
+  size_t unpacked_words = 0;
+  int ff_spans = 0;
+  ASSERT_TRUE(walk_packed(packed, n, &unpacked_words, &ff_spans)) << "n=" << n;
+  EXPECT_EQ(words512, unpacked_words);
+  EXPECT_EQ(2, ff_spans);
+
+  uint8_t round[512 * 8];
+  ASSERT_EQ(0, inflate_all(packed, n, round, sizeof(round)));
+  EXPECT_EQ(0, memcmp(round, in512.bytes, sizeof(round)));
+}
+
+TEST(Stream, InflateNeedMoreWhenInputExhausted) {
+  uint8_t out[32];
+  memset(out, 0xAB, sizeof(out));
+  struct capn_stream s;
+  memset(&s, 0, sizeof(s));
+  s.next_out = out;
+  s.avail_out = sizeof(out);
+  s.next_in = NULL;
+  s.avail_in = 0;
+  EXPECT_EQ(CAPN_NEED_MORE, capn_inflate(&s));
+  EXPECT_EQ(sizeof(out), s.avail_out);
+
+  /* A complete 0x00 0x00 tag unpacks one zero word; asking for more
+   * output after the input ends is still NEED_MORE. */
+  const uint8_t one_zero[] = {0x00, 0x00};
+  memset(&s, 0, sizeof(s));
+  s.next_in = one_zero;
+  s.avail_in = sizeof(one_zero);
+  s.next_out = out;
+  s.avail_out = 16;
+  EXPECT_EQ(CAPN_NEED_MORE, capn_inflate(&s));
+  EXPECT_EQ(8u, s.avail_out);
+}
+
+TEST(Stream, InitMemPackedRejectsTruncated) {
+  uint8_t buf[2048];
+  memset(buf, 0, sizeof(buf));
+
+  struct capn ctx1;
+  capn_init_malloc(&ctx1);
+  fill_one_segment(&ctx1, UINT64_C(0x1011121314151617));
+  int64_t n = capn_write_mem(&ctx1, buf, sizeof(buf), 1);
+  ASSERT_EQ(14, n);
+  capn_free(&ctx1);
+
+  struct capn ctx_ok;
+  ASSERT_EQ(0, capn_init_mem(&ctx_ok, buf, (size_t)n, 1));
+  capn_free(&ctx_ok);
+
+  for (int64_t cut = 0; cut < n; cut++) {
+    struct capn ctx;
+    EXPECT_NE(0, capn_init_mem(&ctx, buf, (size_t)cut, 1)) << "cut=" << cut;
+  }
+}
+
+TEST(Stream, InitMemPackedRejectsIncompleteTag) {
+  struct capn ctx;
+
+  /* Cut mid-tag: 0x00 with no count byte. */
+  const uint8_t cut_zero[] = {0x00};
+  EXPECT_NE(0, capn_init_mem(&ctx, cut_zero, sizeof(cut_zero), 1));
+
+  /* 0xFF cut inside the 8-byte word. */
+  const uint8_t cut_ff_word[] = {0xFF, 1, 2, 3, 4};
+  EXPECT_NE(0, capn_init_mem(&ctx, cut_ff_word, sizeof(cut_ff_word), 1));
+
+  /* 0xFF + 8 bytes, missing N. */
+  const uint8_t cut_ff_n[] = {0xFF, 1, 2, 3, 4, 5, 6, 7, 8};
+  EXPECT_NE(0, capn_init_mem(&ctx, cut_ff_n, sizeof(cut_ff_n), 1));
+
+  /* 0xFF + word + N=2, only one extra word of payload. */
+  const uint8_t cut_ff_payload[] = {
+      0xFF, 1, 2, 3, 4, 5, 6, 7, 8, 2, 1, 1, 1, 1, 1, 1, 1, 1,
+  };
+  EXPECT_NE(0, capn_init_mem(&ctx, cut_ff_payload, sizeof(cut_ff_payload), 1));
+
+  /* Tag 0x51 needs three data bytes; only one follows. */
+  const uint8_t cut_sparse[] = {0x51, 0x08};
+  EXPECT_NE(0, capn_init_mem(&ctx, cut_sparse, sizeof(cut_sparse), 1));
+}

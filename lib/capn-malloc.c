@@ -131,9 +131,10 @@ static int read_fp(void *p, size_t sz, FILE *f,
 		z->next_out = (uint8_t*) p;
 		z->avail_out = sz;
 
-		/* capn_inflate returns 0 (not CAPN_NEED_MORE) when avail_in
-		 * is 0. Seed the stream from f / read_fd before treating 0
-		 * as done, and keep next_in on zbuf after each fill. */
+		/* capn_inflate returns CAPN_NEED_MORE when more packed
+		 * input is required to fill avail_out. Refill zbuf from f
+		 * / read_fd and keep leftover next_in on zbuf after each fill. */
+
 		while (z->avail_out) {
 			int inf;
 
@@ -180,7 +181,9 @@ static int read_fp(void *p, size_t sz, FILE *f,
 	if (packed) {
 		z->next_out = (uint8_t*) p;
 		z->avail_out = sz;
-		return capn_inflate(z) != 0;
+		if (capn_inflate(z) != 0)
+			return -1;
+		return z->avail_out != 0;
 
 	} else {
 		if (z->avail_in < sz)

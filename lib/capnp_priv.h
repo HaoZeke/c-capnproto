@@ -51,9 +51,9 @@ struct capn_stream {
  *
  * Returns:
  * CAPN_MISALIGNED - if the unpacked data is not 8 byte aligned
- * CAPN_NEED_MORE - more packed data/room is required (out for inflate, in for
- * deflate)
- * 0 - success, all output for inflate, all input for deflate processed
+ * CAPN_NEED_MORE - inflate needs more packed input to fill remaining
+ * output; deflate needs more output room
+ * 0 - success: inflate filled the output buffer; deflate consumed all input
  */
 intern int capn_deflate(struct capn_stream*);
 intern int capn_inflate(struct capn_stream*);

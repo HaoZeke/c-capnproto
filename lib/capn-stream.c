@@ -83,7 +83,9 @@ int capn_deflate(struct capn_stream* s) {
 			s->next_in += 8;
 			s->avail_in -= 8;
 
-			s->raw = min(s->avail_in, 256*8);
+			/* encoding.html: N is one byte, so 0-255 extra words
+			 * (256 words = 2 KiB per span). */
+			s->raw = min(s->avail_in, 255*8);
 			if ((p = (uint8_t*) memchr(s->next_in, 0, s->raw)) != NULL) {
 				s->raw = (p - s->next_in) & ~7;
 			}
@@ -160,15 +162,13 @@ int capn_inflate(struct capn_stream* s) {
 			continue;
 		}
 
-		if (s->avail_in == 0)
-			return 0;
-		else if (s->avail_in < 2)
+		if (s->avail_in < 2)
 			return CAPN_NEED_MORE;
 
 		switch (s->next_in[0]) {
 		case 0xFF:
 			/* 0xFF is followed by 8 bytes raw, followed by
-			 * a byte with length in words to read raw */
+			 * a byte N (0-255) of extra uncompressed words */
 			if (s->avail_in < 10)
 				return CAPN_NEED_MORE;
 
