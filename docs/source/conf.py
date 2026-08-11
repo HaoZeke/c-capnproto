@@ -43,6 +43,7 @@ html_theme_options = {
     "globaltoc_expand_depth": 1,
     "nav_links": [
         {"title": "Install", "url": "install", "summary": "Meson, CMake, autotools"},
+        {"title": "Tutorial", "url": "tutorial", "summary": "AddressBook write and read"},
         {"title": "Usage", "url": "usage", "summary": "capnpc-c and the C runtime"},
         {"title": "Wire", "url": "wire", "summary": "Schema-order, packed, canonical"},
         {

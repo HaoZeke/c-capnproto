@@ -5,70 +5,120 @@
 c-capnproto
 ===========
 
-Pure **C** runtime and ``capnpc-c`` plugin for `Cap'n Proto
-<https://capnproto.org/>`_. Maintained fork of
-``opensourcerouting/c-capnproto`` (itself from ``jmckaskill``).
+Pure **C** runtime and ``capnpc-c`` for `Cap'n Proto
+<https://capnproto.org/>`_. Wire encode is byte-equivalent with
+official ``capnp`` 1.0.2 when objects are allocated in schema order.
 #+end_export
 
-This repository is [[https://github.com/HaoZeke/c-capnproto][HaoZeke/c-capnproto]]. It is the canonical pure-C Cap'n
-home next to [[https://capnp-fortran.rgoswami.me][capnp-fortran]] and
-[[https://capnp-janet.rgoswami.me][capnp-janet]].
-
-Wire encode is byte-equivalent with official =capnp= 1.0.2 when objects
-are allocated in schema order. Canonical form and packed of the same
-unpacked bytes match =capnp convert=.
+Sibling runtimes: [[https://capnp-fortran.rgoswami.me][capnp-fortran]]
+and [[https://capnp-janet.rgoswami.me][capnp-janet]].
 
 #+begin_export rst
 .. warning::
 
-   Decode rejects out-of-segment pointer landings, applies a 64MiB
-   traversal budget, and walks the pointer graph (``capn_validate``,
-   nesting limit 64). Failed hops are still ``CAPN_NULL``; check
-   ``capn_ok`` to tell them from a missing field. This is still **not**
-   C++ ``MessageReader`` throw-parity. Do **not** treat generated
-   readers as untrusted-safe. See ``SECURITY.md``.
+   Failed pointer hops are still ``CAPN_NULL``; check ``capn_ok``.
+   This is **not** C++ ``MessageReader`` throw-parity. See ``SECURITY.md``.
 #+end_export
 
-* New here?
+* Install (shortest path)
+
+#+begin_src console
+$ git clone --recurse-submodules https://github.com/HaoZeke/c-capnproto.git
+$ cd c-capnproto
+$ meson setup build && meson compile -C build
+$ meson test -C build
+#+end_src
+
+* First message
+
+Schema is =tests/addressbook.capnp= (same shape as the C++ sample).
+Generate accessors, then write and read a =Person=:
+
+#+begin_src console
+$ capnp compile -Icompiler -oc:build tests/addressbook.capnp
+#+end_src
+
+#+begin_src c
+#include "capnp_c.h"
+#include "addressbook.capnp.h"
+
+static capn_text txt(const char *s) {
+  return (capn_text){.len = (int)strlen(s), .str = s, .seg = NULL};
+}
+
+uint8_t buf[4096];
+struct capn c;
+capn_init_malloc(&c);
+
+struct Person p = {
+  .id = 17,
+  .name = txt("Firstname Lastname"),
+  .email = txt("username@domain.com"),
+};
+p.employment_which = Person_employment_school;
+p.employment.school = txt("of life");
+
+Person_ptr pp = new_Person(capn_root(&c).seg);
+write_Person(&p, pp);
+capn_set_root(&c, pp.p);   /* required; otherwise the message is empty */
+ssize_t sz = capn_write_mem(&c, buf, sizeof buf, 0);
+capn_free(&c);
+
+struct capn rc;
+capn_init_mem(&rc, buf, sz, 0);
+struct Person rp;
+Person_ptr rp_ptr = {.p = capn_getp(capn_root(&rc), 0, 1)};
+read_Person(&rp, rp_ptr);
+/* rp.id == 17, rp.name.str == "Firstname Lastname" */
+capn_free(&rc);
+#+end_src
+
+The full walk-through (phones list, union, packed, canonical) is the
+[[file:tutorial.org][tutorial]].
+
+* Documentation map
 
 #+begin_export rst
-.. list-table::
-   :header-rows: 1
-   :widths: 55 45
+.. grid:: 1 2 2 2
+   :gutter: 2
 
-   * - Goal
-     - Go to
-   * - Build with Meson (recommended)
-     - :doc:`install`
-   * - Generate C from a ``.capnp`` schema
-     - :doc:`usage`
-   * - Schema-order encode, packed, canonical
-     - :doc:`wire`
-   * - Fortran / Janet / official CLI goldens
-     - :doc:`interop`
-#+end_export
+   .. grid-item-card:: Install
+      :link: install
+      :link-type: doc
 
-* What you get
+      Meson (recommended), CMake, autotools, optional kernel module.
 
-- Runtime: =lib/capn.c=, =capn-malloc.c=, =capn-stream.c=; header =lib/capnp_c.h=
-- Plugin: =capnpc-c= for =capnp compile -oc=
-- =capn_canonicalize=: single-segment preorder rewrite, empty struct B=-1
-- Packed codec matching C++ =0xFF= extra-word heuristic
-- Generated =Foo_has_bar= for pointer fields
-- Live =capnp= CLI gtests when the =capnp= binary is on =PATH=
+   .. grid-item-card:: Tutorial
+      :link: tutorial
+      :link-type: doc
 
-#+begin_export rst
+      AddressBook: generate, write, read, packed, canonicalize.
+
+   .. grid-item-card:: Usage
+      :link: usage
+      :link-type: doc
+
+      ``capnpc-c``, ``capn_set_root``, ``$C.fieldgetset``, ``has_``.
+
+   .. grid-item-card:: Wire
+      :link: wire
+      :link-type: doc
+
+      Schema-order encode, empty struct B=-1, packed 0xFF heuristic.
+
+   .. grid-item-card:: Interop
+      :link: interop
+      :link-type: doc
+
+      Official ``capnp`` CLI memcmp, fortran goldens, Janet peer.
+
 .. toctree::
    :maxdepth: 1
-   :caption: How-to
+   :hidden:
 
    install
+   tutorial
    usage
-   interop
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Explanation
-
    wire
+   interop
 #+end_export
