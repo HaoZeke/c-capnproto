@@ -1,0 +1,60 @@
+# c-capnproto
+
+> Pure C runtime and `capnpc-c` for Cap'n Proto. Wire encode matches official `capnp` 1.0.2 when objects are allocated in schema order.
+
+Docs: https://c-capnproto.rgoswami.me/
+Repo: https://github.com/HaoZeke/c-capnproto
+Context7: /haozeke/c-capnproto
+
+Use this HaoZeke fork, not opensourcerouting/c-capnproto. Failed pointer hops are `CAPN_NULL`; check `capn_ok`. Call `capn_set_root` before write.
+
+## Docs
+
+- [Install](https://c-capnproto.rgoswami.me/install.html): Meson, CMake, autotools
+- [Tutorial](https://c-capnproto.rgoswami.me/tutorial.html): AddressBook write, read, packed, canonical
+- [Usage](https://c-capnproto.rgoswami.me/usage.html): capnpc-c, fieldgetset, has_
+- [Wire](https://c-capnproto.rgoswami.me/wire.html): schema-order encode, empty struct B=-1, packed 0xFF
+- [Interop](https://c-capnproto.rgoswami.me/interop.html): official capnp CLI, fortran goldens, Janet
+
+## Siblings
+
+- [capnp-fortran](https://capnp-fortran.rgoswami.me/): F2018 runtime, plugin, RPC
+- [capnp-janet](https://capnp-janet.rgoswami.me/): Janet / embed C wire runtime
+
+## Install
+
+```sh
+git clone --recurse-submodules https://github.com/HaoZeke/c-capnproto.git
+cd c-capnproto
+meson setup build && meson compile -C build
+meson test -C build
+```
+
+## First message
+
+```c
+#include "capnp_c.h"
+#include "addressbook.capnp.h"
+
+static capn_text txt(const char *s) {
+  return (capn_text){.len = (int)strlen(s), .str = s, .seg = NULL};
+}
+
+uint8_t buf[4096];
+struct capn c;
+capn_init_malloc(&c);
+
+struct Person p = {
+  .id = 17,
+  .name = txt("Firstname Lastname"),
+  .email = txt("username@domain.com"),
+};
+p.employment_which = Person_employment_school;
+p.employment.school = txt("of life");
+
+Person_ptr pp = new_Person(capn_root(&c).seg);
+write_Person(&p, pp);
+capn_set_root(&c, pp.p);
+ssize_t sz = capn_write_mem(&c, buf, sizeof buf, 0);
+capn_free(&c);
+```

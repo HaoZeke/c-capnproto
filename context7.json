@@ -1,0 +1,30 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "url": "https://context7.com/haozeke/c-capnproto",
+  "public_key": "pk_AJ7U5Y56IXKa8IgfEfaSl",
+  "projectTitle": "c-capnproto",
+  "description": "Pure C runtime and capnpc-c plugin for Cap'n Proto. Wire encode is byte-equivalent with official capnp 1.0.2 when objects are allocated in schema order. Maintained HaoZeke fork of the unmaintained opensourcerouting/c-capnproto lineage.",
+  "excludeFolders": [
+    "gtest",
+    "tests",
+    "fuzz",
+    "examples",
+    "ac",
+    "m4",
+    "subprojects",
+    "compiler"
+  ],
+  "excludeFiles": [
+    "CHANGELOG.md",
+    "KERNEL.md",
+    "MAINTAINING.md"
+  ],
+  "rules": [
+    "Use HaoZeke/c-capnproto, not the unmaintained opensourcerouting or jmckaskill trees.",
+    "Allocate and set struct fields in schema declaration order for C++ / official capnp encode byte parity.",
+    "Call capn_set_root before capn_write_mem; omitting it writes an empty message.",
+    "Failed pointer hops are CAPN_NULL. Check capn_ok. This is not C++ MessageReader throw-parity.",
+    "Packed 0xFF follows the C++ PackedOutputStream heuristic. Empty struct list element B is -1.",
+    "Prefer Meson (meson setup build && meson compile -C build). Sibling runtimes: capnp-fortran and capnp-janet."
+  ]
+}
