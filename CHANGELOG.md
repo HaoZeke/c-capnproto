@@ -8,6 +8,11 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ## [Unreleased]
 
+### Added
+
+- Sphinx docs from `docs/orgmode/` via ox-rst (`emacs --batch -l docs/export.el`).
+  Generated RST is not tracked.
+
 ## [0.3.0] - 2026-08-10
 
 Wire encode is byte-equivalent with official `capnp` 1.0.2 when objects

@@ -1,0 +1,54 @@
+#+title: Wire format
+#+options: toc:2 num:nil
+
+* Schema-order encode
+
+Official =capnp encode= sets pointer fields in schema order. C encode
+that allocates the same way =memcmp=-equals that output.
+
+Allocating nested objects in a different order is still valid Cap'n
+wire. The bytes differ. Tests that claim CLI identity use schema order.
+
+* Empty struct
+
+A zero-size struct encodes as offset -1: =0xFFFFFFFC= (B=-1), not a
+null pointer. =capn_new_struct(seg, 0, 0)= writes that word.
+
+* Canonical form
+
+=capn_canonicalize= rewrites to a single segment, no far pointers, no
+holes, preorder layout. Trailing zero data and null pointer words are
+truncated. Empty struct stays B=-1.
+
+#+begin_src c
+struct capn canon;
+capn_init_malloc(&canon);
+if (capn_canonicalize(&c, &canon) == 0) {
+    /* unframed: canon.seglist->data[0 .. len) */
+    /* 1-segment stream: capn_write_mem(&canon, buf, sz, 0) */
+}
+capn_free(&canon);
+#+end_src
+
+=capn_canonicalize= =memcmp=-equals =capnp convert binary:canonical= on
+the AddressBook / TestAllTypes fixtures.
+
+* Packed
+
+Packed of the same unpacked bytes =memcmp=-equals
+=capnp convert binary:packed=.
+
+=0xFF= extra-word count is one byte (0..255). The C++ heuristic keeps a
+following word when it has fewer than two zero bytes; a run stops at
+two or more zeros.
+
+* Lists
+
+=List(Struct)= is always C=7 plus a tag, including empty lists.
+C=6 pointer lists upgrade to 0-data / 1-pointer structs on =getp= when
+the schema says =List(Struct)=.
+
+* Live CLI tests
+
+=tests/capnp-cli-interop-test.cpp= runs when Meson finds =capnp= on
+=PATH=. Ubuntu CI installs =capnproto= so those tests run there.

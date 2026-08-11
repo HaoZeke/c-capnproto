@@ -1,0 +1,64 @@
+#+title: Usage
+#+options: toc:2 num:nil
+
+* Generating C from a schema
+
+=capnp= searches =$PATH= for =capnpc-c=. After =meson install=:
+
+#+begin_src sh
+capnp compile -I${prefix}/share/c-capnproto -o c schema.capnp
+#+end_src
+
+From a source checkout, point at the plugin and =compiler/= for =c.capnp=:
+
+#+begin_src sh
+capnp compile -Icompiler -o ./capnpc-c schema.capnp
+#+end_src
+
+Generated headers =#include "c.capnp.h"= (installed next to =capnp_c.h=).
+
+* Root pointer
+
+You *must* call =capn_set_root(c, person.p)= (or
+=capn_setp(capn_root(c), 0, person.p)=) after =new_*= / =write_*=. Those
+helpers only fill a struct in a segment; they do not attach it as the
+message root. Omitting the call writes a valid empty message.
+
+Zero-init C structs before =write_*= so optional pointer fields stay
+unset. =capn_new_struct(seg, 0, 0)= is a real empty struct
+(=struct Empty {}=): A=0 B=-1 C=D=0 (=0xFFFFFFFC=), not null.
+
+* Field getters and =has_=
+
+Import the C annotations and use =$C.fieldgetset=:
+
+#+begin_src capnp
+using C = import "/c.capnp";
+
+$C.fieldgetset;
+
+struct MyStruct {}
+#+end_src
+
+Pointer fields also get =Foo_has_bar=: nonzero when the wire pointer is
+not =CAPN_NULL=. That is C++ =hasFoo()=. =get_= / =read_= still
+substitute schema defaults, so a null Text reads as =""= while
+=Foo_has_note= is 0.
+
+* Typical write path
+
+#+begin_src c
+struct capn c;
+capn_init_malloc(&c);
+Person_ptr pp = new_Person(capn_root(&c).seg);
+write_Person(&person, pp);
+capn_set_root(&c, pp.p);   /* required; otherwise the message is empty */
+sz = capn_write_mem(&c, buf, sizeof(buf), 0);
+capn_free(&c);
+#+end_src
+
+Link =lib/capn.c=, =lib/capn-malloc.c=, =lib/capn-stream.c=. Include path
+must contain =lib/=. Public API: =lib/capnp_c.h=.
+
+Make's built-in rule may try to compile =${x}.capnp= from =${x}.capnp.c=.
+Disable that with the no-op rule: =%.capnp: ;=.

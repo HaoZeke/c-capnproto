@@ -4,6 +4,7 @@ capnpc-c (HaoZeke fork)
 [![CI](https://github.com/HaoZeke/c-capnproto/actions/workflows/ci.yml/badge.svg)](https://github.com/HaoZeke/c-capnproto/actions/workflows/ci.yml)
 
 Pure **C** runtime + `capnpc-c` plugin for [Cap'n Proto](https://capnproto.org/).
+Docs: <https://c-capnproto.rgoswami.me/> (org-mode source in `docs/orgmode/`).
 
 This repository is **[HaoZeke/c-capnproto](https://github.com/HaoZeke/c-capnproto)**,
 a maintained fork of `opensourcerouting/c-capnproto` (itself from
