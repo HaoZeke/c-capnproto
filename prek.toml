@@ -44,7 +44,8 @@ hooks = [
   { id = "codespell", args = [
     "--skip=*.lock,*.bin,CHANGELOG.md,docs/build/*,gtest/*,subprojects/*",
     "-L",
-    "crate,nd,te,inout,clen,ser,dout,pn,ba,alloced",
+    # capTable is a Cap'n Proto field name.
+    "crate,nd,te,inout,clen,ser,dout,pn,ba,alloced,capTable",
   ] },
 ]
 
