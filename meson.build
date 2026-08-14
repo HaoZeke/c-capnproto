@@ -16,6 +16,11 @@ libcapnp_src = [
   'lib' / 'capn-malloc.c',
   'lib' / 'capn-stream.c',
   'lib' / 'capn.c',
+  'lib' / 'capn-rpc.c',
+  # RPC needs the rpc.capnp / rpc-twoparty.capnp readers; they are checked
+  # in beside the other generated schema code.
+  'compiler' / 'rpc.capnp.c',
+  'compiler' / 'rpc-twoparty.capnp.c',
 ]
 
 # MSVC shared builds only emit capnp_c.lib when something is dllexport.
@@ -33,7 +38,7 @@ libcapnp_c = library(
   c_args: common_c_args + libcapnp_c_args + capnp_c_consumer_args,
   c_shared_args: ['-DCAPNP_C_BUILDING'],
   c_static_args: ['-DCAPNP_C_STATIC'],
-  include_directories: include_directories(['lib']),
+  include_directories: include_directories(['lib', 'compiler']),
   implicit_include_directories: false,
   install: true,
 )
@@ -41,6 +46,7 @@ libcapnp_c = library(
 # Generated user headers #include "c.capnp.h"; ship it next to capnp_c.h.
 install_headers(
   'lib' / 'capnp_c.h',
+  'lib' / 'capn-rpc.h',
   'compiler' / 'c.capnp.h',
 )
 
@@ -195,6 +201,17 @@ if get_option('enable_tests') and not meson.is_subproject()
     )
 
     codec_c_args = common_c_args + ['-D_POSIX_C_SOURCE=200809L']
+
+    rpc_join_test = executable(
+      'rpc-join-test',
+      'tests' / 'rpc-join-test.cpp',
+      include_directories: include_directories(['lib', 'tests', 'compiler']),
+      dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
+      cpp_args: common_cpp_args,
+      implicit_include_directories: false,
+      install: false,
+    )
+    test('rpc-join-test', rpc_join_test)
 
     codec_roundtrip_gen = custom_target(
       'codec-roundtrip-capnp',
