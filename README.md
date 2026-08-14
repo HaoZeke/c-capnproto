@@ -250,6 +250,12 @@ capnp-fortran, capnp-janet and capnp-ts. It carries the join keys as
 well, so the vat speaks it instead of `rpc-twoparty.capnp`, not
 alongside -- both declare the same C names.
 
+`Accept.embargo` is honoured: an embargoed Accept claims the capability
+but is not answered until the introducer sends `Disembargo` with
+`context.provide` naming its own Provide question. Answering sooner
+would let a call sent straight to us overtake one still in flight
+through the introducer.
+
 Upstream C++ has no `Join` case at all (it falls to `default:` and
 replies `unimplemented`), so level 4 here is ahead of the reference
 rather than catching up to it.

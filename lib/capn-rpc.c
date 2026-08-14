@@ -652,6 +652,8 @@ static int handle_join(struct capn_rpc_conn *c, Join_ptr jp)
 	return 0;
 }
 
+static int release_provide_embargo(struct capn_rpc_conn *c, uint32_t provide_qid);
+
 /* A Disembargo with `senderLoopback` is echoed back as `receiverLoopback`
  * carrying the same id. That reflection is what lets the sender know
  * every call it had already sent through a promise has arrived, so it can
@@ -667,6 +669,8 @@ static int handle_disembargo(struct capn_rpc_conn *c, Disembargo_ptr dp)
 	int rc;
 
 	read_Disembargo(&in, dp);
+	if (in.context_which == Disembargo_context_provide)
+		return release_provide_embargo(c, in.context.provide);
 	/* receiverLoopback is the reply to an embargo we raised, and this vat
 	 * raises none; accept it without echoing to avoid a loop. */
 	if (in.context_which != Disembargo_context_senderLoopback)
@@ -1080,6 +1084,74 @@ static int send_empty_return(struct capn_rpc_conn *c, uint32_t qid)
 	return rc;
 }
 
+/* Answer an embargoed Accept with the capability it claimed. */
+static int send_accepted_cap(struct capn_rpc_conn *c, uint32_t qid, int eid)
+{
+	struct capn msg;
+	struct Message m;
+	struct Return r;
+	struct Payload pl;
+	Message_ptr mp;
+	Return_ptr rp;
+	Payload_ptr plp;
+	struct capn_segment *cs;
+	int rc;
+
+	capn_init_malloc(&msg);
+	cs = capn_root(&msg).seg;
+	memset(&m, 0, sizeof m);
+	memset(&r, 0, sizeof r);
+	memset(&pl, 0, sizeof pl);
+	plp = new_Payload(cs);
+	write_cap_payload(cs, &pl, eid, &pl.content);
+	write_Payload(&pl, plp);
+	r.answerId = qid;
+	r.which = Return_results;
+	r.results = plp;
+	rp = new_Return(cs);
+	write_Return(&r, rp);
+	m.which = Message__return;
+	m._return = rp;
+	mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	rc = send_answer(c, qid, &msg);
+	capn_free(&msg);
+	return rc;
+}
+
+/* Disembargo.provide: the introducer lifts the embargo on the Accept it
+ * arranged, naming its own Provide question. */
+static int release_provide_embargo(struct capn_rpc_conn *c, uint32_t provide_qid)
+{
+	int i;
+
+	for (i = 0; i < CAPN_RPC_MAX_PROVISIONS; i++) {
+		if (!c->provisions[i].used || !c->provisions[i].embargoed)
+			continue;
+		if (c->provisions[i].question_id != provide_qid)
+			continue;
+		{
+			uint32_t qid = c->provisions[i].accept_question_id;
+			int eid = c->provisions[i].export_id;
+			memset(&c->provisions[i], 0, sizeof c->provisions[i]);
+			return send_accepted_cap(c, qid, eid);
+		}
+	}
+	/* A Disembargo naming nothing we hold is the sender's problem, not
+	 * a reason to disturb this connection. */
+	return 0;
+}
+
+int capn_rpc_embargoed_accepts(struct capn_rpc_conn *c)
+{
+	int i, n = 0;
+	for (i = 0; i < CAPN_RPC_MAX_PROVISIONS; i++)
+		if (c->provisions[i].used && c->provisions[i].embargoed)
+			n++;
+	return n;
+}
+
 /* `Provide`: hold the target for whoever presents this nonce. */
 static int handle_provide(struct capn_rpc_conn *c, Provide_ptr pp)
 {
@@ -1104,6 +1176,8 @@ static int handle_provide(struct capn_rpc_conn *c, Provide_ptr pp)
 			c->provisions[i].used = 1;
 			c->provisions[i].nonce = rid.nonce;
 			c->provisions[i].export_id = eid;
+			c->provisions[i].question_id = pv.questionId;
+			c->provisions[i].embargoed = 0;
 			/* The recipient holds a reference once it accepts. */
 			c->exports[eid].refcount++;
 			return send_empty_return(c, pv.questionId);
@@ -1139,15 +1213,28 @@ static int handle_accept(struct capn_rpc_conn *c, Accept_ptr ap)
 	read_ProvisionId(&pid, pp);
 
 	for (i = 0; i < CAPN_RPC_MAX_PROVISIONS; i++) {
-		if (c->provisions[i].used && c->provisions[i].nonce == pid.nonce) {
+		if (c->provisions[i].used && !c->provisions[i].embargoed &&
+		    c->provisions[i].nonce == pid.nonce) {
 			eid = c->provisions[i].export_id;
-			c->provisions[i].used = 0;
+			if (ac.embargo) {
+				/* Claimed, but the Return waits: the recipient
+				 * has pipelined calls in flight through the
+				 * introducer, and answering now would let a
+				 * later call overtake them. The introducer
+				 * lifts it with Disembargo.provide. */
+				c->provisions[i].embargoed = 1;
+				c->provisions[i].accept_question_id = ac.questionId;
+			} else {
+				c->provisions[i].used = 0;
+			}
 			break;
 		}
 	}
 	if (eid < 0)
 		return send_return_exception(c, ac.questionId,
 		                             "accept: no such provision");
+	if (ac.embargo)
+		return 0;
 
 	capn_init_malloc(&msg);
 	cs = capn_root(&msg).seg;

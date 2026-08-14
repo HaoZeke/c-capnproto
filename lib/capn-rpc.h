@@ -91,6 +91,15 @@ struct capn_rpc_provision {
 	int used;
 	uint64_t nonce;
 	int export_id;
+	/* The introducer's Provide question, which is how a later
+	 * Disembargo names this arrangement (rpc.capnp, Disembargo.context
+	 * .provide). */
+	uint32_t question_id;
+	/* An embargoed Accept has claimed the capability but must not be
+	 * answered until the introducer lifts the embargo, so the slot
+	 * outlives the claim and carries the answer to send. */
+	int embargoed;
+	uint32_t accept_question_id;
 };
 
 /* An introduction we have been handed but not yet picked up.
@@ -233,6 +242,9 @@ int capn_rpc_introduction_done(struct capn_rpc_conn *c, uint64_t nonce);
 int capn_rpc_write_third_party_cap(struct capn_rpc_conn *c, CapDescriptor_ptr cd,
                                    const char *host, uint16_t port,
                                    uint64_t nonce, uint32_t vine_id);
+
+/* Accepts claimed but still embargoed, awaiting Disembargo.provide. */
+int capn_rpc_embargoed_accepts(struct capn_rpc_conn *c);
 
 int capn_rpc_pending_provisions(struct capn_rpc_conn *c, uint64_t *out,
                                 int cap);

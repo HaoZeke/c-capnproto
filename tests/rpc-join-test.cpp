@@ -539,6 +539,122 @@ TEST_F(RpcJoin, AcceptWithUnknownNonceIsRefused)
 	EXPECT_FALSE(read_l3(out.frames[0]).is_exception);
 }
 
+/* Carol -> us: claim the capability under `nonce`, but hold the answer
+ * until the introducer lifts the embargo. */
+static void send_accept_embargoed(struct capn_rpc_conn *c, uint32_t qid, uint64_t nonce)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+
+	struct ProvisionId pid;
+	memset(&pid, 0, sizeof pid);
+	pid.nonce = nonce;
+	ProvisionId_ptr pip = new_ProvisionId(cs);
+	write_ProvisionId(&pid, pip);
+
+	struct Accept ac;
+	memset(&ac, 0, sizeof ac);
+	ac.questionId = qid;
+	ac.provision = pip.p;
+	ac.embargo = 1;
+	Accept_ptr ap = new_Accept(cs);
+	write_Accept(&ac, ap);
+
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_accept;
+	m.accept = ap;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+
+	uint8_t buf[4096];
+	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
+	capn_free(&msg);
+	ASSERT_GT(sz, 0);
+	capn_rpc_handle(c, buf, static_cast<size_t>(sz));
+}
+
+/* Alice -> us: lift the embargo on the Accept she arranged, naming her
+ * own Provide question. */
+static void send_disembargo_provide(struct capn_rpc_conn *c, uint32_t provide_qid)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+
+	struct Disembargo d;
+	memset(&d, 0, sizeof d);
+	d.context_which = Disembargo_context_provide;
+	d.context.provide = provide_qid;
+	Disembargo_ptr dp = new_Disembargo(cs);
+	write_Disembargo(&d, dp);
+
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_disembargo;
+	m.disembargo = dp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+
+	uint8_t buf[4096];
+	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
+	capn_free(&msg);
+	ASSERT_GT(sz, 0);
+	capn_rpc_handle(c, buf, static_cast<size_t>(sz));
+}
+
+/* Level 3 embargo: an embargoed Accept claims the capability but is not
+ * answered until the introducer says the recipient's earlier calls have
+ * all arrived. Answering sooner would let a call sent straight to us
+ * overtake one still in flight through the introducer. */
+TEST_F(RpcJoin, EmbargoedAcceptIsAnsweredOnlyAfterDisembargo)
+{
+	const uint64_t nonce = 0x5150ULL;
+	send_provide(&conn, 70, live, nonce);
+	ASSERT_EQ(1u, out.frames.size());
+	EXPECT_FALSE(read_l3(out.frames[0]).is_exception);
+	out.frames.clear();
+
+	send_accept_embargoed(&conn, 71, nonce);
+	EXPECT_EQ(0u, out.frames.size()) << "an embargoed Accept must not be answered yet";
+	EXPECT_EQ(1, capn_rpc_embargoed_accepts(&conn));
+	/* The arrangement is claimed, so a second Accept finds nothing. */
+	send_accept(&conn, 72, nonce);
+	ASSERT_EQ(1u, out.frames.size());
+	EXPECT_TRUE(read_l3(out.frames[0]).is_exception);
+	out.frames.clear();
+
+	send_disembargo_provide(&conn, 70);
+	ASSERT_EQ(1u, out.frames.size());
+	L3Reply r = read_l3(out.frames[0]);
+	EXPECT_EQ(71u, r.answer_id);
+	EXPECT_FALSE(r.is_exception);
+	EXPECT_TRUE(r.has_cap);
+	EXPECT_EQ(0, capn_rpc_embargoed_accepts(&conn));
+	EXPECT_EQ(0, capn_rpc_pending_provisions(&conn, NULL, 0));
+}
+
+/* A Disembargo naming a Provide we never received changes nothing. */
+TEST_F(RpcJoin, DisembargoForAnUnknownProvideIsIgnored)
+{
+	const uint64_t nonce = 0x5151ULL;
+	send_provide(&conn, 73, live, nonce);
+	out.frames.clear();
+	send_accept_embargoed(&conn, 74, nonce);
+	out.frames.clear();
+
+	send_disembargo_provide(&conn, 999);
+	EXPECT_EQ(0u, out.frames.size());
+	EXPECT_EQ(1, capn_rpc_embargoed_accepts(&conn));
+
+	send_disembargo_provide(&conn, 73);
+	ASSERT_EQ(1u, out.frames.size());
+	EXPECT_EQ(74u, read_l3(out.frames[0]).answer_id);
+}
+
 /* Alice -> us: a Call whose params name a capability hosted by a third
  * vat, with a vine we can use in the meantime. This is the receiving
  * half of the introduction; the Provide/Accept tests above are the
