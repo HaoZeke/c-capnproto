@@ -45,7 +45,7 @@ hooks = [
     "--skip=*.lock,*.bin,CHANGELOG.md,docs/build/*,gtest/*,subprojects/*",
     "-L",
     # capTable is a Cap'n Proto field name.
-    "crate,nd,te,inout,clen,ser,dout,pn,ba,alloced,capTable",
+    "crate,nd,te,inout,clen,ser,dout,pn,ba,alloced,capTable,embargos,Embargos,thirdParty",
   ] },
 ]
 
