@@ -129,3 +129,20 @@ jobs:
           ASAN_OPTIONS: detect_leaks=0,detect_odr_violation=0,allocator_may_return_null=1
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
         run: meson test -C build --print-errorlogs
+
+  packaging:
+    name: downstream consumption
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install meson ninja
+        run: pip install meson ninja
+      # Install rules that nothing exercises are how a broken Config.cmake
+      # or a stale .pc reaches users. This builds a consumer four ways.
+      - name: CMake, find_package, pkg-config and meson subproject
+        run: bash scripts/packaging-smoke.sh

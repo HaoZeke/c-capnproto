@@ -1,0 +1,77 @@
+# Git hooks via `prek` (https://prek.j178.dev) — Rust drop-in for pre-commit.
+# Install: `prek install`
+# Run all: `prek run -a`
+#:schema https://www.schemastore.org/prek.json
+
+minimum_prek_version = "0.3.0"
+
+# gtest/ and subprojects/ are vendored upstream code; ac/ and m4/ are
+# autotools boilerplate. Generated .capnp.c/.h are checked in on purpose.
+exclude = """(?x)(
+    ^gtest/|
+    ^subprojects/|
+    ^ac/|
+    ^m4/|
+    ^build/|
+    ^build-.*/|
+    ^docs/build/|
+    ^tests/fixtures/|
+    ^fuzz/in/|
+    .*\\.capnp\\.[ch]$
+)"""
+
+[[repos]]
+repo = "builtin"
+hooks = [
+  { id = "trailing-whitespace" },
+  { id = "end-of-file-fixer" },
+  { id = "check-yaml" },
+  { id = "check-toml" },
+  { id = "check-merge-conflict" },
+  { id = "check-added-large-files", args = ["--maxkb=1000"] },
+  { id = "detect-private-key" },
+]
+
+[[repos]]
+repo = "https://github.com/pre-commit/pre-commit-hooks"
+rev = "v6.0.0"
+hooks = [{ id = "check-case-conflict" }]
+
+[[repos]]
+repo = "https://github.com/codespell-project/codespell"
+rev = "v2.4.1"
+hooks = [
+  { id = "codespell", args = [
+    "--skip=*.lock,*.bin,CHANGELOG.md,docs/build/*,gtest/*,subprojects/*",
+    "-L",
+    "crate,nd,te,inout,clen,ser,dout,pn,ba,alloced",
+  ] },
+]
+
+[[repos]]
+repo = "local"
+hooks = [
+  {
+    id = "version-lockstep",
+    name = "VERSION.txt matches meson.build and configure.ac",
+    entry = "bash",
+    language = "system",
+    pass_filenames = false,
+    files = "^(VERSION\\.txt|meson\\.build|configure\\.ac)$",
+    args = [
+      "-c",
+      "v=$(tr -d '[:space:]' < VERSION.txt); m=$(rg -n \"^  version: '\" meson.build | head -1 | sed -E \"s/.*'([^']+)'.*/\\\\1/\"); if [ \"$v\" != \"$m\" ]; then echo \"version mismatch: VERSION.txt=$v meson.build=$m\"; exit 1; fi",
+    ],
+  },
+  {
+    id = "no-stdlib-header-shadow",
+    name = "no root file shadows a C++ standard header",
+    entry = "bash",
+    language = "system",
+    pass_filenames = false,
+    args = [
+      "-c",
+      "for h in version concepts ranges bit memory format thread filesystem; do if [ -e \"$h\" ]; then echo \"root file '$h' shadows #include <$h> on case-insensitive filesystems\"; exit 1; fi; done; for f in VERSION CONCEPTS RANGES BIT MEMORY FORMAT THREAD FILESYSTEM; do if [ -e \"$f\" ]; then echo \"root file '$f' shadows the same-named C++ header on macOS/Windows\"; exit 1; fi; done",
+    ],
+  },
+]

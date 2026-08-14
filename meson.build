@@ -46,9 +46,14 @@ install_headers(
 
 libcapnp_dep = declare_dependency(
   link_with: libcapnp_c,
-  include_directories: include_directories(['lib']),
+  # compiler/ carries c.capnp.h, which every generated header includes.
+  include_directories: include_directories(['lib', 'compiler']),
   compile_args: capnp_c_consumer_args,
 )
+
+# Consumers reach this through `dependency('c-capnproto')`, which falls back
+# to this subproject via a .wrap.
+meson.override_dependency('c-capnproto', libcapnp_dep)
 
 pkg = import('pkgconfig')
 pkg.generate(

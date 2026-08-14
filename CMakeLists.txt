@@ -1,6 +1,19 @@
 # Optional CMake build. Meson (recommended) and autotools remain the
 # default product paths. This file is a small install-path alternative
 # (MSVC / IDE / packagers). It does not use the DKML `dk` wrapper.
+#
+#   include(FetchContent)
+#   FetchContent_Declare(
+#     c_capnproto
+#     GIT_REPOSITORY https://github.com/HaoZeke/c-capnproto.git
+#     GIT_TAG        v0.3.0
+#   )
+#   FetchContent_MakeAvailable(c_capnproto)
+#   target_link_libraries(myapp PRIVATE c_capnproto::capnp_c)
+#
+# An installed copy is found with find_package(c_capnproto) or through
+# pkg-config as `c-capnproto`. The package name is c_capnproto so it never
+# shadows official Cap'n Proto C++'s CapnProtoConfig.cmake.
 
 cmake_minimum_required(VERSION 3.16)
 
@@ -15,8 +28,16 @@ project(c-capnproto
 )
 
 include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
-option(BUILD_TESTING "Build unit tests when an installed GTest is found" ON)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  set(_c_capnproto_is_toplevel ON)
+else()
+  set(_c_capnproto_is_toplevel OFF)
+endif()
+
+option(BUILD_TESTING "Build unit tests when an installed GTest is found" ${_c_capnproto_is_toplevel})
+option(C_CAPNPROTO_INSTALL "Install targets and package config" ${_c_capnproto_is_toplevel})
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -35,9 +56,12 @@ set_target_properties(capnp_c PROPERTIES
   VERSION ${PROJECT_VERSION}
   SOVERSION 0
 )
+add_library(c_capnproto::capnp_c ALIAS capnp_c)
+set_target_properties(capnp_c PROPERTIES EXPORT_NAME capnp_c)
 target_include_directories(capnp_c
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/lib>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/compiler>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 if(BUILD_SHARED_LIBS)
@@ -62,14 +86,40 @@ target_include_directories(capnpc-c PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/compiler"
 )
 
+if(C_CAPNPROTO_INSTALL)
 install(TARGETS capnp_c capnpc-c
+  EXPORT c_capnprotoTargets
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 install(FILES lib/capnp_c.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+# Generated user headers #include "c.capnp.h"; ship it beside capnp_c.h.
+install(FILES compiler/c.capnp.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES compiler/c.capnp DESTINATION ${CMAKE_INSTALL_DATADIR}/c-capnproto)
 
+install(EXPORT c_capnprotoTargets
+  FILE c_capnprotoTargets.cmake
+  NAMESPACE c_capnproto::
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/c_capnproto
+)
+configure_package_config_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/c_capnprotoConfig.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/c_capnprotoConfig.cmake"
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/c_capnproto
+)
+write_basic_package_version_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/c_capnprotoConfigVersion.cmake"
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY SameMajorVersion
+)
+install(FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/c_capnprotoConfig.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/c_capnprotoConfigVersion.cmake"
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/c_capnproto
+)
+
+# pkg-config, for build systems that do not speak CMake.
 set(prefix "${CMAKE_INSTALL_PREFIX}")
 set(exec_prefix "\${prefix}")
 if(IS_ABSOLUTE "${CMAKE_INSTALL_LIBDIR}")
@@ -96,6 +146,7 @@ configure_file(
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/c-capnproto.pc"
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
 )
+endif()
 
 if(BUILD_TESTING)
   include(CTest)
