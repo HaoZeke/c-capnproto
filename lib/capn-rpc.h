@@ -24,7 +24,10 @@ extern "C" {
 #define CAPN_RPC_MAX_EXPORTS 64
 #define CAPN_RPC_MAX_ANSWERS 64
 #define CAPN_RPC_MAX_ANSWER_BYTES 8192
+#define CAPN_RPC_MAX_QUESTIONS 64
 #define CAPN_RPC_MAX_JOINS 8
+/* Outstanding unacknowledged calls a stream may hold. */
+#define CAPN_RPC_STREAM_MAX_WINDOW 64
 #define CAPN_RPC_MAX_JOIN_PARTS 16
 
 struct capn_rpc_conn;
@@ -62,6 +65,30 @@ struct capn_rpc_answer {
 	size_t len;
 };
 
+/* A question this vat asked, from send until its Return arrives. */
+struct capn_rpc_question {
+	int used;
+	uint32_t question_id;
+	int answered;
+	int failed;
+	uint8_t reply[CAPN_RPC_MAX_ANSWER_BYTES];
+	size_t reply_len;
+};
+
+/* Client-side flow control for `-> stream` methods: a bounded window of
+ * unacknowledged stream calls. The wire carries ordinary Call/Return
+ * pairs; the window is policy, as in capnp-C++. After any stream call
+ * fails, later sends fail immediately and the failure surfaces at finish,
+ * which is the streaming error-propagation rule. */
+struct capn_rpc_stream {
+	int window;
+	int nout;
+	uint32_t qids[CAPN_RPC_STREAM_MAX_WINDOW];
+	int failed;
+	uint32_t first_failure;
+	int have_failure;
+};
+
 /* One in-flight Join, keyed by the sender's joinId.
  *
  * A Join asks whether several capabilities are the same object. Each part
@@ -83,6 +110,8 @@ struct capn_rpc_join {
 struct capn_rpc_conn {
 	struct capn_rpc_export exports[CAPN_RPC_MAX_EXPORTS];
 	struct capn_rpc_answer answers[CAPN_RPC_MAX_ANSWERS];
+	struct capn_rpc_question questions[CAPN_RPC_MAX_QUESTIONS];
+	uint32_t next_question_id;
 	struct capn_rpc_join joins[CAPN_RPC_MAX_JOINS];
 	/* Capability returned for `Bootstrap`; NULL answers with an exception. */
 	void *bootstrap;
@@ -107,6 +136,56 @@ int capn_rpc_export(struct capn_rpc_conn *c, void *server,
 /* Handle one framed message. Returns 0 when handled, non-zero on a
  * malformed frame. Replies go out through the send callback. */
 int capn_rpc_handle(struct capn_rpc_conn *c, const uint8_t *data, size_t len);
+
+/* --- client side -------------------------------------------------- */
+
+/* Ask for the peer's bootstrap capability. Returns the questionId, or
+ * (uint32_t)-1 when the question table is full. */
+uint32_t capn_rpc_send_bootstrap(struct capn_rpc_conn *c);
+
+/* Write a call's parameter struct. */
+typedef void (*capn_rpc_fill_fn)(void *ctx, capn_ptr params);
+
+/* Call a method on an imported capability. `fill` may be NULL. Returns
+ * the questionId, or (uint32_t)-1 on failure. */
+uint32_t capn_rpc_send_call(struct capn_rpc_conn *c, uint32_t imported_cap,
+                            uint64_t interface_id, uint16_t method_id,
+                            capn_rpc_fill_fn fill, void *fill_ctx);
+
+/* Tell the peer we are done with an answer, and drop our copy. */
+int capn_rpc_send_finish(struct capn_rpc_conn *c, uint32_t question_id);
+
+/* Drop `count` references to an import. */
+int capn_rpc_send_release(struct capn_rpc_conn *c, uint32_t import_id,
+                          uint32_t count);
+
+/* 1 once the Return for `question_id` has arrived. */
+int capn_rpc_is_answered(struct capn_rpc_conn *c, uint32_t question_id);
+
+/* 1 when that Return carried an exception. */
+int capn_rpc_is_failed(struct capn_rpc_conn *c, uint32_t question_id);
+
+/* Results of an answered question. Returns 0 and fills `msg_out` / `out`
+ * on success; non-zero while the question is outstanding or if it
+ * failed. The caller frees `msg_out` with capn_free. */
+int capn_rpc_answer_content(struct capn_rpc_conn *c, uint32_t question_id,
+                            struct capn *msg_out, capn_ptr *out);
+
+/* --- stream flow control ------------------------------------------- */
+
+void capn_rpc_stream_init(struct capn_rpc_stream *s, int window);
+
+/* Send one stream call, blocking only when the window is full. Returns 0
+ * on success, non-zero once the stream has failed. */
+int capn_rpc_stream_send(struct capn_rpc_conn *c, struct capn_rpc_stream *s,
+                         uint32_t imported_cap, uint64_t interface_id,
+                         uint16_t method_id, capn_rpc_fill_fn fill,
+                         void *fill_ctx);
+
+/* Wait for every outstanding call. Returns 0 when all succeeded. */
+int capn_rpc_stream_finish(struct capn_rpc_conn *c,
+                           struct capn_rpc_stream *s);
+
 
 #ifdef __cplusplus
 }

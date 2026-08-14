@@ -213,6 +213,17 @@ if get_option('enable_tests') and not meson.is_subproject()
     )
     test('rpc-join-test', rpc_join_test)
 
+    rpc_client_test = executable(
+      'rpc-client-test',
+      'tests' / 'rpc-client-test.cpp',
+      include_directories: include_directories(['lib', 'tests', 'compiler']),
+      dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
+      cpp_args: common_cpp_args,
+      implicit_include_directories: false,
+      install: false,
+    )
+    test('rpc-client-test', rpc_client_test)
+
     codec_roundtrip_gen = custom_target(
       'codec-roundtrip-capnp',
       input: 'tests' / 'codec-roundtrip.capnp',

@@ -579,6 +579,318 @@ static int send_unimplemented(struct capn_rpc_conn *c, Message_ptr orig)
 	return rc;
 }
 
+
+/* --- client side -------------------------------------------------- */
+
+static struct capn_rpc_question *question_claim(struct capn_rpc_conn *c,
+                                                uint32_t *qid_out)
+{
+	int i;
+	for (i = 0; i < CAPN_RPC_MAX_QUESTIONS; i++) {
+		if (!c->questions[i].used) {
+			memset(&c->questions[i], 0, sizeof c->questions[i]);
+			c->questions[i].used = 1;
+			c->questions[i].question_id = c->next_question_id++;
+			*qid_out = c->questions[i].question_id;
+			return &c->questions[i];
+		}
+	}
+	return NULL;
+}
+
+static struct capn_rpc_question *question_find(struct capn_rpc_conn *c,
+                                               uint32_t qid)
+{
+	int i;
+	for (i = 0; i < CAPN_RPC_MAX_QUESTIONS; i++)
+		if (c->questions[i].used && c->questions[i].question_id == qid)
+			return &c->questions[i];
+	return NULL;
+}
+
+uint32_t capn_rpc_send_bootstrap(struct capn_rpc_conn *c)
+{
+	struct capn msg;
+	struct Message m;
+	struct Bootstrap bs;
+	Message_ptr mp;
+	Bootstrap_ptr bp;
+	struct capn_segment *cs;
+	struct capn_rpc_question *q;
+	uint32_t qid = 0;
+
+	q = question_claim(c, &qid);
+	if (q == NULL)
+		return (uint32_t)-1;
+
+	capn_init_malloc(&msg);
+	cs = capn_root(&msg).seg;
+	memset(&m, 0, sizeof m);
+	memset(&bs, 0, sizeof bs);
+	bs.questionId = qid;
+	bp = new_Bootstrap(cs);
+	write_Bootstrap(&bs, bp);
+	m.which = Message_bootstrap;
+	m.bootstrap = bp;
+	mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	if (send_message(c, &msg) != 0) {
+		q->used = 0;
+		qid = (uint32_t)-1;
+	}
+	capn_free(&msg);
+	return qid;
+}
+
+uint32_t capn_rpc_send_call(struct capn_rpc_conn *c, uint32_t imported_cap,
+                            uint64_t interface_id, uint16_t method_id,
+                            capn_rpc_fill_fn fill, void *fill_ctx)
+{
+	struct capn msg;
+	struct Message m;
+	struct Call call;
+	struct MessageTarget t;
+	struct Payload params;
+	Message_ptr mp;
+	Call_ptr cp;
+	MessageTarget_ptr tp;
+	Payload_ptr plp;
+	struct capn_segment *cs;
+	struct capn_rpc_question *q;
+	uint32_t qid = 0;
+
+	q = question_claim(c, &qid);
+	if (q == NULL)
+		return (uint32_t)-1;
+
+	capn_init_malloc(&msg);
+	cs = capn_root(&msg).seg;
+	memset(&m, 0, sizeof m);
+	memset(&call, 0, sizeof call);
+	memset(&t, 0, sizeof t);
+	memset(&params, 0, sizeof params);
+
+	t.which = MessageTarget_importedCap;
+	t.importedCap = imported_cap;
+	tp = new_MessageTarget(cs);
+	write_MessageTarget(&t, tp);
+
+	params.content = capn_new_struct(cs, 8, 1);
+	if (fill)
+		fill(fill_ctx, params.content);
+	plp = new_Payload(cs);
+	write_Payload(&params, plp);
+
+	call.questionId = qid;
+	call.target = tp;
+	call.interfaceId = interface_id;
+	call.methodId = method_id;
+	call.params = plp;
+	cp = new_Call(cs);
+	write_Call(&call, cp);
+
+	m.which = Message_call;
+	m.call = cp;
+	mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	if (send_message(c, &msg) != 0) {
+		q->used = 0;
+		qid = (uint32_t)-1;
+	}
+	capn_free(&msg);
+	return qid;
+}
+
+int capn_rpc_send_finish(struct capn_rpc_conn *c, uint32_t question_id)
+{
+	struct capn msg;
+	struct Message m;
+	struct Finish f;
+	Message_ptr mp;
+	Finish_ptr fp;
+	struct capn_segment *cs;
+	struct capn_rpc_question *q;
+	int rc;
+
+	q = question_find(c, question_id);
+	if (q)
+		q->used = 0;
+
+	capn_init_malloc(&msg);
+	cs = capn_root(&msg).seg;
+	memset(&m, 0, sizeof m);
+	memset(&f, 0, sizeof f);
+	f.questionId = question_id;
+	fp = new_Finish(cs);
+	write_Finish(&f, fp);
+	m.which = Message_finish;
+	m.finish = fp;
+	mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	rc = send_message(c, &msg);
+	capn_free(&msg);
+	return rc;
+}
+
+int capn_rpc_send_release(struct capn_rpc_conn *c, uint32_t import_id,
+                          uint32_t count)
+{
+	struct capn msg;
+	struct Message m;
+	struct Release rel;
+	Message_ptr mp;
+	Release_ptr rp;
+	struct capn_segment *cs;
+	int rc;
+
+	capn_init_malloc(&msg);
+	cs = capn_root(&msg).seg;
+	memset(&m, 0, sizeof m);
+	memset(&rel, 0, sizeof rel);
+	rel.id = import_id;
+	rel.referenceCount = count;
+	rp = new_Release(cs);
+	write_Release(&rel, rp);
+	m.which = Message_release;
+	m.release = rp;
+	mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	rc = send_message(c, &msg);
+	capn_free(&msg);
+	return rc;
+}
+
+int capn_rpc_is_answered(struct capn_rpc_conn *c, uint32_t question_id)
+{
+	struct capn_rpc_question *q = question_find(c, question_id);
+	return q && q->answered;
+}
+
+int capn_rpc_is_failed(struct capn_rpc_conn *c, uint32_t question_id)
+{
+	struct capn_rpc_question *q = question_find(c, question_id);
+	return q && q->answered && q->failed;
+}
+
+int capn_rpc_answer_content(struct capn_rpc_conn *c, uint32_t question_id,
+                            struct capn *msg_out, capn_ptr *out)
+{
+	struct capn_rpc_question *q = question_find(c, question_id);
+	struct Message m;
+	struct Return r;
+	struct Payload pl;
+	Message_ptr mp;
+
+	if (q == NULL || !q->answered || q->failed)
+		return -1;
+	if (capn_init_mem(msg_out, q->reply, q->reply_len, 0) != 0)
+		return -1;
+	mp.p = capn_getp(capn_root(msg_out), 0, 1);
+	read_Message(&m, mp);
+	if (m.which != Message__return) {
+		capn_free(msg_out);
+		return -1;
+	}
+	read_Return(&r, m._return);
+	if (r.which != Return_results) {
+		capn_free(msg_out);
+		return -1;
+	}
+	read_Payload(&pl, r.results);
+	*out = pl.content;
+	capn_resolve(out);
+	return 0;
+}
+
+/* Record a Return against the question that asked it. A Return naming a
+ * question this vat never asked is dropped: recording it would let a
+ * peer plant answers that later pipelining would trust. */
+static void handle_return(struct capn_rpc_conn *c, Return_ptr rp,
+                          const uint8_t *frame, size_t len)
+{
+	struct Return r;
+	struct capn_rpc_question *q;
+
+	read_Return(&r, rp);
+	q = question_find(c, r.answerId);
+	if (q == NULL || len > CAPN_RPC_MAX_ANSWER_BYTES)
+		return;
+	q->answered = 1;
+	q->failed = (r.which != Return_results);
+	memcpy(q->reply, frame, len);
+	q->reply_len = len;
+}
+
+/* --- stream flow control ------------------------------------------- */
+
+void capn_rpc_stream_init(struct capn_rpc_stream *s, int window)
+{
+	memset(s, 0, sizeof *s);
+	if (window < 1)
+		window = 1;
+	if (window > CAPN_RPC_STREAM_MAX_WINDOW)
+		window = CAPN_RPC_STREAM_MAX_WINDOW;
+	s->window = window;
+}
+
+/* Retire the oldest outstanding call. A call that never answered, or
+ * answered with an exception, marks the stream failed. */
+static void stream_retire_oldest(struct capn_rpc_conn *c,
+                                 struct capn_rpc_stream *s)
+{
+	uint32_t qid;
+	int i;
+
+	if (s->nout == 0)
+		return;
+	qid = s->qids[0];
+	for (i = 1; i < s->nout; i++)
+		s->qids[i - 1] = s->qids[i];
+	s->nout--;
+
+	if (!capn_rpc_is_answered(c, qid) || capn_rpc_is_failed(c, qid)) {
+		s->failed = 1;
+		if (!s->have_failure) {
+			s->have_failure = 1;
+			s->first_failure = qid;
+		}
+	}
+	capn_rpc_send_finish(c, qid);
+}
+
+int capn_rpc_stream_send(struct capn_rpc_conn *c, struct capn_rpc_stream *s,
+                         uint32_t imported_cap, uint64_t interface_id,
+                         uint16_t method_id, capn_rpc_fill_fn fill,
+                         void *fill_ctx)
+{
+	uint32_t qid;
+
+	if (s->failed)
+		return -1;
+	if (s->nout >= s->window) {
+		stream_retire_oldest(c, s);
+		if (s->failed)
+			return -1;
+	}
+	qid = capn_rpc_send_call(c, imported_cap, interface_id, method_id, fill,
+	                         fill_ctx);
+	if (qid == (uint32_t)-1)
+		return -1;
+	s->qids[s->nout++] = qid;
+	return 0;
+}
+
+int capn_rpc_stream_finish(struct capn_rpc_conn *c, struct capn_rpc_stream *s)
+{
+	while (s->nout > 0)
+		stream_retire_oldest(c, s);
+	return s->have_failure ? -1 : 0;
+}
+
 int capn_rpc_handle(struct capn_rpc_conn *c, const uint8_t *data, size_t len)
 {
 	struct capn msg;
@@ -617,6 +929,16 @@ int capn_rpc_handle(struct capn_rpc_conn *c, const uint8_t *data, size_t len)
 		break;
 	case Message_join:
 		rc = handle_join(c, m.join);
+		break;
+	case Message__return:
+		handle_return(c, m._return, data, len);
+		break;
+	case Message_resolve:
+		/* Promise resolution. Replying unimplemented is the spec-defined
+		 * signal that this vat does not adopt resolutions: the sender
+		 * keeps forwarding calls addressed to the promise, which it does
+		 * until Release. */
+		rc = send_unimplemented(c, mp);
 		break;
 	case Message_disembargo:
 		rc = handle_disembargo(c, m.disembargo);
