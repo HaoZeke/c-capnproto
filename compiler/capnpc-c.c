@@ -65,7 +65,7 @@ struct node *find_node(uint64_t id)
 {
 	struct node *s = find_node_mayfail(id);
 	if (s == NULL) {
-		fprintf(stderr, "cant find node with id 0x%x%x\n", (uint32_t) (id >> 32), (uint32_t) id);
+		fprintf(stderr, "can't find node with id 0x%x%x\n", (uint32_t) (id >> 32), (uint32_t) id);
 		exit(2);
 	}
 	return s;
@@ -992,7 +992,7 @@ static void do_union(struct strings *s, struct node *n, struct field *first_fiel
 	str_addf(&s->decl, "%scapnp_nowarn union {\n", s->dtab.str);
 	str_add(&s->dtab, "\t", -1);
 
-	/* when we have defaults or groups we have to emit each case seperately */
+	/* when we have defaults or groups we have to emit each case separately */
 	for (f = first_field; f < n->fields + capn_len(n->n._struct.fields) && in_union(f); f++) {
 		if (f > first_field) {
 			str_addf(&enums, ",");

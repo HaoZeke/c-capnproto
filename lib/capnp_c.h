@@ -89,7 +89,7 @@ extern "C" {
 /* struct capn is a common structure shared between segments in the same
  * session/context so that far pointers between segments will be created.
  *
- * lookup is used to lookup segments by id when derefencing a far pointer
+ * lookup is used to lookup segments by id when dereferencing a far pointer
  *
  * create is used to create or lookup an alternate segment that has at least
  * sz available (ie returned seg->len + sz <= seg->cap)
@@ -341,7 +341,7 @@ CAPN_EXPORT int capn_getv64(capn_list64 p, int off, uint64_t *data, int sz);
 /* capn_set* functions set data in a list
  * off specifies how far into the list to start
  * sz indicates the number of elements to write
- * The function returns the number of elemnts written or -1 on an error.
+ * The function returns the number of elements written or -1 on an error.
  * off must be byte aligned for capn_setv1
  */
 CAPN_EXPORT int capn_set1(capn_list1 p, int off, int v);
