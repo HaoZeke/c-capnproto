@@ -65,6 +65,11 @@ jobs:
             exit 1
           fi
           grep -E '^\[  PASSED  \]' cli-interop.log
+      # The level 3 frames are evidence of parity only while they are
+      # still what the CLI emits from the schema.
+      - name: level 3 frames still match the capnp CLI
+        if: matrix.run_tests
+        run: bash scripts/gen-rpc-frames.sh --check
       - name: Fuzz harness smoke
         if: matrix.fuzz_smoke
         run: |
