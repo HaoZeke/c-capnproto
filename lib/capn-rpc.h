@@ -22,6 +22,8 @@ extern "C" {
 #endif
 
 #define CAPN_RPC_MAX_EXPORTS 64
+#define CAPN_RPC_MAX_ANSWERS 64
+#define CAPN_RPC_MAX_ANSWER_BYTES 8192
 #define CAPN_RPC_MAX_JOINS 8
 #define CAPN_RPC_MAX_JOIN_PARTS 16
 
@@ -47,6 +49,19 @@ struct capn_rpc_export {
 	capn_rpc_dispatch_fn dispatch;
 };
 
+/* A Return already sent, kept until the peer sends `Finish`.
+ *
+ * Promise pipelining is the reason: a caller may address a capability
+ * inside an answer before it has seen the answer, so the answer has to
+ * still be here when the pipelined call arrives.
+ */
+struct capn_rpc_answer {
+	int used;
+	uint32_t question_id;
+	uint8_t frame[CAPN_RPC_MAX_ANSWER_BYTES];
+	size_t len;
+};
+
 /* One in-flight Join, keyed by the sender's joinId.
  *
  * A Join asks whether several capabilities are the same object. Each part
@@ -67,6 +82,7 @@ struct capn_rpc_join {
 
 struct capn_rpc_conn {
 	struct capn_rpc_export exports[CAPN_RPC_MAX_EXPORTS];
+	struct capn_rpc_answer answers[CAPN_RPC_MAX_ANSWERS];
 	struct capn_rpc_join joins[CAPN_RPC_MAX_JOINS];
 	/* Capability returned for `Bootstrap`; NULL answers with an exception. */
 	void *bootstrap;

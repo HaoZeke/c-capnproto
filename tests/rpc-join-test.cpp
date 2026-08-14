@@ -129,6 +129,120 @@ JoinReply read_join_reply(const std::vector<uint8_t> &frame)
 	return out;
 }
 
+
+/* A call whose target is `promisedAnswer`: the answer to
+ * `answer_question_id`, optionally walked by getPointerField ops. */
+void send_pipelined_call(struct capn_rpc_conn *c, uint32_t qid,
+                         uint32_t answer_question_id,
+                         const std::vector<uint16_t> &ops)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+
+	struct PromisedAnswer pa;
+	memset(&pa, 0, sizeof pa);
+	pa.questionId = answer_question_id;
+	pa.transform = new_PromisedAnswer_Op_list(cs, (int)ops.size());
+	for (size_t i = 0; i < ops.size(); i++) {
+		struct PromisedAnswer_Op op;
+		memset(&op, 0, sizeof op);
+		op.which = PromisedAnswer_Op_getPointerField;
+		op.getPointerField = ops[i];
+		set_PromisedAnswer_Op(&op, pa.transform, (int)i);
+	}
+	PromisedAnswer_ptr pap = new_PromisedAnswer(cs);
+	write_PromisedAnswer(&pa, pap);
+
+	struct MessageTarget t;
+	memset(&t, 0, sizeof t);
+	t.which = MessageTarget_promisedAnswer;
+	t.promisedAnswer = pap;
+	MessageTarget_ptr tp = new_MessageTarget(cs);
+	write_MessageTarget(&t, tp);
+
+	struct Call call;
+	memset(&call, 0, sizeof call);
+	call.questionId = qid;
+	call.target = tp;
+	call.params = new_Payload(cs);
+	Call_ptr cp = new_Call(cs);
+	write_Call(&call, cp);
+
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_call;
+	m.call = cp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+
+	uint8_t buf[4096];
+	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
+	capn_free(&msg);
+	ASSERT_GT(sz, 0);
+	capn_rpc_handle(c, buf, static_cast<size_t>(sz));
+}
+
+void send_finish(struct capn_rpc_conn *c, uint32_t qid)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+	struct Finish f;
+	memset(&f, 0, sizeof f);
+	f.questionId = qid;
+	Finish_ptr fp = new_Finish(cs);
+	write_Finish(&f, fp);
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_finish;
+	m.finish = fp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	uint8_t buf[4096];
+	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
+	capn_free(&msg);
+	ASSERT_GT(sz, 0);
+	ASSERT_EQ(0, capn_rpc_handle(c, buf, static_cast<size_t>(sz)));
+}
+
+/* Return union tag and, for results, the first u32 of the content. */
+struct ReturnInfo {
+	uint32_t answer_id;
+	int which;
+	uint32_t value;
+};
+
+ReturnInfo read_return(const std::vector<uint8_t> &frame)
+{
+	struct capn msg;
+	EXPECT_EQ(0, capn_init_mem(&msg, frame.data(), frame.size(), 0));
+	Message_ptr mp;
+	mp.p = capn_getp(capn_root(&msg), 0, 1);
+	struct Message m;
+	read_Message(&m, mp);
+	EXPECT_EQ(Message__return, m.which);
+	struct Return r;
+	read_Return(&r, m._return);
+
+	ReturnInfo out;
+	out.answer_id = r.answerId;
+	out.which = (int)r.which;
+	out.value = 0;
+	if (r.which == Return_results) {
+		struct Payload pl;
+		read_Payload(&pl, r.results);
+		capn_ptr content = pl.content;
+		capn_resolve(&content);
+		if (content.type == CAPN_STRUCT)
+			out.value = capn_read32(content, 0);
+	}
+	capn_free(&msg);
+	return out;
+}
+
 /* Bootstrap once so the vat holds a live export. */
 uint32_t bootstrap_export(struct capn_rpc_conn *c, Outbox *out)
 {
@@ -277,6 +391,114 @@ TEST_F(RpcJoin, ProvideDrawsUnimplemented)
 	read_Message(&rm, rmp);
 	EXPECT_EQ(Message_unimplemented, rm.which);
 	capn_free(&reply);
+}
+
+
+TEST_F(RpcJoin, PipelinedCallReachesTheCapabilityInsideAnAnswer)
+{
+	/* out was cleared after bootstrap; the answer to question 1 is still
+	 * retained inside the vat. */
+	send_pipelined_call(&conn, 2, 1, std::vector<uint16_t>());
+	ASSERT_EQ(1u, out.frames.size());
+	ReturnInfo r = read_return(out.frames[0]);
+	EXPECT_EQ(2u, r.answer_id);
+	EXPECT_EQ((int)Return_results, r.which);
+	EXPECT_EQ(1u, r.value);
+	EXPECT_EQ(1, calls);
+}
+
+TEST_F(RpcJoin, FinishDropsTheAnswerSoLaterPipeliningFails)
+{
+	send_finish(&conn, 1);
+	send_pipelined_call(&conn, 2, 1, std::vector<uint16_t>());
+	ASSERT_EQ(1u, out.frames.size());
+	ReturnInfo r = read_return(out.frames[0]);
+	EXPECT_EQ(2u, r.answer_id);
+	EXPECT_EQ((int)Return_exception, r.which);
+}
+
+TEST_F(RpcJoin, TransformWalkingPastTheCapabilityDoesNotResolve)
+{
+	/* The bootstrap answer's content is the capability itself, so asking
+	 * for its pointer field 0 walks off the end of it. */
+	send_pipelined_call(&conn, 2, 1, std::vector<uint16_t>(1, 0));
+	ASSERT_EQ(1u, out.frames.size());
+	ReturnInfo r = read_return(out.frames[0]);
+	EXPECT_EQ((int)Return_exception, r.which);
+}
+
+TEST_F(RpcJoin, SenderLoopbackIsEchoedAsReceiverLoopback)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+	struct MessageTarget t;
+	memset(&t, 0, sizeof t);
+	t.which = MessageTarget_importedCap;
+	t.importedCap = 0;
+	MessageTarget_ptr tp = new_MessageTarget(cs);
+	write_MessageTarget(&t, tp);
+	struct Disembargo d;
+	memset(&d, 0, sizeof d);
+	d.target = tp;
+	d.context_which = Disembargo_context_senderLoopback;
+	d.context.senderLoopback = 12345;
+	Disembargo_ptr dp = new_Disembargo(cs);
+	write_Disembargo(&d, dp);
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_disembargo;
+	m.disembargo = dp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	uint8_t buf[4096];
+	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
+	capn_free(&msg);
+	ASSERT_GT(sz, 0);
+	ASSERT_EQ(0, capn_rpc_handle(&conn, buf, static_cast<size_t>(sz)));
+
+	ASSERT_EQ(1u, out.frames.size());
+	struct capn reply;
+	ASSERT_EQ(0, capn_init_mem(&reply, out.frames[0].data(),
+	                           out.frames[0].size(), 0));
+	Message_ptr rmp;
+	rmp.p = capn_getp(capn_root(&reply), 0, 1);
+	struct Message rm;
+	read_Message(&rm, rmp);
+	ASSERT_EQ(Message_disembargo, rm.which);
+	struct Disembargo rd;
+	read_Disembargo(&rd, rm.disembargo);
+	EXPECT_EQ(Disembargo_context_receiverLoopback, rd.context_which);
+	EXPECT_EQ(12345u, rd.context.receiverLoopback);
+	capn_free(&reply);
+}
+
+TEST_F(RpcJoin, ReceiverLoopbackIsAbsorbed)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+	struct Disembargo d;
+	memset(&d, 0, sizeof d);
+	d.context_which = Disembargo_context_receiverLoopback;
+	d.context.receiverLoopback = 999;
+	Disembargo_ptr dp = new_Disembargo(cs);
+	write_Disembargo(&d, dp);
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_disembargo;
+	m.disembargo = dp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	uint8_t buf[4096];
+	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
+	capn_free(&msg);
+	ASSERT_GT(sz, 0);
+	ASSERT_EQ(0, capn_rpc_handle(&conn, buf, static_cast<size_t>(sz)));
+	/* Echoing it would bounce forever between the two vats. */
+	EXPECT_EQ(0u, out.frames.size());
 }
 
 } // namespace

@@ -7,6 +7,10 @@
 #include "rpc.capnp.h"
 #include "rpc-twoparty.capnp.h"
 
+/* Defined below, beside the rest of the answer table. */
+static struct capn_rpc_answer *answer_find(struct capn_rpc_conn *c,
+                                           uint32_t qid);
+
 void capn_rpc_init(struct capn_rpc_conn *c, capn_rpc_send_fn send,
                    void *send_ctx)
 {
@@ -49,12 +53,17 @@ int capn_rpc_export(struct capn_rpc_conn *c, void *server,
 /* Resolve a MessageTarget to a local export index, or -1 when it names
  * nothing this vat hosts. Shared by Call and Join, which address
  * capabilities the same way. */
+static int resolve_promised_answer(struct capn_rpc_conn *c,
+                                   PromisedAnswer_ptr pap);
+
 static int resolve_target(struct capn_rpc_conn *c, MessageTarget_ptr tp)
 {
 	struct MessageTarget t;
 	if (tp.p.type == CAPN_NULL)
 		return -1;
 	read_MessageTarget(&t, tp);
+	if (t.which == MessageTarget_promisedAnswer)
+		return resolve_promised_answer(c, t.promisedAnswer);
 	if (t.which != MessageTarget_importedCap)
 		return -1;
 	if (t.importedCap >= CAPN_RPC_MAX_EXPORTS)
@@ -62,13 +71,119 @@ static int resolve_target(struct capn_rpc_conn *c, MessageTarget_ptr tp)
 	return c->exports[t.importedCap].used ? (int)t.importedCap : -1;
 }
 
+/* Promise pipelining: the caller addressed a capability inside an answer,
+ * identified by walking the transform ops into that answer's results and
+ * reading the capTable entry the resulting pointer names. */
+static int resolve_promised_answer(struct capn_rpc_conn *c,
+                                   PromisedAnswer_ptr pap)
+{
+	struct capn_rpc_answer *a;
+	struct capn stored;
+	struct PromisedAnswer pa;
+	struct Message m;
+	struct Return r;
+	struct Payload pl;
+	struct CapDescriptor cd;
+	Message_ptr mp;
+	capn_ptr cursor;
+	int i, n, eid = -1;
+
+	if (pap.p.type == CAPN_NULL)
+		return -1;
+	read_PromisedAnswer(&pa, pap);
+	a = answer_find(c, pa.questionId);
+	if (a == NULL)
+		return -1;
+	if (capn_init_mem(&stored, a->frame, a->len, 0) != 0)
+		return -1;
+
+	mp.p = capn_getp(capn_root(&stored), 0, 1);
+	read_Message(&m, mp);
+	if (m.which != Message__return)
+		goto out;
+	read_Return(&r, m._return);
+	if (r.which != Return_results)
+		goto out;
+	read_Payload(&pl, r.results);
+
+	cursor = pl.content;
+	n = capn_len(pa.transform);
+	for (i = 0; i < n; i++) {
+		struct PromisedAnswer_Op op;
+		get_PromisedAnswer_Op(&op, pa.transform, i);
+		if (op.which != PromisedAnswer_Op_getPointerField)
+			continue;
+		/* The peer chooses the transform, so a step into something with
+		 * no pointer section is an unresolvable target, not a fault. */
+		capn_resolve(&cursor);
+		if (cursor.type != CAPN_STRUCT)
+			goto out;
+		cursor = capn_getp(cursor, op.getPointerField, 0);
+	}
+
+	capn_resolve(&cursor);
+	if (cursor.type != CAPN_INTERFACE)
+		goto out;
+	/* The pointer holds a capTable index; the descriptor beside it says
+	 * which export the caller is naming. */
+	if (cursor.len < 0 || cursor.len >= capn_len(pl.capTable))
+		goto out;
+	get_CapDescriptor(&cd, pl.capTable, cursor.len);
+	if (cd.which != CapDescriptor_senderHosted)
+		goto out;
+	if (cd.senderHosted < CAPN_RPC_MAX_EXPORTS &&
+	    c->exports[cd.senderHosted].used)
+		eid = (int)cd.senderHosted;
+
+out:
+	capn_free(&stored);
+	return eid;
+}
+
 static int send_message(struct capn_rpc_conn *c, struct capn *msg)
 {
-	uint8_t buf[8192];
+	uint8_t buf[CAPN_RPC_MAX_ANSWER_BYTES];
 	ssize_t sz = capn_write_mem(msg, buf, sizeof buf, 0);
 	if (sz < 0)
 		return -1;
 	return c->send(c->send_ctx, buf, (size_t)sz);
+}
+
+/* Send a Return and keep it until `Finish`, so a call pipelined against
+ * this answer can still find the capability it names. */
+static int send_answer(struct capn_rpc_conn *c, uint32_t qid, struct capn *msg)
+{
+	uint8_t buf[CAPN_RPC_MAX_ANSWER_BYTES];
+	ssize_t sz = capn_write_mem(msg, buf, sizeof buf, 0);
+	int i;
+	if (sz < 0)
+		return -1;
+	for (i = 0; i < CAPN_RPC_MAX_ANSWERS; i++) {
+		if (!c->answers[i].used) {
+			c->answers[i].used = 1;
+			c->answers[i].question_id = qid;
+			memcpy(c->answers[i].frame, buf, (size_t)sz);
+			c->answers[i].len = (size_t)sz;
+			break;
+		}
+	}
+	return c->send(c->send_ctx, buf, (size_t)sz);
+}
+
+static struct capn_rpc_answer *answer_find(struct capn_rpc_conn *c, uint32_t qid)
+{
+	int i;
+	for (i = 0; i < CAPN_RPC_MAX_ANSWERS; i++)
+		if (c->answers[i].used && c->answers[i].question_id == qid)
+			return &c->answers[i];
+	return NULL;
+}
+
+static void answer_drop(struct capn_rpc_conn *c, uint32_t qid)
+{
+	struct capn_rpc_answer *a = answer_find(c, qid);
+	if (a)
+		a->used = 0;
 }
 
 /* Write a one-entry capTable naming a senderHosted export, and point
@@ -175,7 +290,7 @@ static int handle_bootstrap(struct capn_rpc_conn *c, Bootstrap_ptr bp)
 	write_Message(&m, mp);
 	capn_setp(capn_root(&msg), 0, mp.p);
 
-	rc = send_message(c, &msg);
+	rc = send_answer(c, b.questionId, &msg);
 	capn_free(&msg);
 	return rc;
 }
@@ -235,7 +350,7 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp)
 	write_Message(&m, mp);
 	capn_setp(capn_root(&msg), 0, mp.p);
 
-	rc = send_message(c, &msg);
+	rc = send_answer(c, call.questionId, &msg);
 	capn_free(&msg);
 	return rc;
 }
@@ -389,6 +504,55 @@ static int handle_join(struct capn_rpc_conn *c, Join_ptr jp)
 	return 0;
 }
 
+/* A Disembargo with `senderLoopback` is echoed back as `receiverLoopback`
+ * carrying the same id. That reflection is what lets the sender know
+ * every call it had already sent through a promise has arrived, so it can
+ * stop routing new ones the long way round. */
+static int handle_disembargo(struct capn_rpc_conn *c, Disembargo_ptr dp)
+{
+	struct capn msg;
+	struct Disembargo in, out;
+	struct Message m;
+	Message_ptr mp;
+	Disembargo_ptr op;
+	struct capn_segment *cs;
+	int rc;
+
+	read_Disembargo(&in, dp);
+	/* receiverLoopback is the reply to an embargo we raised, and this vat
+	 * raises none; accept it without echoing to avoid a loop. */
+	if (in.context_which != Disembargo_context_senderLoopback)
+		return 0;
+
+	capn_init_malloc(&msg);
+	cs = capn_root(&msg).seg;
+	memset(&m, 0, sizeof m);
+	memset(&out, 0, sizeof out);
+
+	op = new_Disembargo(cs);
+	/* Echo the target back untouched: the sender matches on it. */
+	if (in.target.p.type != CAPN_NULL) {
+		MessageTarget_ptr tp = new_MessageTarget(cs);
+		struct MessageTarget t;
+		read_MessageTarget(&t, in.target);
+		write_MessageTarget(&t, tp);
+		out.target = tp;
+	}
+	out.context_which = Disembargo_context_receiverLoopback;
+	out.context.receiverLoopback = in.context.senderLoopback;
+	write_Disembargo(&out, op);
+
+	mp = new_Message(cs);
+	m.which = Message_disembargo;
+	m.disembargo = op;
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+
+	rc = send_message(c, &msg);
+	capn_free(&msg);
+	return rc;
+}
+
 /* Echo a message we did not understand, per the spec. */
 static int send_unimplemented(struct capn_rpc_conn *c, Message_ptr orig)
 {
@@ -440,15 +604,22 @@ int capn_rpc_handle(struct capn_rpc_conn *c, const uint8_t *data, size_t len)
 	case Message_call:
 		rc = handle_call(c, m.call);
 		break;
-	case Message_finish:
-		/* Nothing is retained per answer yet, so a Finish only needs to
-		 * be accepted rather than acted on. */
+	case Message_finish: {
+		/* The caller is done with the answer, so the results it might
+		 * have pipelined against can go. */
+		struct Finish fin;
+		read_Finish(&fin, m.finish);
+		answer_drop(c, fin.questionId);
 		break;
+	}
 	case Message_release:
 		handle_release(c, m.release);
 		break;
 	case Message_join:
 		rc = handle_join(c, m.join);
+		break;
+	case Message_disembargo:
+		rc = handle_disembargo(c, m.disembargo);
 		break;
 	default:
 		/* Provide and Accept name a third vat, which a two-party
