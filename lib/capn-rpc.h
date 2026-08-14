@@ -16,6 +16,8 @@
 #define CAPN_RPC_H
 
 #include "capnp_c.h"
+/* CapDescriptor_ptr, for the level 3 descriptor writer below. */
+#include "rpc.capnp.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,6 +28,9 @@ extern "C" {
 #define CAPN_RPC_MAX_ANSWER_BYTES 8192
 #define CAPN_RPC_MAX_QUESTIONS 64
 #define CAPN_RPC_MAX_PROVISIONS 32
+#define CAPN_RPC_MAX_INTRODUCTIONS 8
+/* Long enough for a hostname; a longer one is refused, not truncated. */
+#define CAPN_RPC_MAX_HOST 64
 #define CAPN_RPC_MAX_JOINS 8
 /* Outstanding unacknowledged calls a stream may hold. */
 #define CAPN_RPC_STREAM_MAX_WINDOW 64
@@ -88,6 +93,24 @@ struct capn_rpc_provision {
 	int export_id;
 };
 
+/* An introduction we have been handed but not yet picked up.
+ *
+ * Level 3: a payload can name a capability hosted by a third vat, as a
+ * `thirdPartyHosted` CapDescriptor carrying where to go and a vine. The
+ * vine is an ordinary import through the introducer, so calls work
+ * before we ever reach the third party; that is the fallback the spec
+ * gives level 1 and 2 receivers, and it is why the vine must not be
+ * released until the pickup succeeds. Connecting is the network layer's
+ * job, so the vat records the introduction and hands it over.
+ */
+struct capn_rpc_introduction {
+	int used;
+	uint64_t nonce;
+	uint32_t vine_id;
+	uint16_t port;
+	char host[CAPN_RPC_MAX_HOST];
+};
+
 /* Client-side flow control for `-> stream` methods: a bounded window of
  * unacknowledged stream calls. The wire carries ordinary Call/Return
  * pairs; the window is policy, as in capnp-C++. After any stream call
@@ -125,6 +148,7 @@ struct capn_rpc_conn {
 	struct capn_rpc_answer answers[CAPN_RPC_MAX_ANSWERS];
 	struct capn_rpc_question questions[CAPN_RPC_MAX_QUESTIONS];
 	struct capn_rpc_provision provisions[CAPN_RPC_MAX_PROVISIONS];
+	struct capn_rpc_introduction introductions[CAPN_RPC_MAX_INTRODUCTIONS];
 	uint32_t next_question_id;
 	struct capn_rpc_join joins[CAPN_RPC_MAX_JOINS];
 	/* Capability returned for `Bootstrap`; NULL answers with an exception. */
@@ -191,6 +215,25 @@ int capn_rpc_answer_content(struct capn_rpc_conn *c, uint32_t question_id,
 
 /* Nonces of capabilities held for a third vat, for tests and shutdown
  * accounting. Writes up to `cap` entries and returns how many exist. */
+/* Introductions handed to us and not yet picked up. Copies up to `max`
+ * into `out` (may be NULL) and returns how many are held. */
+int capn_rpc_pending_introductions(struct capn_rpc_conn *c,
+                                   struct capn_rpc_introduction *out, int max);
+
+/* Finish the pickup for `nonce`: releases the vine, which the sender
+ * treats as the signal to close its Provide. Call this only once the
+ * third party has actually handed the capability over; releasing early
+ * drops the fallback path with nothing in its place. Returns 0 on
+ * success, -1 if no such introduction is held. */
+int capn_rpc_introduction_done(struct capn_rpc_conn *c, uint64_t nonce);
+
+/* Write a `thirdPartyHosted` descriptor into `cd`: where the recipient
+ * should go, which pending Provide to claim once there, and the vine we
+ * export so calls work in the meantime. */
+int capn_rpc_write_third_party_cap(struct capn_rpc_conn *c, CapDescriptor_ptr cd,
+                                   const char *host, uint16_t port,
+                                   uint64_t nonce, uint32_t vine_id);
+
 int capn_rpc_pending_provisions(struct capn_rpc_conn *c, uint64_t *out,
                                 int cap);
 

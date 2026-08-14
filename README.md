@@ -238,7 +238,7 @@ make fuzz-fp     # FILE* reader
 |-------|------|------|
 | 1 | Calls, cap tables, promise pipelining, embargoes | yes |
 | 2 | Persistence hooks (application-defined SturdyRefs) | yes |
-| 3 | Three-party handoff (`Provide` / `Accept`) | yes |
+| 3 | Three-party handoff (`Provide` / `Accept`, vines) | yes |
 | 4 | `Join`, reference equality | yes |
 
 `rpc.capnp` leaves `ProvisionId`, `RecipientId` and `ThirdPartyCapId` as
@@ -253,6 +253,17 @@ alongside -- both declare the same C names.
 Upstream C++ has no `Join` case at all (it falls to `default:` and
 replies `unimplemented`), so level 4 here is ahead of the reference
 rather than catching up to it.
+
+Both halves of the introduction are here. Hosting is `Provide` and
+`Accept`, above. Receiving is the `thirdPartyHosted` CapDescriptor: a
+payload can name a capability that lives in a third vat and hand over a
+vine, an ordinary import through the introducer, so calls work before
+the pickup ever happens. That is the fallback the spec gives receivers
+that cannot reach a third party, and it is why the vine must not be
+released until the pickup succeeds. Dialling the third vat belongs to
+the network layer, so `capn_rpc_pending_introductions` hands the
+arrangement over and `capn_rpc_introduction_done` releases the vine once
+it is finished.
 
 The vat runs against a live capnp-C++ `EzRpcServer` in
 `interop/run_rpc_interop.sh`. The level 3 tests additionally decode

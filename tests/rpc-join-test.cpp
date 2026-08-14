@@ -385,7 +385,9 @@ static void send_provide(struct capn_rpc_conn *c, uint32_t qid,
 	memset(&vat, 0, sizeof vat);
 	vat.host.str = "127.0.0.1";
 	vat.host.len = 9;
-	vat.host.seg = cs;
+	/* NULL segment: capn_set_text copies into the message. Naming a
+	 * segment would claim the literal already lives there. */
+	vat.host.seg = NULL;
 	vat.port = 4000;
 	VatId_ptr vp = new_VatId(cs);
 	write_VatId(&vat, vp);
@@ -535,6 +537,194 @@ TEST_F(RpcJoin, AcceptWithUnknownNonceIsRefused)
 	send_accept(&conn, 21, 0xc0ffeeULL);
 	ASSERT_EQ(1u, out.frames.size());
 	EXPECT_FALSE(read_l3(out.frames[0]).is_exception);
+}
+
+/* Alice -> us: a Call whose params name a capability hosted by a third
+ * vat, with a vine we can use in the meantime. This is the receiving
+ * half of the introduction; the Provide/Accept tests above are the
+ * hosting half. */
+static void send_call_with_third_party_cap(struct capn_rpc_conn *c, uint32_t qid,
+                                           uint32_t target_export,
+                                           const char *host, uint16_t port,
+                                           uint64_t nonce, uint32_t vine_id)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+
+	CapDescriptor_ptr cdp = new_CapDescriptor(cs);
+	ASSERT_EQ(0, capn_rpc_write_third_party_cap(c, cdp, host, port, nonce, vine_id));
+
+	CapDescriptor_list table = new_CapDescriptor_list(cs, 1);
+	capn_setp(table.p, 0, cdp.p);
+
+	struct Payload params;
+	memset(&params, 0, sizeof params);
+	params.content = capn_new_struct(cs, 8, 0);
+	params.capTable = table;
+	Payload_ptr plp = new_Payload(cs);
+	write_Payload(&params, plp);
+
+	struct MessageTarget tgt;
+	memset(&tgt, 0, sizeof tgt);
+	tgt.which = MessageTarget_importedCap;
+	tgt.importedCap = target_export;
+	MessageTarget_ptr tp = new_MessageTarget(cs);
+	write_MessageTarget(&tgt, tp);
+
+	struct Call call;
+	memset(&call, 0, sizeof call);
+	call.questionId = qid;
+	call.target = tp;
+	call.interfaceId = 0x1234;
+	call.methodId = 0;
+	call.params = plp;
+	Call_ptr cp = new_Call(cs);
+	write_Call(&call, cp);
+
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_call;
+	m.call = cp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+
+	uint8_t buf[4096];
+	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
+	capn_free(&msg);
+	ASSERT_GT(sz, 0);
+	capn_rpc_handle(c, buf, static_cast<size_t>(sz));
+}
+
+/* Whether a frame is a Release naming `id`. */
+static bool is_release_of(const std::vector<uint8_t> &frame, uint32_t id)
+{
+	struct capn msg;
+	if (capn_init_mem(&msg, frame.data(), frame.size(), 0) != 0)
+		return false;
+	Message_ptr mp;
+	mp.p = capn_getp(capn_root(&msg), 0, 1);
+	struct Message m;
+	read_Message(&m, mp);
+	bool match = false;
+	if (m.which == Message_release) {
+		struct Release rel;
+		read_Release(&rel, m.release);
+		match = rel.id == id && rel.referenceCount == 1;
+	}
+	capn_free(&msg);
+	return match;
+}
+
+/* Level 3, receiving half: a payload that names a third party's
+ * capability is recorded as an introduction, and the vine survives until
+ * the pickup is finished. */
+TEST_F(RpcJoin, ThirdPartyCapDescriptorIsRecordedAsAnIntroduction)
+{
+	EXPECT_EQ(0, capn_rpc_pending_introductions(&conn, NULL, 0));
+
+	send_call_with_third_party_cap(&conn, 50, live, "10.0.0.7", 5000,
+	                               0xabcdefULL, 77);
+
+	struct capn_rpc_introduction got[4];
+	ASSERT_EQ(1, capn_rpc_pending_introductions(&conn, got, 4));
+	EXPECT_EQ(0xabcdefULL, got[0].nonce);
+	EXPECT_EQ(77u, got[0].vine_id);
+	EXPECT_EQ(5000, got[0].port);
+	EXPECT_STREQ("10.0.0.7", got[0].host);
+
+	/* Nothing is released while the pickup is outstanding: the vine is
+	 * the only way to reach the capability until then. */
+	for (const auto &f : out.frames)
+		EXPECT_FALSE(is_release_of(f, 77));
+	out.frames.clear();
+
+	ASSERT_EQ(0, capn_rpc_introduction_done(&conn, 0xabcdefULL));
+	bool released = false;
+	for (const auto &f : out.frames)
+		released = released || is_release_of(f, 77);
+	EXPECT_TRUE(released);
+	EXPECT_EQ(0, capn_rpc_pending_introductions(&conn, NULL, 0));
+
+	/* Finishing an introduction nobody handed us is refused, even while
+	 * another is outstanding: the nonce picks the arrangement, not the
+	 * fact that there is one. */
+	send_call_with_third_party_cap(&conn, 52, live, "10.0.0.8", 5001,
+	                               0x99ULL, 79);
+	ASSERT_EQ(1, capn_rpc_pending_introductions(&conn, NULL, 0));
+	EXPECT_EQ(-1, capn_rpc_introduction_done(&conn, 0xabcdefULL));
+	EXPECT_EQ(1, capn_rpc_pending_introductions(&conn, NULL, 0));
+	EXPECT_EQ(0, capn_rpc_introduction_done(&conn, 0x99ULL));
+	EXPECT_EQ(0, capn_rpc_pending_introductions(&conn, NULL, 0));
+}
+
+/* The introducer can also hand us the descriptor in an answer, not only
+ * in a call's params. */
+static void send_return_with_third_party_cap(struct capn_rpc_conn *c, uint32_t qid,
+                                             const char *host, uint16_t port,
+                                             uint64_t nonce, uint32_t vine_id)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+
+	CapDescriptor_ptr cdp = new_CapDescriptor(cs);
+	ASSERT_EQ(0, capn_rpc_write_third_party_cap(c, cdp, host, port, nonce, vine_id));
+	CapDescriptor_list table = new_CapDescriptor_list(cs, 1);
+	capn_setp(table.p, 0, cdp.p);
+
+	struct Payload results;
+	memset(&results, 0, sizeof results);
+	results.content = capn_new_struct(cs, 8, 0);
+	results.capTable = table;
+	Payload_ptr plp = new_Payload(cs);
+	write_Payload(&results, plp);
+
+	struct Return r;
+	memset(&r, 0, sizeof r);
+	r.answerId = qid;
+	r.which = Return_results;
+	r.results = plp;
+	Return_ptr rp = new_Return(cs);
+	write_Return(&r, rp);
+
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message__return;
+	m._return = rp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+
+	uint8_t buf[4096];
+	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
+	capn_free(&msg);
+	ASSERT_GT(sz, 0);
+	capn_rpc_handle(c, buf, static_cast<size_t>(sz));
+}
+
+TEST_F(RpcJoin, ThirdPartyCapDescriptorInAnAnswerIsRecorded)
+{
+	uint32_t qid = capn_rpc_send_bootstrap(&conn);
+	out.frames.clear();
+	send_return_with_third_party_cap(&conn, qid, "10.0.0.9", 5002, 0x77ULL, 80);
+
+	struct capn_rpc_introduction got[4];
+	ASSERT_EQ(1, capn_rpc_pending_introductions(&conn, got, 4));
+	EXPECT_EQ(0x77ULL, got[0].nonce);
+	EXPECT_EQ(80u, got[0].vine_id);
+	EXPECT_STREQ("10.0.0.9", got[0].host);
+}
+
+/* A descriptor naming a host too long to store is refused rather than
+ * truncated: a truncated address names a different vat. */
+TEST_F(RpcJoin, OverlongHostIsRefusedNotTruncated)
+{
+	std::string host(CAPN_RPC_MAX_HOST + 8, 'h');
+	send_call_with_third_party_cap(&conn, 51, live, host.c_str(), 5000,
+	                               0xfeedULL, 78);
+	EXPECT_EQ(0, capn_rpc_pending_introductions(&conn, NULL, 0));
 }
 
 /* Level 3 driven by frames the reference `capnp` CLI encoded.

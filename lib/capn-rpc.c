@@ -298,6 +298,149 @@ static int handle_bootstrap(struct capn_rpc_conn *c, Bootstrap_ptr bp)
 	return rc;
 }
 
+/* --- level 3: introductions handed to us ---------------------------- */
+
+/* Record every `thirdPartyHosted` entry in an incoming cap table.
+ *
+ * The descriptor says where the capability really lives and hands us a
+ * vine, an ordinary import through the introducer. Calls on the vine
+ * work right away, which is the fallback the spec gives receivers that
+ * cannot reach a third party; the vine must therefore outlive the
+ * pickup. Dialling the third vat belongs to the network layer, so the
+ * arrangement is recorded and handed over rather than acted on here.
+ */
+static void note_introductions(struct capn_rpc_conn *c, struct Payload *pl)
+{
+	int n, i, j;
+
+	if (pl->capTable.p.type == CAPN_NULL)
+		return;
+	n = capn_ptr_len(pl->capTable.p);
+	for (i = 0; i < n; i++) {
+		struct CapDescriptor cd;
+		struct ThirdPartyCapDescriptor tp;
+		struct ThirdPartyCapId id;
+		struct VatId vat;
+		CapDescriptor_ptr cdp;
+
+		cdp.p = capn_getp(pl->capTable.p, i, 0);
+		if (cdp.p.type == CAPN_NULL)
+			continue;
+		read_CapDescriptor(&cd, cdp);
+		if (cd.which != CapDescriptor_thirdPartyHosted)
+			continue;
+		if (cd.thirdPartyHosted.p.type == CAPN_NULL)
+			continue;
+		read_ThirdPartyCapDescriptor(&tp, cd.thirdPartyHosted);
+		if (tp.id.type == CAPN_NULL)
+			continue;
+		{
+			ThirdPartyCapId_ptr idp;
+			idp.p = tp.id;
+			read_ThirdPartyCapId(&id, idp);
+		}
+		if (id.vat.p.type == CAPN_NULL)
+			continue;
+		read_VatId(&vat, id.vat);
+		/* A host that will not fit is refused rather than truncated:
+		 * a truncated address names a different vat. */
+		if (vat.host.len >= CAPN_RPC_MAX_HOST)
+			continue;
+
+		for (j = 0; j < CAPN_RPC_MAX_INTRODUCTIONS; j++) {
+			if (c->introductions[j].used)
+				continue;
+			c->introductions[j].used = 1;
+			c->introductions[j].nonce = id.nonce;
+			c->introductions[j].vine_id = tp.vineId;
+			c->introductions[j].port = vat.port;
+			memcpy(c->introductions[j].host, vat.host.str,
+			       (size_t)vat.host.len);
+			c->introductions[j].host[vat.host.len] = '\0';
+			break;
+		}
+	}
+}
+
+int capn_rpc_pending_introductions(struct capn_rpc_conn *c,
+                                   struct capn_rpc_introduction *out, int max)
+{
+	int i, n = 0;
+
+	for (i = 0; i < CAPN_RPC_MAX_INTRODUCTIONS; i++) {
+		if (!c->introductions[i].used)
+			continue;
+		if (out != NULL && n < max)
+			out[n] = c->introductions[i];
+		n++;
+	}
+	return n;
+}
+
+int capn_rpc_introduction_done(struct capn_rpc_conn *c, uint64_t nonce)
+{
+	int i;
+
+	for (i = 0; i < CAPN_RPC_MAX_INTRODUCTIONS; i++) {
+		if (!c->introductions[i].used || c->introductions[i].nonce != nonce)
+			continue;
+		/* Releasing the vine is what tells the introducer it may close
+		 * the Provide it opened on our behalf. */
+		capn_rpc_send_release(c, c->introductions[i].vine_id, 1);
+		memset(&c->introductions[i], 0, sizeof c->introductions[i]);
+		return 0;
+	}
+	return -1;
+}
+
+int capn_rpc_write_third_party_cap(struct capn_rpc_conn *c, CapDescriptor_ptr cd,
+                                   const char *host, uint16_t port,
+                                   uint64_t nonce, uint32_t vine_id)
+{
+	struct CapDescriptor desc;
+	struct ThirdPartyCapDescriptor tp;
+	struct ThirdPartyCapId id;
+	struct VatId vat;
+	ThirdPartyCapDescriptor_ptr tpp;
+	ThirdPartyCapId_ptr idp;
+	VatId_ptr vp;
+	struct capn_segment *cs;
+
+	(void)c;
+	if (cd.p.type == CAPN_NULL || host == NULL)
+		return -1;
+	cs = cd.p.seg;
+
+	vp = new_VatId(cs);
+	memset(&vat, 0, sizeof vat);
+	vat.host.str = host;
+	vat.host.len = (int)strlen(host);
+	/* seg stays NULL: a non-NULL segment tells capn_set_text the bytes
+	 * already live in the message, and `host` is the caller's. */
+	vat.host.seg = NULL;
+	vat.port = port;
+	write_VatId(&vat, vp);
+
+	idp = new_ThirdPartyCapId(cs);
+	memset(&id, 0, sizeof id);
+	id.vat = vp;
+	id.nonce = nonce;
+	write_ThirdPartyCapId(&id, idp);
+
+	tpp = new_ThirdPartyCapDescriptor(cs);
+	memset(&tp, 0, sizeof tp);
+	tp.id = idp.p;
+	tp.vineId = vine_id;
+	write_ThirdPartyCapDescriptor(&tp, tpp);
+
+	memset(&desc, 0, sizeof desc);
+	desc.which = CapDescriptor_thirdPartyHosted;
+	desc.thirdPartyHosted = tpp;
+	desc.attachedFd = 0xff;
+	write_CapDescriptor(&desc, cd);
+	return 0;
+}
+
 static int handle_call(struct capn_rpc_conn *c, Call_ptr cp)
 {
 	struct capn msg;
@@ -318,8 +461,10 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp)
 		return send_return_exception(c, call.questionId, "no such export");
 
 	memset(&params, 0, sizeof params);
-	if (call.params.p.type != CAPN_NULL)
+	if (call.params.p.type != CAPN_NULL) {
 		read_Payload(&params, call.params);
+		note_introductions(c, &params);
+	}
 
 	capn_init_malloc(&msg);
 	cs = capn_root(&msg).seg;
@@ -825,6 +970,11 @@ static void handle_return(struct capn_rpc_conn *c, Return_ptr rp,
 		return;
 	q->answered = 1;
 	q->failed = (r.which != Return_results);
+	if (r.which == Return_results && r.results.p.type != CAPN_NULL) {
+		struct Payload pl;
+		read_Payload(&pl, r.results);
+		note_introductions(c, &pl);
+	}
 	memcpy(q->reply, frame, len);
 	q->reply_len = len;
 }
