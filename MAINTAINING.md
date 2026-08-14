@@ -16,9 +16,12 @@
 2. ASan job green in CI
 3. Move `[Unreleased]` entries in `CHANGELOG.md` into a dated
    `[X.Y.Z]` section (Keep a Changelog). Update the compare links.
-4. Bump `project(... version: ...)` in `meson.build`, `VERSION`, and
+4. Bump `project(... version: ...)` in `meson.build`, `VERSION.txt`, and
    `AC_INIT` in `configure.ac` to the same `X.Y.Z`. CMake reads
-   `VERSION`.
+   `VERSION.txt`. The file is not named `VERSION` because the source root
+   lands on the include path of several test targets, and a
+   case-insensitive filesystem then resolves libc++'s `#include <version>`
+   to it.
 5. Tag `vX.Y.Z` (annotated, signed) and push the tag
 6. `gh release create vX.Y.Z --notes-file` from that changelog section
 7. Bump vendored snapshot in GrokOS `grok-policyd/third_party/c-capnproto` if needed
