@@ -256,9 +256,12 @@ if get_option('enable_tests') and not meson.is_subproject()
         override_options: ['cpp_std=c++17'],
       )
 
+      # The C bindings are checked in beside the other generated schema
+      # code, as elsewhere in this repo; regenerate with capnpc-c after
+      # changing compiler/adder.capnp.
       rpc_client_c = executable(
         'rpc_client_c',
-        'interop' / 'rpc_client.c',
+        ['interop' / 'rpc_client.c', 'compiler' / 'adder.capnp.c'],
         include_directories: include_directories(['lib', 'compiler']),
         dependencies: [libcapnp_dep],
         # usleep is POSIX, and -std=c99 hides it without this.

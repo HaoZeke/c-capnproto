@@ -10,6 +10,7 @@
 #include "schema.capnp.h"
 #include "str.h"
 #include "codecgen.h"
+#include <inttypes.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1596,6 +1597,59 @@ static void declare_interfaces(struct node *file_node) {
 	}
 }
 
+/* Emit the interface id and one descriptor per method.
+ *
+ * A caller needs three things the schema already knows: which interface,
+ * which ordinal, and how big the parameter struct is. Spelling those at
+ * the call site is how an argument goes missing -- a parameter struct one
+ * word too small drops any field past the end without complaint -- so
+ * they are emitted here instead.
+ */
+static void define_interface_methods(struct node *n)
+{
+	int i, count;
+
+	str_addf(&HDR, "\n/* Interface %s: id and method descriptors. */\n",
+		 n->name.str);
+	str_addf(&HDR, "#define %s_INTERFACE_ID 0x%016" PRIx64 "ULL\n",
+		 n->name.str, n->n.id);
+
+	count = capn_len(n->n._interface.methods);
+	if (count == 0)
+		return;
+
+	str_addf(&HDR, "struct %s_method {\n", n->name.str);
+	str_addf(&HDR, "\tuint16_t ordinal;\n");
+	str_addf(&HDR, "\tint params_datasz;   /* bytes */\n");
+	str_addf(&HDR, "\tint params_ptrs;\n");
+	str_addf(&HDR, "\tint results_datasz;\n");
+	str_addf(&HDR, "\tint results_ptrs;\n");
+	str_addf(&HDR, "};\n");
+
+	for (i = 0; i < count; i++) {
+		struct Method m;
+		struct node *pn, *rn;
+		int pdw = 0, ppw = 0, rdw = 0, rpw = 0;
+
+		get_Method(&m, n->n._interface.methods, i);
+		pn = find_node_mayfail(m.paramStructType);
+		rn = find_node_mayfail(m.resultStructType);
+		if (pn && pn->n.which == Node__struct) {
+			pdw = pn->n._struct.dataWordCount * 8;
+			ppw = pn->n._struct.pointerCount;
+		}
+		if (rn && rn->n.which == Node__struct) {
+			rdw = rn->n._struct.dataWordCount * 8;
+			rpw = rn->n._struct.pointerCount;
+		}
+		str_addf(&HDR,
+			 "static const struct %s_method %s_%.*s_method = "
+			 "{%d, %d, %d, %d, %d};\n",
+			 n->name.str, n->name.str, m.name.len, m.name.str,
+			 i, pdw, ppw, rdw, rpw);
+	}
+}
+
 static void define_interface(struct node *n, const char *extattr, const char *extattr_space) {
 	/* Capability pointer: no struct body. List(Interface) is a pointer list. */
 	str_addf(&SRC, "\n%s%s%s_ptr new_%s(struct capn_segment *s) {\n",
@@ -1611,6 +1665,8 @@ static void define_interface(struct node *n, const char *extattr, const char *ex
 	str_addf(&SRC, "\tp.p = capn_new_ptr_list(s, len);\n");
 	str_addf(&SRC, "\treturn p;\n");
 	str_addf(&SRC, "}\n");
+
+	define_interface_methods(n);
 }
 
 static void declare_interface_news(struct node *file_node,

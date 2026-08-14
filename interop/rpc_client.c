@@ -15,12 +15,10 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "adder.capnp.h"
 #include "capn-rpc.h"
 #include "capnp_c.h"
 #include "rpc.capnp.h"
-
-/* Mirrors the id in compiler/adder.capnp. */
-#define ADDER_IFACE 0xea01e10cbc414411ULL
 
 static int g_fd = -1;
 
@@ -150,7 +148,14 @@ int main(int argc, char **argv)
 	 * two-party server hands out id 0 for it. */
 	ab[0] = 20;
 	ab[1] = 22;
-	qcall = capn_rpc_send_call(&conn, 0, ADDER_IFACE, 0, 16, 0, fill_add, ab);
+	/* The generated descriptor carries the interface id, the ordinal and
+	 * the parameter struct's shape, so none of those is written out
+	 * here. Getting the shape wrong drops arguments silently. */
+	qcall = capn_rpc_send_call(&conn, 0, Adder_INTERFACE_ID,
+	                           Adder_add_method.ordinal,
+	                           Adder_add_method.params_datasz,
+	                           Adder_add_method.params_ptrs,
+	                           fill_add, ab);
 	if (qcall == (uint32_t)-1) {
 		fprintf(stderr, "call not sent\n");
 		return 1;
