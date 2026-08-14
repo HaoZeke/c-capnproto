@@ -9,9 +9,15 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
+
+#ifndef CAPNP_SOURCE_ROOT
+#define CAPNP_SOURCE_ROOT ""
+#endif
 
 #include "capn-rpc.h"
 #include "capnp_c.h"
@@ -511,13 +517,81 @@ TEST_F(RpcJoin, ProvidedCapabilityIsClaimableExactlyOnce)
 	out.frames.clear();
 }
 
+/* Refused even while a different arrangement is standing: matching is on
+ * the nonce, not on there being something to hand over. */
 TEST_F(RpcJoin, AcceptWithUnknownNonceIsRefused)
 {
+	send_provide(&conn, 19, live, 0xc0ffeeULL);
+	out.frames.clear();
+
 	send_accept(&conn, 20, 0xdeadbeefULL);
 	ASSERT_EQ(1u, out.frames.size());
 	L3Reply r = read_l3(out.frames[0]);
 	EXPECT_EQ(20u, r.answer_id);
 	EXPECT_TRUE(r.is_exception);
+	EXPECT_EQ(1, capn_rpc_pending_provisions(&conn, NULL, 0));
+	out.frames.clear();
+
+	send_accept(&conn, 21, 0xc0ffeeULL);
+	ASSERT_EQ(1u, out.frames.size());
+	EXPECT_FALSE(read_l3(out.frames[0]).is_exception);
+}
+
+/* Level 3 driven by frames the reference `capnp` CLI encoded.
+ *
+ * Every other level 3 test builds its own Provide and Accept, so it
+ * shows the vat agrees with this library's builder and nothing more: a
+ * layout both sides share but the wire format does not would pass all of
+ * them. These bytes come from the reference implementation
+ * (scripts/gen-rpc-frames.sh): hold export 0 for whoever presents
+ * 0xfeedface (question 42), then claim it (question 43).
+ */
+static std::vector<uint8_t> golden_frame(const char *name)
+{
+	const char *env = getenv("CAPNP_SOURCE_ROOT");
+	std::string root = (env && env[0]) ? env : CAPNP_SOURCE_ROOT;
+	if (root.empty())
+		root = ".";
+	std::string path = root + "/tests/fixtures/" + name;
+	std::vector<uint8_t> bytes;
+	FILE *f = fopen(path.c_str(), "rb");
+	/* A checked-in golden that will not open is a broken tree, not a
+	 * reason to pass. */
+	EXPECT_NE(nullptr, f) << path;
+	if (!f)
+		return bytes;
+	uint8_t buf[4096];
+	size_t n;
+	while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
+		bytes.insert(bytes.end(), buf, buf + n);
+	fclose(f);
+	return bytes;
+}
+
+TEST_F(RpcJoin, ReferenceEncoderFramesDriveTheHandoff)
+{
+	ASSERT_EQ(0u, live);
+
+	std::vector<uint8_t> provide = golden_frame("rpc-provide.bin");
+	ASSERT_FALSE(provide.empty());
+	ASSERT_EQ(0, capn_rpc_handle(&conn, provide.data(), provide.size()));
+	ASSERT_EQ(1u, out.frames.size());
+	L3Reply p = read_l3(out.frames[0]);
+	EXPECT_EQ(42u, p.answer_id);
+	EXPECT_FALSE(p.is_exception);
+	/* The nonce the vat recorded is the one the CLI wrote. */
+	EXPECT_EQ(1, capn_rpc_pending_provisions(&conn, NULL, 0));
+	out.frames.clear();
+
+	std::vector<uint8_t> accept = golden_frame("rpc-accept.bin");
+	ASSERT_FALSE(accept.empty());
+	ASSERT_EQ(0, capn_rpc_handle(&conn, accept.data(), accept.size()));
+	ASSERT_EQ(1u, out.frames.size());
+	L3Reply a = read_l3(out.frames[0]);
+	EXPECT_EQ(43u, a.answer_id);
+	EXPECT_FALSE(a.is_exception);
+	EXPECT_TRUE(a.has_cap);
+	EXPECT_EQ(0, capn_rpc_pending_provisions(&conn, NULL, 0));
 }
 
 TEST_F(RpcJoin, ProvidingACapabilityWeDoNotHostIsRefused)
