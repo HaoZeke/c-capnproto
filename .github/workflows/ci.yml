@@ -146,3 +146,30 @@ jobs:
       # or a stale .pc reaches users. This builds a consumer four ways.
       - name: CMake, find_package, pkg-config and meson subproject
         run: bash scripts/packaging-smoke.sh
+
+  rpc-interop:
+    name: live capnp-C++ RPC peer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install meson ninja
+        run: pip install meson ninja
+      # libcapnp-rpc-dev brings the C++ RPC library the peer server links.
+      - name: Install capnproto and libcapnp-rpc
+        run: sudo apt-get update && sudo apt-get install -y capnproto libcapnp-dev
+      # Byte equality against our own encoders says nothing about whether
+      # the reference implementation will talk to us. This bootstraps a
+      # real EzRpcServer and calls it.
+      - name: Configure
+        run: meson setup build -Denable_tests=true
+      - name: Build
+        run: meson compile -C build
+      - name: The interop test ran rather than being skipped
+        run: |
+          meson test -C build rpc_interop_cpp --print-errorlogs
+          test -x build/rpc_peer_server

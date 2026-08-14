@@ -224,6 +224,63 @@ if get_option('enable_tests') and not meson.is_subproject()
     )
     test('rpc-client-test', rpc_client_test)
 
+    # --- live-peer RPC interop: this vat against capnp-C++ -----------
+    #
+    # Byte equality against our own encoders says nothing about whether
+    # the reference implementation will talk to us, so this bootstraps a
+    # real EzRpcServer and calls it.
+    cpp_ok = add_languages('cpp', required: false, native: false)
+    capnp_rpc_dep = dependency('capnp-rpc', required: false)
+    capnpc_cpp = find_program('capnpc-c++', required: false)
+    bash = find_program('bash', required: false)
+
+    if cpp_ok and capnp_rpc_dep.found() and capnpc_cpp.found() and bash.found()
+      adder_cpp = custom_target(
+        'adder-capnp-cpp',
+        input: 'compiler' / 'adder.capnp',
+        output: ['adder.capnp.c++', 'adder.capnp.h'],
+        command: [
+          capnp, 'compile',
+          '--src-prefix=' + meson.current_source_dir() / 'compiler',
+          '-o' + capnpc_cpp.full_path() + ':@OUTDIR@',
+          '@INPUT@',
+        ],
+      )
+
+      # The generated adder.capnp.h lands in the build directory, so this
+      # target keeps the implicit include dirs the others drop.
+      rpc_peer_server = executable(
+        'rpc_peer_server',
+        ['interop' / 'rpc_peer_server.c++', adder_cpp],
+        dependencies: capnp_rpc_dep,
+        override_options: ['cpp_std=c++17'],
+      )
+
+      rpc_client_c = executable(
+        'rpc_client_c',
+        'interop' / 'rpc_client.c',
+        include_directories: include_directories(['lib', 'compiler']),
+        dependencies: [libcapnp_dep],
+        # usleep is POSIX, and -std=c99 hides it without this.
+        c_args: ['-D_POSIX_C_SOURCE=200809L'],
+        implicit_include_directories: false,
+      )
+
+      test(
+        'rpc_interop_cpp',
+        bash,
+        args: [
+          meson.current_source_dir() / 'interop' / 'run_rpc_interop.sh',
+          rpc_peer_server.full_path(),
+          rpc_client_c.full_path(),
+        ],
+        depends: [rpc_peer_server, rpc_client_c],
+        timeout: 60,
+      )
+    else
+      message('interop/rpc: skipped (needs a C++ toolchain, capnp-rpc, and the capnp tools).')
+    endif
+
     codec_roundtrip_gen = custom_target(
       'codec-roundtrip-capnp',
       input: 'tests' / 'codec-roundtrip.capnp',

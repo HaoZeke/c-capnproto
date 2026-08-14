@@ -148,8 +148,12 @@ typedef void (*capn_rpc_fill_fn)(void *ctx, capn_ptr params);
 
 /* Call a method on an imported capability. `fill` may be NULL. Returns
  * the questionId, or (uint32_t)-1 on failure. */
+/* `params_datasz` is in bytes and `params_ptrs` in pointer slots: the
+ * caller knows its own method signature, and a struct sized here rather
+ * than guessed silently drops any field past the end. */
 uint32_t capn_rpc_send_call(struct capn_rpc_conn *c, uint32_t imported_cap,
                             uint64_t interface_id, uint16_t method_id,
+                            int params_datasz, int params_ptrs,
                             capn_rpc_fill_fn fill, void *fill_ctx);
 
 /* Tell the peer we are done with an answer, and drop our copy. */
@@ -179,7 +183,8 @@ void capn_rpc_stream_init(struct capn_rpc_stream *s, int window);
  * on success, non-zero once the stream has failed. */
 int capn_rpc_stream_send(struct capn_rpc_conn *c, struct capn_rpc_stream *s,
                          uint32_t imported_cap, uint64_t interface_id,
-                         uint16_t method_id, capn_rpc_fill_fn fill,
+                         uint16_t method_id, int params_datasz,
+                         int params_ptrs, capn_rpc_fill_fn fill,
                          void *fill_ctx);
 
 /* Wait for every outstanding call. Returns 0 when all succeeded. */

@@ -645,6 +645,7 @@ uint32_t capn_rpc_send_bootstrap(struct capn_rpc_conn *c)
 
 uint32_t capn_rpc_send_call(struct capn_rpc_conn *c, uint32_t imported_cap,
                             uint64_t interface_id, uint16_t method_id,
+                            int params_datasz, int params_ptrs,
                             capn_rpc_fill_fn fill, void *fill_ctx)
 {
 	struct capn msg;
@@ -676,7 +677,7 @@ uint32_t capn_rpc_send_call(struct capn_rpc_conn *c, uint32_t imported_cap,
 	tp = new_MessageTarget(cs);
 	write_MessageTarget(&t, tp);
 
-	params.content = capn_new_struct(cs, 8, 1);
+	params.content = capn_new_struct(cs, params_datasz, params_ptrs);
 	if (fill)
 		fill(fill_ctx, params.content);
 	plp = new_Payload(cs);
@@ -864,7 +865,8 @@ static void stream_retire_oldest(struct capn_rpc_conn *c,
 
 int capn_rpc_stream_send(struct capn_rpc_conn *c, struct capn_rpc_stream *s,
                          uint32_t imported_cap, uint64_t interface_id,
-                         uint16_t method_id, capn_rpc_fill_fn fill,
+                         uint16_t method_id, int params_datasz,
+                         int params_ptrs, capn_rpc_fill_fn fill,
                          void *fill_ctx)
 {
 	uint32_t qid;
@@ -876,8 +878,8 @@ int capn_rpc_stream_send(struct capn_rpc_conn *c, struct capn_rpc_stream *s,
 		if (s->failed)
 			return -1;
 	}
-	qid = capn_rpc_send_call(c, imported_cap, interface_id, method_id, fill,
-	                         fill_ctx);
+	qid = capn_rpc_send_call(c, imported_cap, interface_id, method_id,
+	                         params_datasz, params_ptrs, fill, fill_ctx);
 	if (qid == (uint32_t)-1)
 		return -1;
 	s->qids[s->nout++] = qid;

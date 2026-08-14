@@ -120,7 +120,7 @@ TEST_F(RpcClient, CallReturnsTheServersResults)
 	settle();
 
 	uint32_t arg = 21;
-	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 1, fill_u32, &arg);
+	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 1, 8, 1, fill_u32, &arg);
 	ASSERT_NE((uint32_t)-1, q);
 	settle();
 
@@ -136,7 +136,7 @@ TEST_F(RpcClient, CallReturnsTheServersResults)
 
 TEST_F(RpcClient, UnroutableCallComesBackFailedNotSilent)
 {
-	uint32_t q = capn_rpc_send_call(&client, 99, 0, 0, NULL, NULL);
+	uint32_t q = capn_rpc_send_call(&client, 99, 0, 0, 8, 1, NULL, NULL);
 	settle();
 	EXPECT_TRUE(capn_rpc_is_answered(&client, q));
 	EXPECT_TRUE(capn_rpc_is_failed(&client, q));
@@ -184,13 +184,13 @@ TEST_F(RpcClient, StreamWindowBoundsOutstandingCalls)
 	struct capn_rpc_stream s;
 	capn_rpc_stream_init(&s, 2);
 	uint32_t a = 1, b = 2, c3 = 3;
-	ASSERT_EQ(0, capn_rpc_stream_send(&client, &s, 0, 0, 0, fill_u32, &a));
-	ASSERT_EQ(0, capn_rpc_stream_send(&client, &s, 0, 0, 0, fill_u32, &b));
+	ASSERT_EQ(0, capn_rpc_stream_send(&client, &s, 0, 0, 0, 8, 1, fill_u32, &a));
+	ASSERT_EQ(0, capn_rpc_stream_send(&client, &s, 0, 0, 0, 8, 1, fill_u32, &b));
 	EXPECT_EQ(2, s.nout);
 
 	settle();
 	/* The third send has to retire one before it can go. */
-	ASSERT_EQ(0, capn_rpc_stream_send(&client, &s, 0, 0, 0, fill_u32, &c3));
+	ASSERT_EQ(0, capn_rpc_stream_send(&client, &s, 0, 0, 0, 8, 1, fill_u32, &c3));
 	EXPECT_LE(s.nout, 2);
 
 	settle();
@@ -208,9 +208,9 @@ TEST_F(RpcClient, StreamFinishReportsFailureAfterDrainingTheWindow)
 	struct capn_rpc_stream s;
 	capn_rpc_stream_init(&s, 4);
 	uint32_t v = 1;
-	capn_rpc_stream_send(&client, &s, 0, 0, 0, fill_u32, &v);
-	capn_rpc_stream_send(&client, &s, 0, 0, 0, fill_u32, &v);
-	capn_rpc_stream_send(&client, &s, 0, 0, 0, fill_u32, &v);
+	capn_rpc_stream_send(&client, &s, 0, 0, 0, 8, 1, fill_u32, &v);
+	capn_rpc_stream_send(&client, &s, 0, 0, 0, 8, 1, fill_u32, &v);
+	capn_rpc_stream_send(&client, &s, 0, 0, 0, 8, 1, fill_u32, &v);
 	settle();
 
 	/* The window still drains fully; finish is where the failure lands. */
@@ -228,13 +228,13 @@ TEST_F(RpcClient, OnceFailedALaterSendIsRefused)
 	struct capn_rpc_stream s;
 	capn_rpc_stream_init(&s, 4);
 	uint32_t v = 1;
-	capn_rpc_stream_send(&client, &s, 0, 0, 0, fill_u32, &v);
+	capn_rpc_stream_send(&client, &s, 0, 0, 0, 8, 1, fill_u32, &v);
 	settle();
 	EXPECT_NE(0, capn_rpc_stream_finish(&client, &s));
 	EXPECT_EQ(0, s.nout);
 	/* The window is empty, so this refusal can only come from the stream
 	 * remembering it failed. */
-	EXPECT_NE(0, capn_rpc_stream_send(&client, &s, 0, 0, 0, fill_u32, &v));
+	EXPECT_NE(0, capn_rpc_stream_send(&client, &s, 0, 0, 0, 8, 1, fill_u32, &v));
 }
 
 } // namespace
