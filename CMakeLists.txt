@@ -44,10 +44,16 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Same source set as meson.build. The RPC vat needs the readers for
+# rpc.capnp and the three-party network layer, which are checked in
+# under compiler/ rather than generated at build time.
 add_library(capnp_c
   lib/capn.c
   lib/capn-malloc.c
   lib/capn-stream.c
+  lib/capn-rpc.c
+  compiler/rpc.capnp.c
+  compiler/rpc-threeparty.capnp.c
 )
 set_target_properties(capnp_c PROPERTIES
   OUTPUT_NAME capnp_c
@@ -93,7 +99,7 @@ install(TARGETS capnp_c capnpc-c
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
-install(FILES lib/capnp_c.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES lib/capnp_c.h lib/capn-rpc.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 # Generated user headers #include "c.capnp.h"; ship it beside capnp_c.h.
 install(FILES compiler/c.capnp.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES compiler/c.capnp DESTINATION ${CMAKE_INSTALL_DATADIR}/c-capnproto)

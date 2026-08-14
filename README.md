@@ -227,6 +227,34 @@ make fuzz-mem    # packed-memory reader
 make fuzz-fp     # FILE* reader
 ```
 
+## RPC
+
+`lib/capn-rpc.h` is a two-party vat over the C runtime, built into
+`libcapnp_c` by all three build systems. It covers levels 1 through 4:
+
+| Level | What | Here |
+|-------|------|------|
+| 1 | Calls, cap tables, promise pipelining, embargoes | yes |
+| 2 | Persistence hooks (application-defined SturdyRefs) | yes |
+| 3 | Three-party handoff (`Provide` / `Accept`) | yes |
+| 4 | `Join`, reference equality | yes |
+
+`rpc.capnp` leaves `ProvisionId`, `RecipientId` and `ThirdPartyCapId` as
+`AnyPointer` for the network layer to define, and `rpc-twoparty.capnp`
+declares them empty because a two-party connection has no third vat to
+name. So the family defines one: `compiler/rpc-threeparty.capnp` names a
+vat by host and port and keys a handoff by a nonce, shared verbatim with
+capnp-fortran, capnp-janet and capnp-ts. It carries the join keys as
+well, so the vat speaks it instead of `rpc-twoparty.capnp`, not
+alongside -- both declare the same C names.
+
+Upstream C++ has no `Join` case at all (it falls to `default:` and
+replies `unimplemented`), so level 4 here is ahead of the reference
+rather than catching up to it.
+
+The vat runs against a live capnp-C++ `EzRpcServer` in
+`interop/run_rpc_interop.sh`.
+
 ## Status
 
 Lineage: [James McKaskill](https://github.com/jmckaskill/c-capnproto) merged with
@@ -246,8 +274,8 @@ an ILP32 `gcc -m32` exists (N/A on the maintainer builder).
 | Artifact | Path |
 |----------|------|
 | Plugin | `bin/capnpc-c` |
-| Header | `include/capnp_c.h`, `include/c.capnp.h` |
-| Library | `lib/libcapnp_c.a` / `.so` |
+| Header | `include/capnp_c.h`, `include/capn-rpc.h`, `include/c.capnp.h` |
+| Library | `lib/libcapnp_c.a` / `.so` (runtime + RPC vat) |
 | pkg-config | `lib/pkgconfig/c-capnproto.pc` |
 | Schema helper | `share/c-capnproto/c.capnp` (`import "/c.capnp"` with `-I` this dir) |
 

@@ -170,8 +170,35 @@ if get_option('enable_tests') and not meson.is_subproject()
   )
   test('create-min-sz-test', create_min_sz_test)
 
+  # The vat tests read checked-in generated sources, so they must not sit
+  # behind the `capnp` CLI: gating them on it would make the whole RPC
+  # suite disappear on a runner without the compiler installed.
+  rpc_join_test = executable(
+    'rpc-join-test',
+    'tests' / 'rpc-join-test.cpp',
+    include_directories: include_directories(['lib', 'tests', 'compiler']),
+    dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
+    cpp_args: common_cpp_args,
+    implicit_include_directories: false,
+    install: false,
+  )
+  test('rpc-join-test', rpc_join_test)
+
+  rpc_client_test = executable(
+    'rpc-client-test',
+    'tests' / 'rpc-client-test.cpp',
+    include_directories: include_directories(['lib', 'tests', 'compiler']),
+    dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
+    cpp_args: common_cpp_args,
+    implicit_include_directories: false,
+    install: false,
+  )
+  test('rpc-client-test', rpc_client_test)
+
   capnp = find_program('capnp', required: false)
   if capnp.found()
+    codec_c_args = common_c_args + ['-D_POSIX_C_SOURCE=200809L']
+
     # Official `capnp` CLI interop. Skip these tests only when the
     # binary is missing (this branch is not taken). Do not GTEST_SKIP
     # when meson found capnp.
@@ -200,29 +227,6 @@ if get_option('enable_tests') and not meson.is_subproject()
       },
     )
 
-    codec_c_args = common_c_args + ['-D_POSIX_C_SOURCE=200809L']
-
-    rpc_join_test = executable(
-      'rpc-join-test',
-      'tests' / 'rpc-join-test.cpp',
-      include_directories: include_directories(['lib', 'tests', 'compiler']),
-      dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
-      cpp_args: common_cpp_args,
-      implicit_include_directories: false,
-      install: false,
-    )
-    test('rpc-join-test', rpc_join_test)
-
-    rpc_client_test = executable(
-      'rpc-client-test',
-      'tests' / 'rpc-client-test.cpp',
-      include_directories: include_directories(['lib', 'tests', 'compiler']),
-      dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
-      cpp_args: common_cpp_args,
-      implicit_include_directories: false,
-      install: false,
-    )
-    test('rpc-client-test', rpc_client_test)
 
     # --- live-peer RPC interop: this vat against capnp-C++ -----------
     #

@@ -32,7 +32,10 @@ libcapnp_c_la_CPPFLAGS = $(AM_CPPFLAGS) -DCAPNP_C_BUILDING
 libcapnp_c_la_SOURCES = \
 	lib/capn-malloc.c \
 	lib/capn-stream.c \
-	lib/capn.c
+	lib/capn.c \
+	lib/capn-rpc.c \
+	compiler/rpc.capnp.c \
+	compiler/rpc-threeparty.capnp.c
 EXTRA_DIST += \
 	lib/capn-list.inc
 
@@ -45,6 +48,7 @@ capnpc_c_SOURCES = \
 capnpc_c_LDADD = libcapnp_c.la
 include_HEADERS += \
 	lib/capnp_c.h \
+	lib/capn-rpc.h \
 	compiler/c.capnp.h
 
 noinst_HEADERS += \
