@@ -62,5 +62,3 @@ int str_addf(struct str *v, const char *format, ...) ATTR(2,3);
 char *strf(struct str *v, const char *format, ...) ATTR(2,3);
 
 #endif /* CAPNPC_STR_H */
-
-

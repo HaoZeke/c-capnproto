@@ -202,4 +202,3 @@ TEST(Schema, ReadSimple) {
 
   capn_free(&ctx);
 }
-

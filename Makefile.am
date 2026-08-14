@@ -161,4 +161,3 @@ fuzz-mem: fuzz/read-mem fuzz/in/Person.bin
 
 fuzz-fp: fuzz/read-fp fuzz/in/Person.bin
 	$(AFL-FUZZ) -i fuzz/in -o fuzz/out ./fuzz/read-fp @@
-

@@ -109,4 +109,3 @@ char *strf(struct str *v, const char* format, ...) {
 	str_vaddf(v, format, ap);
 	return v->str;
 }
-

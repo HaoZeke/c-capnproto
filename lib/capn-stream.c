@@ -234,4 +234,3 @@ int capn_inflate(struct capn_stream* s) {
 
 	return 0;
 }
-

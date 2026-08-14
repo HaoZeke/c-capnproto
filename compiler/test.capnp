@@ -663,4 +663,3 @@ struct TestNameAnnotation $Cxx.name("RenamedStruct") {
     baz @5 :NestedStruct $Cxx.name("qux");
   }
 }
-
