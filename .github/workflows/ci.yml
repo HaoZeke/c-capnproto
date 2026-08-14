@@ -38,9 +38,14 @@ jobs:
           python-version: "3.12"
       - name: Install meson ninja
         run: pip install meson ninja
+      # capnp must be on PATH before `meson setup`: find_program bakes the
+      # path into CAPNP_CLI, and the 19 CapnpCli tests GTEST_SKIP without it.
       - name: Install capnproto
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y capnproto
+      - name: Install capnproto (macOS)
+        if: runner.os == 'macOS'
+        run: brew install capnp
       - name: Configure
         run: meson setup build -Dbuildtype=release ${{ matrix.meson_opts }}
       - name: Build
@@ -48,6 +53,18 @@ jobs:
       - name: Test
         if: matrix.run_tests
         run: meson test -C build --print-errorlogs
+      # A skipped CapnpCli fixture still reports the suite as passing, so
+      # assert the upstream-CLI parity tests actually executed.
+      - name: capnp CLI parity tests ran rather than skipped
+        if: matrix.run_tests
+        run: |
+          ./build/capnp-cli-interop-test > cli-interop.log 2>&1
+          if grep -q 'SKIPPED' cli-interop.log; then
+            echo "CapnpCli tests skipped; capnp CLI was missing at configure time" >&2
+            grep 'SKIPPED' cli-interop.log >&2
+            exit 1
+          fi
+          grep -E '^\[  PASSED  \]' cli-interop.log
       - name: Fuzz harness smoke
         if: matrix.fuzz_smoke
         run: |
