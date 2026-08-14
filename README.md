@@ -250,6 +250,14 @@ capnp-fortran, capnp-janet and capnp-ts. It carries the join keys as
 well, so the vat speaks it instead of `rpc-twoparty.capnp`, not
 alongside -- both declare the same C names.
 
+A handoff is arranged on one connection and claimed on another, so the
+arrangement belongs to the vat rather than the connection:
+`capn_rpc_set_vat` shares it between a vat's connections, and it holds
+the capability rather than an export id, since ids are per-connection.
+`tests/rpc-handoff-test.cpp` runs the whole flow across three vats.
+Connections given no vat get one to themselves, which is what a
+two-party deployment wants.
+
 `Accept.embargo` is honoured: an embargoed Accept claims the capability
 but is not answered until the introducer sends `Disembargo` with
 `context.provide` naming its own Provide question. Answering sooner

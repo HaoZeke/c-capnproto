@@ -90,6 +90,11 @@ struct capn_rpc_question {
 struct capn_rpc_provision {
 	int used;
 	uint64_t nonce;
+	/* The capability itself, not this connection's id for it: the
+	 * recipient may well arrive on another connection, where that id
+	 * means nothing. */
+	void *server;
+	capn_rpc_dispatch_fn dispatch;
 	int export_id;
 	/* The introducer's Provide question, which is how a later
 	 * Disembargo names this arrangement (rpc.capnp, Disembargo.context
@@ -152,11 +157,27 @@ struct capn_rpc_join {
 	int eids[CAPN_RPC_MAX_JOIN_PARTS];
 };
 
+/* What a vat knows across all its connections.
+ *
+ * A level 3 handoff is arranged on one connection and claimed on
+ * another: the introducer sends `Provide` over its own, and the
+ * recipient arrives on hers. Holding the arrangement on the connection
+ * would make it claimable only by the introducer, which is no handoff at
+ * all. Connections given no vat get one to themselves, which is what a
+ * two-party deployment wants.
+ */
+struct capn_rpc_vat {
+	struct capn_rpc_provision provisions[CAPN_RPC_MAX_PROVISIONS];
+};
+
 struct capn_rpc_conn {
 	struct capn_rpc_export exports[CAPN_RPC_MAX_EXPORTS];
 	struct capn_rpc_answer answers[CAPN_RPC_MAX_ANSWERS];
 	struct capn_rpc_question questions[CAPN_RPC_MAX_QUESTIONS];
-	struct capn_rpc_provision provisions[CAPN_RPC_MAX_PROVISIONS];
+	/* Shared with this vat's other connections when one is attached;
+	 * otherwise `own_vat` below. */
+	struct capn_rpc_vat *vat;
+	struct capn_rpc_vat own_vat;
 	struct capn_rpc_introduction introductions[CAPN_RPC_MAX_INTRODUCTIONS];
 	uint32_t next_question_id;
 	struct capn_rpc_join joins[CAPN_RPC_MAX_JOINS];
@@ -170,6 +191,26 @@ struct capn_rpc_conn {
 /* Zero the tables and install the transmit callback. */
 void capn_rpc_init(struct capn_rpc_conn *c, capn_rpc_send_fn send,
                    void *send_ctx);
+
+/* Share level 3 arrangements with this vat's other connections. Call
+ * after capn_rpc_init and before any Provide; `vat` must outlive the
+ * connection. */
+void capn_rpc_set_vat(struct capn_rpc_conn *c, struct capn_rpc_vat *vat);
+
+/* Ask the peer to hold `imported_cap` for a third vat, and return the
+ * question id, which is also what a later Disembargo.provide names. The
+ * nonce is the whole of the arrangement: the recipient presents it in an
+ * Accept, and the host matches on it alone. */
+uint32_t capn_rpc_send_provide(struct capn_rpc_conn *c, uint32_t imported_cap,
+                               const char *recipient_host, uint16_t recipient_port,
+                               uint64_t nonce);
+
+/* Claim a capability a third vat provided for us. Returns the question
+ * id; the answer carries the capability. */
+uint32_t capn_rpc_send_accept(struct capn_rpc_conn *c, uint64_t nonce, int embargo);
+
+/* Lift the embargo on the Accept this vat arranged with Provide. */
+int capn_rpc_send_disembargo_provide(struct capn_rpc_conn *c, uint32_t provide_qid);
 
 /* Set the capability answered to `Bootstrap`. */
 void capn_rpc_set_bootstrap(struct capn_rpc_conn *c, void *server,

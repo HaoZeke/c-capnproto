@@ -20,6 +20,12 @@ void capn_rpc_init(struct capn_rpc_conn *c, capn_rpc_send_fn send,
 	memset(c, 0, sizeof(*c));
 	c->send = send;
 	c->send_ctx = send_ctx;
+	c->vat = &c->own_vat;
+}
+
+void capn_rpc_set_vat(struct capn_rpc_conn *c, struct capn_rpc_vat *vat)
+{
+	c->vat = vat != NULL ? vat : &c->own_vat;
 }
 
 void capn_rpc_set_bootstrap(struct capn_rpc_conn *c, void *server,
@@ -456,15 +462,18 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp)
 	int eid, rc;
 
 	read_Call(&call, cp);
-	eid = resolve_target(c, call.target);
-	if (eid < 0)
-		return send_return_exception(c, call.questionId, "no such export");
-
 	memset(&params, 0, sizeof params);
+	/* The cap table describes the message, not the dispatch: a call this
+	 * vat cannot route still told us where a third party's capability
+	 * lives. */
 	if (call.params.p.type != CAPN_NULL) {
 		read_Payload(&params, call.params);
 		note_introductions(c, &params);
 	}
+
+	eid = resolve_target(c, call.target);
+	if (eid < 0)
+		return send_return_exception(c, call.questionId, "no such export");
 
 	capn_init_malloc(&msg);
 	cs = capn_root(&msg).seg;
@@ -758,6 +767,150 @@ static struct capn_rpc_question *question_find(struct capn_rpc_conn *c,
 		if (c->questions[i].used && c->questions[i].question_id == qid)
 			return &c->questions[i];
 	return NULL;
+}
+
+uint32_t capn_rpc_send_provide(struct capn_rpc_conn *c, uint32_t imported_cap,
+                               const char *recipient_host, uint16_t recipient_port,
+                               uint64_t nonce)
+{
+	struct capn msg;
+	struct Message m;
+	struct Provide pv;
+	struct MessageTarget tgt;
+	struct RecipientId rid;
+	struct VatId vat;
+	Message_ptr mp;
+	Provide_ptr pp;
+	MessageTarget_ptr tp;
+	RecipientId_ptr rp;
+	VatId_ptr vp;
+	struct capn_segment *cs;
+	struct capn_rpc_question *q;
+	uint32_t qid = 0;
+
+	if (recipient_host == NULL)
+		return (uint32_t)-1;
+	q = question_claim(c, &qid);
+	if (q == NULL)
+		return (uint32_t)-1;
+
+	capn_init_malloc(&msg);
+	cs = capn_root(&msg).seg;
+
+	memset(&vat, 0, sizeof vat);
+	vat.host.str = recipient_host;
+	vat.host.len = (int)strlen(recipient_host);
+	/* seg stays NULL so capn_set_text copies into the message. */
+	vat.host.seg = NULL;
+	vat.port = recipient_port;
+	vp = new_VatId(cs);
+	write_VatId(&vat, vp);
+
+	memset(&rid, 0, sizeof rid);
+	rid.vat = vp;
+	rid.nonce = nonce;
+	rp = new_RecipientId(cs);
+	write_RecipientId(&rid, rp);
+
+	memset(&tgt, 0, sizeof tgt);
+	tgt.which = MessageTarget_importedCap;
+	tgt.importedCap = imported_cap;
+	tp = new_MessageTarget(cs);
+	write_MessageTarget(&tgt, tp);
+
+	memset(&pv, 0, sizeof pv);
+	pv.questionId = qid;
+	pv.target = tp;
+	pv.recipient = rp.p;
+	pp = new_Provide(cs);
+	write_Provide(&pv, pp);
+
+	memset(&m, 0, sizeof m);
+	m.which = Message_provide;
+	m.provide = pp;
+	mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	if (send_message(c, &msg) != 0) {
+		q->used = 0;
+		qid = (uint32_t)-1;
+	}
+	capn_free(&msg);
+	return qid;
+}
+
+uint32_t capn_rpc_send_accept(struct capn_rpc_conn *c, uint64_t nonce, int embargo)
+{
+	struct capn msg;
+	struct Message m;
+	struct Accept ac;
+	struct ProvisionId pid;
+	Message_ptr mp;
+	Accept_ptr ap;
+	ProvisionId_ptr pip;
+	struct capn_segment *cs;
+	struct capn_rpc_question *q;
+	uint32_t qid = 0;
+
+	q = question_claim(c, &qid);
+	if (q == NULL)
+		return (uint32_t)-1;
+
+	capn_init_malloc(&msg);
+	cs = capn_root(&msg).seg;
+
+	memset(&pid, 0, sizeof pid);
+	pid.nonce = nonce;
+	pip = new_ProvisionId(cs);
+	write_ProvisionId(&pid, pip);
+
+	memset(&ac, 0, sizeof ac);
+	ac.questionId = qid;
+	ac.provision = pip.p;
+	ac.embargo = embargo ? 1 : 0;
+	ap = new_Accept(cs);
+	write_Accept(&ac, ap);
+
+	memset(&m, 0, sizeof m);
+	m.which = Message_accept;
+	m.accept = ap;
+	mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	if (send_message(c, &msg) != 0) {
+		q->used = 0;
+		qid = (uint32_t)-1;
+	}
+	capn_free(&msg);
+	return qid;
+}
+
+int capn_rpc_send_disembargo_provide(struct capn_rpc_conn *c, uint32_t provide_qid)
+{
+	struct capn msg;
+	struct Message m;
+	struct Disembargo d;
+	Message_ptr mp;
+	Disembargo_ptr dp;
+	struct capn_segment *cs;
+	int rc;
+
+	capn_init_malloc(&msg);
+	cs = capn_root(&msg).seg;
+	memset(&d, 0, sizeof d);
+	d.context_which = Disembargo_context_provide;
+	d.context.provide = provide_qid;
+	dp = new_Disembargo(cs);
+	write_Disembargo(&d, dp);
+	memset(&m, 0, sizeof m);
+	m.which = Message_disembargo;
+	m.disembargo = dp;
+	mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	rc = send_message(c, &msg);
+	capn_free(&msg);
+	return rc;
 }
 
 uint32_t capn_rpc_send_bootstrap(struct capn_rpc_conn *c)
@@ -1127,14 +1280,14 @@ static int release_provide_embargo(struct capn_rpc_conn *c, uint32_t provide_qid
 	int i;
 
 	for (i = 0; i < CAPN_RPC_MAX_PROVISIONS; i++) {
-		if (!c->provisions[i].used || !c->provisions[i].embargoed)
+		if (!c->vat->provisions[i].used || !c->vat->provisions[i].embargoed)
 			continue;
-		if (c->provisions[i].question_id != provide_qid)
+		if (c->vat->provisions[i].question_id != provide_qid)
 			continue;
 		{
-			uint32_t qid = c->provisions[i].accept_question_id;
-			int eid = c->provisions[i].export_id;
-			memset(&c->provisions[i], 0, sizeof c->provisions[i]);
+			uint32_t qid = c->vat->provisions[i].accept_question_id;
+			int eid = c->vat->provisions[i].export_id;
+			memset(&c->vat->provisions[i], 0, sizeof c->vat->provisions[i]);
 			return send_accepted_cap(c, qid, eid);
 		}
 	}
@@ -1147,7 +1300,7 @@ int capn_rpc_embargoed_accepts(struct capn_rpc_conn *c)
 {
 	int i, n = 0;
 	for (i = 0; i < CAPN_RPC_MAX_PROVISIONS; i++)
-		if (c->provisions[i].used && c->provisions[i].embargoed)
+		if (c->vat->provisions[i].used && c->vat->provisions[i].embargoed)
 			n++;
 	return n;
 }
@@ -1172,12 +1325,14 @@ static int handle_provide(struct capn_rpc_conn *c, Provide_ptr pp)
 	read_RecipientId(&rid, rp);
 
 	for (i = 0; i < CAPN_RPC_MAX_PROVISIONS; i++) {
-		if (!c->provisions[i].used) {
-			c->provisions[i].used = 1;
-			c->provisions[i].nonce = rid.nonce;
-			c->provisions[i].export_id = eid;
-			c->provisions[i].question_id = pv.questionId;
-			c->provisions[i].embargoed = 0;
+		if (!c->vat->provisions[i].used) {
+			c->vat->provisions[i].used = 1;
+			c->vat->provisions[i].nonce = rid.nonce;
+			c->vat->provisions[i].server = c->exports[eid].server;
+			c->vat->provisions[i].dispatch = c->exports[eid].dispatch;
+			c->vat->provisions[i].export_id = eid;
+			c->vat->provisions[i].question_id = pv.questionId;
+			c->vat->provisions[i].embargoed = 0;
 			/* The recipient holds a reference once it accepts. */
 			c->exports[eid].refcount++;
 			return send_empty_return(c, pv.questionId);
@@ -1213,19 +1368,24 @@ static int handle_accept(struct capn_rpc_conn *c, Accept_ptr ap)
 	read_ProvisionId(&pid, pp);
 
 	for (i = 0; i < CAPN_RPC_MAX_PROVISIONS; i++) {
-		if (c->provisions[i].used && !c->provisions[i].embargoed &&
-		    c->provisions[i].nonce == pid.nonce) {
-			eid = c->provisions[i].export_id;
+		if (c->vat->provisions[i].used && !c->vat->provisions[i].embargoed &&
+		    c->vat->provisions[i].nonce == pid.nonce) {
+			eid = capn_rpc_export(c, c->vat->provisions[i].server,
+			                      c->vat->provisions[i].dispatch);
+			if (eid < 0)
+				return send_return_exception(c, ac.questionId,
+				                             "accept: export table full");
+			c->vat->provisions[i].export_id = eid;
 			if (ac.embargo) {
 				/* Claimed, but the Return waits: the recipient
 				 * has pipelined calls in flight through the
 				 * introducer, and answering now would let a
 				 * later call overtake them. The introducer
 				 * lifts it with Disembargo.provide. */
-				c->provisions[i].embargoed = 1;
-				c->provisions[i].accept_question_id = ac.questionId;
+				c->vat->provisions[i].embargoed = 1;
+				c->vat->provisions[i].accept_question_id = ac.questionId;
 			} else {
-				c->provisions[i].used = 0;
+				c->vat->provisions[i].used = 0;
 			}
 			break;
 		}
@@ -1263,9 +1423,9 @@ int capn_rpc_pending_provisions(struct capn_rpc_conn *c, uint64_t *out, int cap)
 {
 	int i, n = 0;
 	for (i = 0; i < CAPN_RPC_MAX_PROVISIONS; i++) {
-		if (c->provisions[i].used) {
+		if (c->vat->provisions[i].used) {
 			if (out && n < cap)
-				out[n] = c->provisions[i].nonce;
+				out[n] = c->vat->provisions[i].nonce;
 			n++;
 		}
 	}

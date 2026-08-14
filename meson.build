@@ -190,6 +190,17 @@ if get_option('enable_tests') and not meson.is_subproject()
     env: {'CAPNP_SOURCE_ROOT': meson.project_source_root()},
   )
 
+  rpc_handoff_test = executable(
+    'rpc-handoff-test',
+    'tests' / 'rpc-handoff-test.cpp',
+    include_directories: include_directories(['lib', 'tests', 'compiler']),
+    dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
+    cpp_args: common_cpp_args,
+    implicit_include_directories: false,
+    install: false,
+  )
+  test('rpc-handoff-test', rpc_handoff_test)
+
   rpc_client_test = executable(
     'rpc-client-test',
     'tests' / 'rpc-client-test.cpp',
