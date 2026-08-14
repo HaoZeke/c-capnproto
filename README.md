@@ -12,8 +12,10 @@ a maintained fork of `opensourcerouting/c-capnproto` (itself from
 unreviewed PRs; last real work ~2023). Public forks surveyed 2026-07: no
 active maintainer with a credible commit series. This fork exists as the
 canonical pure-C Cap'n home next to
-[HaoZeke/capnp-fortran](https://github.com/HaoZeke/capnp-fortran) and
-[HaoZeke/capnp-janet](https://github.com/HaoZeke/capnp-janet).
+[HaoZeke/capnp-fortran](https://github.com/HaoZeke/capnp-fortran),
+[HaoZeke/capnp-janet](https://github.com/HaoZeke/capnp-janet) and
+[HaoZeke/capnp-ts](https://github.com/HaoZeke/capnp-ts). All four share
+`rpc-threeparty.capnp`, the level 3 network layer.
 
 **Upstream lineage:** `jmckaskill` → `opensourcerouting` → **this fork**.
 
