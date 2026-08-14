@@ -15,7 +15,7 @@
 
 #include "capn-rpc.h"
 #include "capnp_c.h"
-#include "rpc-twoparty.capnp.h"
+#include "rpc-threeparty.capnp.h"
 #include "rpc.capnp.h"
 
 namespace {
@@ -358,16 +358,47 @@ TEST_F(RpcJoin, PartNumOutsideTheSetIsRejectedOnItsOwn)
 	EXPECT_FALSE(a.succeeded);
 }
 
-TEST_F(RpcJoin, ProvideDrawsUnimplemented)
+/* Level 3: Alice tells us to hold a capability for Carol, and Carol
+ * claims it with the nonce Alice chose. We match on the nonce alone, so
+ * we never have to trust Carol's account of who sent her. */
+static void send_provide(struct capn_rpc_conn *c, uint32_t qid,
+                         uint32_t export_id, uint64_t nonce)
 {
 	struct capn msg;
 	capn_init_malloc(&msg);
 	struct capn_segment *cs = capn_root(&msg).seg;
+
+	struct MessageTarget t;
+	memset(&t, 0, sizeof t);
+	t.which = MessageTarget_importedCap;
+	t.importedCap = export_id;
+	MessageTarget_ptr tp = new_MessageTarget(cs);
+	write_MessageTarget(&t, tp);
+
+	struct VatId vat;
+	memset(&vat, 0, sizeof vat);
+	vat.host.str = "127.0.0.1";
+	vat.host.len = 9;
+	vat.host.seg = cs;
+	vat.port = 4000;
+	VatId_ptr vp = new_VatId(cs);
+	write_VatId(&vat, vp);
+
+	struct RecipientId rid;
+	memset(&rid, 0, sizeof rid);
+	rid.vat = vp;
+	rid.nonce = nonce;
+	RecipientId_ptr rp = new_RecipientId(cs);
+	write_RecipientId(&rid, rp);
+
 	struct Provide pv;
 	memset(&pv, 0, sizeof pv);
-	pv.questionId = 60;
+	pv.questionId = qid;
+	pv.target = tp;
+	pv.recipient = rp.p;
 	Provide_ptr pp = new_Provide(cs);
 	write_Provide(&pv, pp);
+
 	struct Message m;
 	memset(&m, 0, sizeof m);
 	m.which = Message_provide;
@@ -375,130 +406,140 @@ TEST_F(RpcJoin, ProvideDrawsUnimplemented)
 	Message_ptr mp = new_Message(cs);
 	write_Message(&m, mp);
 	capn_setp(capn_root(&msg), 0, mp.p);
+
 	uint8_t buf[4096];
 	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
 	capn_free(&msg);
 	ASSERT_GT(sz, 0);
-	ASSERT_EQ(0, capn_rpc_handle(&conn, buf, static_cast<size_t>(sz)));
-
-	ASSERT_EQ(1u, out.frames.size());
-	struct capn reply;
-	ASSERT_EQ(0, capn_init_mem(&reply, out.frames[0].data(),
-	                           out.frames[0].size(), 0));
-	Message_ptr rmp;
-	rmp.p = capn_getp(capn_root(&reply), 0, 1);
-	struct Message rm;
-	read_Message(&rm, rmp);
-	EXPECT_EQ(Message_unimplemented, rm.which);
-	capn_free(&reply);
+	capn_rpc_handle(c, buf, static_cast<size_t>(sz));
 }
 
-
-TEST_F(RpcJoin, PipelinedCallReachesTheCapabilityInsideAnAnswer)
-{
-	/* out was cleared after bootstrap; the answer to question 1 is still
-	 * retained inside the vat. */
-	send_pipelined_call(&conn, 2, 1, std::vector<uint16_t>());
-	ASSERT_EQ(1u, out.frames.size());
-	ReturnInfo r = read_return(out.frames[0]);
-	EXPECT_EQ(2u, r.answer_id);
-	EXPECT_EQ((int)Return_results, r.which);
-	EXPECT_EQ(1u, r.value);
-	EXPECT_EQ(1, calls);
-}
-
-TEST_F(RpcJoin, FinishDropsTheAnswerSoLaterPipeliningFails)
-{
-	send_finish(&conn, 1);
-	send_pipelined_call(&conn, 2, 1, std::vector<uint16_t>());
-	ASSERT_EQ(1u, out.frames.size());
-	ReturnInfo r = read_return(out.frames[0]);
-	EXPECT_EQ(2u, r.answer_id);
-	EXPECT_EQ((int)Return_exception, r.which);
-}
-
-TEST_F(RpcJoin, TransformWalkingPastTheCapabilityDoesNotResolve)
-{
-	/* The bootstrap answer's content is the capability itself, so asking
-	 * for its pointer field 0 walks off the end of it. */
-	send_pipelined_call(&conn, 2, 1, std::vector<uint16_t>(1, 0));
-	ASSERT_EQ(1u, out.frames.size());
-	ReturnInfo r = read_return(out.frames[0]);
-	EXPECT_EQ((int)Return_exception, r.which);
-}
-
-TEST_F(RpcJoin, SenderLoopbackIsEchoedAsReceiverLoopback)
+static void send_accept(struct capn_rpc_conn *c, uint32_t qid, uint64_t nonce)
 {
 	struct capn msg;
 	capn_init_malloc(&msg);
 	struct capn_segment *cs = capn_root(&msg).seg;
-	struct MessageTarget t;
-	memset(&t, 0, sizeof t);
-	t.which = MessageTarget_importedCap;
-	t.importedCap = 0;
-	MessageTarget_ptr tp = new_MessageTarget(cs);
-	write_MessageTarget(&t, tp);
-	struct Disembargo d;
-	memset(&d, 0, sizeof d);
-	d.target = tp;
-	d.context_which = Disembargo_context_senderLoopback;
-	d.context.senderLoopback = 12345;
-	Disembargo_ptr dp = new_Disembargo(cs);
-	write_Disembargo(&d, dp);
+
+	struct ProvisionId pid;
+	memset(&pid, 0, sizeof pid);
+	pid.nonce = nonce;
+	ProvisionId_ptr pip = new_ProvisionId(cs);
+	write_ProvisionId(&pid, pip);
+
+	struct Accept ac;
+	memset(&ac, 0, sizeof ac);
+	ac.questionId = qid;
+	ac.provision = pip.p;
+	Accept_ptr ap = new_Accept(cs);
+	write_Accept(&ac, ap);
+
 	struct Message m;
 	memset(&m, 0, sizeof m);
-	m.which = Message_disembargo;
-	m.disembargo = dp;
+	m.which = Message_accept;
+	m.accept = ap;
 	Message_ptr mp = new_Message(cs);
 	write_Message(&m, mp);
 	capn_setp(capn_root(&msg), 0, mp.p);
+
 	uint8_t buf[4096];
 	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
 	capn_free(&msg);
 	ASSERT_GT(sz, 0);
-	ASSERT_EQ(0, capn_rpc_handle(&conn, buf, static_cast<size_t>(sz)));
-
-	ASSERT_EQ(1u, out.frames.size());
-	struct capn reply;
-	ASSERT_EQ(0, capn_init_mem(&reply, out.frames[0].data(),
-	                           out.frames[0].size(), 0));
-	Message_ptr rmp;
-	rmp.p = capn_getp(capn_root(&reply), 0, 1);
-	struct Message rm;
-	read_Message(&rm, rmp);
-	ASSERT_EQ(Message_disembargo, rm.which);
-	struct Disembargo rd;
-	read_Disembargo(&rd, rm.disembargo);
-	EXPECT_EQ(Disembargo_context_receiverLoopback, rd.context_which);
-	EXPECT_EQ(12345u, rd.context.receiverLoopback);
-	capn_free(&reply);
+	capn_rpc_handle(c, buf, static_cast<size_t>(sz));
 }
 
-TEST_F(RpcJoin, ReceiverLoopbackIsAbsorbed)
+/* Return tag, and whether the results content is a capability. */
+struct L3Reply {
+	uint32_t answer_id;
+	bool is_exception;
+	bool has_cap;
+};
+
+static L3Reply read_l3(const std::vector<uint8_t> &frame)
 {
 	struct capn msg;
-	capn_init_malloc(&msg);
-	struct capn_segment *cs = capn_root(&msg).seg;
-	struct Disembargo d;
-	memset(&d, 0, sizeof d);
-	d.context_which = Disembargo_context_receiverLoopback;
-	d.context.receiverLoopback = 999;
-	Disembargo_ptr dp = new_Disembargo(cs);
-	write_Disembargo(&d, dp);
+	EXPECT_EQ(0, capn_init_mem(&msg, frame.data(), frame.size(), 0));
+	Message_ptr mp;
+	mp.p = capn_getp(capn_root(&msg), 0, 1);
 	struct Message m;
-	memset(&m, 0, sizeof m);
-	m.which = Message_disembargo;
-	m.disembargo = dp;
-	Message_ptr mp = new_Message(cs);
-	write_Message(&m, mp);
-	capn_setp(capn_root(&msg), 0, mp.p);
-	uint8_t buf[4096];
-	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
+	read_Message(&m, mp);
+	EXPECT_EQ(Message__return, m.which);
+	struct Return r;
+	read_Return(&r, m._return);
+
+	L3Reply out;
+	out.answer_id = r.answerId;
+	out.is_exception = (r.which != Return_results);
+	out.has_cap = false;
+	if (!out.is_exception) {
+		struct Payload pl;
+		read_Payload(&pl, r.results);
+		capn_ptr c = pl.content;
+		capn_resolve(&c);
+		out.has_cap = (c.type == CAPN_INTERFACE);
+	}
 	capn_free(&msg);
-	ASSERT_GT(sz, 0);
-	ASSERT_EQ(0, capn_rpc_handle(&conn, buf, static_cast<size_t>(sz)));
-	/* Echoing it would bounce forever between the two vats. */
-	EXPECT_EQ(0u, out.frames.size());
+	return out;
+}
+
+TEST_F(RpcJoin, ProvidedCapabilityIsClaimableExactlyOnce)
+{
+	const uint64_t nonce = 0xfeedfaceULL;
+	send_provide(&conn, 10, live, nonce);
+	ASSERT_EQ(1u, out.frames.size());
+	EXPECT_FALSE(read_l3(out.frames[0]).is_exception);
+	EXPECT_EQ(1, capn_rpc_pending_provisions(&conn, NULL, 0));
+	out.frames.clear();
+
+	send_accept(&conn, 11, nonce);
+	ASSERT_EQ(1u, out.frames.size());
+	{
+		L3Reply r = read_l3(out.frames[0]);
+		EXPECT_EQ(11u, r.answer_id);
+		EXPECT_FALSE(r.is_exception);
+		/* The capability comes back as a capability, not a struct. */
+		EXPECT_TRUE(r.has_cap);
+	}
+	EXPECT_EQ(0, capn_rpc_pending_provisions(&conn, NULL, 0));
+	out.frames.clear();
+
+	/* A nonce is single-use: leaving it claimable would let anyone who
+	 * learned it take the capability again. */
+	send_accept(&conn, 12, nonce);
+	ASSERT_EQ(1u, out.frames.size());
+	EXPECT_TRUE(read_l3(out.frames[0]).is_exception);
+	out.frames.clear();
+}
+
+TEST_F(RpcJoin, AcceptWithUnknownNonceIsRefused)
+{
+	send_accept(&conn, 20, 0xdeadbeefULL);
+	ASSERT_EQ(1u, out.frames.size());
+	L3Reply r = read_l3(out.frames[0]);
+	EXPECT_EQ(20u, r.answer_id);
+	EXPECT_TRUE(r.is_exception);
+}
+
+TEST_F(RpcJoin, ProvidingACapabilityWeDoNotHostIsRefused)
+{
+	send_provide(&conn, 30, live + 40, 0x1234ULL);
+	ASSERT_EQ(1u, out.frames.size());
+	EXPECT_TRUE(read_l3(out.frames[0]).is_exception);
+	EXPECT_EQ(0, capn_rpc_pending_provisions(&conn, NULL, 0));
+}
+
+TEST_F(RpcJoin, TwoProvisionsOfTheSameCapabilityAreIndependent)
+{
+	send_provide(&conn, 40, live, 0xaaaULL);
+	send_provide(&conn, 41, live, 0xbbbULL);
+	EXPECT_EQ(2, capn_rpc_pending_provisions(&conn, NULL, 0));
+	out.frames.clear();
+
+	send_accept(&conn, 42, 0xaaaULL);
+	ASSERT_EQ(1u, out.frames.size());
+	EXPECT_FALSE(read_l3(out.frames[0]).is_exception);
+	/* Claiming one leaves the other standing. */
+	EXPECT_EQ(1, capn_rpc_pending_provisions(&conn, NULL, 0));
 }
 
 } // namespace

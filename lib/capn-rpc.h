@@ -25,6 +25,7 @@ extern "C" {
 #define CAPN_RPC_MAX_ANSWERS 64
 #define CAPN_RPC_MAX_ANSWER_BYTES 8192
 #define CAPN_RPC_MAX_QUESTIONS 64
+#define CAPN_RPC_MAX_PROVISIONS 32
 #define CAPN_RPC_MAX_JOINS 8
 /* Outstanding unacknowledged calls a stream may hold. */
 #define CAPN_RPC_STREAM_MAX_WINDOW 64
@@ -75,6 +76,18 @@ struct capn_rpc_question {
 	size_t reply_len;
 };
 
+/* A capability promised to a third vat, awaiting its Accept.
+ *
+ * Level 3: the introducer told us to expect someone, and the nonce is
+ * the whole of the arrangement. Matching on it alone is what lets the
+ * recipient claim the capability without us having to trust her account
+ * of who sent her. */
+struct capn_rpc_provision {
+	int used;
+	uint64_t nonce;
+	int export_id;
+};
+
 /* Client-side flow control for `-> stream` methods: a bounded window of
  * unacknowledged stream calls. The wire carries ordinary Call/Return
  * pairs; the window is policy, as in capnp-C++. After any stream call
@@ -111,6 +124,7 @@ struct capn_rpc_conn {
 	struct capn_rpc_export exports[CAPN_RPC_MAX_EXPORTS];
 	struct capn_rpc_answer answers[CAPN_RPC_MAX_ANSWERS];
 	struct capn_rpc_question questions[CAPN_RPC_MAX_QUESTIONS];
+	struct capn_rpc_provision provisions[CAPN_RPC_MAX_PROVISIONS];
 	uint32_t next_question_id;
 	struct capn_rpc_join joins[CAPN_RPC_MAX_JOINS];
 	/* Capability returned for `Bootstrap`; NULL answers with an exception. */
@@ -174,6 +188,11 @@ int capn_rpc_is_failed(struct capn_rpc_conn *c, uint32_t question_id);
  * failed. The caller frees `msg_out` with capn_free. */
 int capn_rpc_answer_content(struct capn_rpc_conn *c, uint32_t question_id,
                             struct capn *msg_out, capn_ptr *out);
+
+/* Nonces of capabilities held for a third vat, for tests and shutdown
+ * accounting. Writes up to `cap` entries and returns how many exist. */
+int capn_rpc_pending_provisions(struct capn_rpc_conn *c, uint64_t *out,
+                                int cap);
 
 /* --- stream flow control ------------------------------------------- */
 

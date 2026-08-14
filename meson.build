@@ -20,7 +20,7 @@ libcapnp_src = [
   # RPC needs the rpc.capnp / rpc-twoparty.capnp readers; they are checked
   # in beside the other generated schema code.
   'compiler' / 'rpc.capnp.c',
-  'compiler' / 'rpc-twoparty.capnp.c',
+  'compiler' / 'rpc-threeparty.capnp.c',
 ]
 
 # MSVC shared builds only emit capnp_c.lib when something is dllexport.

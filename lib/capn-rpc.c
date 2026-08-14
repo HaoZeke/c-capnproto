@@ -5,7 +5,10 @@
 #include <string.h>
 
 #include "rpc.capnp.h"
-#include "rpc-twoparty.capnp.h"
+/* One network layer, not two. rpc-threeparty.capnp defines the join keys
+ * as well as the third-party ids, and both files declare the same C
+ * names, so including either alongside the other would not compile. */
+#include "rpc-threeparty.capnp.h"
 
 /* Defined below, beside the rest of the answer table. */
 static struct capn_rpc_answer *answer_find(struct capn_rpc_conn *c,
@@ -893,6 +896,145 @@ int capn_rpc_stream_finish(struct capn_rpc_conn *c, struct capn_rpc_stream *s)
 	return s->have_failure ? -1 : 0;
 }
 
+
+/* --- level 3: three-party handoff ---------------------------------- */
+
+/* Answer a question with empty results: the introducer is not waiting
+ * for a value, only for confirmation that the arrangement is recorded. */
+static int send_empty_return(struct capn_rpc_conn *c, uint32_t qid)
+{
+	struct capn msg;
+	struct Message m;
+	struct Return r;
+	Message_ptr mp;
+	Return_ptr rp;
+	struct capn_segment *cs;
+	int rc;
+
+	capn_init_malloc(&msg);
+	cs = capn_root(&msg).seg;
+	memset(&m, 0, sizeof m);
+	memset(&r, 0, sizeof r);
+	r.answerId = qid;
+	r.which = Return_results;
+	r.results = new_Payload(cs);
+	rp = new_Return(cs);
+	write_Return(&r, rp);
+	m.which = Message__return;
+	m._return = rp;
+	mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	rc = send_answer(c, qid, &msg);
+	capn_free(&msg);
+	return rc;
+}
+
+/* `Provide`: hold the target for whoever presents this nonce. */
+static int handle_provide(struct capn_rpc_conn *c, Provide_ptr pp)
+{
+	struct Provide pv;
+	struct RecipientId rid;
+	RecipientId_ptr rp;
+	int eid, i;
+
+	read_Provide(&pv, pp);
+	eid = resolve_target(c, pv.target);
+	if (eid < 0)
+		return send_return_exception(c, pv.questionId,
+		                             "provide: no such capability");
+	if (pv.recipient.type == CAPN_NULL)
+		return send_return_exception(c, pv.questionId,
+		                             "provide: no recipient");
+	rp.p = pv.recipient;
+	read_RecipientId(&rid, rp);
+
+	for (i = 0; i < CAPN_RPC_MAX_PROVISIONS; i++) {
+		if (!c->provisions[i].used) {
+			c->provisions[i].used = 1;
+			c->provisions[i].nonce = rid.nonce;
+			c->provisions[i].export_id = eid;
+			/* The recipient holds a reference once it accepts. */
+			c->exports[eid].refcount++;
+			return send_empty_return(c, pv.questionId);
+		}
+	}
+	return send_return_exception(c, pv.questionId, "provide: table full");
+}
+
+/* `Accept`: claim a capability a third vat provided for us.
+ *
+ * A nonce is single-use. Leaving it claimable would let anyone who
+ * learns it take the capability again later. */
+static int handle_accept(struct capn_rpc_conn *c, Accept_ptr ap)
+{
+	struct capn msg;
+	struct Accept ac;
+	struct ProvisionId pid;
+	struct Message m;
+	struct Return r;
+	struct Payload pl;
+	ProvisionId_ptr pp;
+	Message_ptr mp;
+	Return_ptr rp;
+	Payload_ptr plp;
+	struct capn_segment *cs;
+	int i, eid = -1, rc;
+
+	read_Accept(&ac, ap);
+	if (ac.provision.type == CAPN_NULL)
+		return send_return_exception(c, ac.questionId,
+		                             "accept: no provision");
+	pp.p = ac.provision;
+	read_ProvisionId(&pid, pp);
+
+	for (i = 0; i < CAPN_RPC_MAX_PROVISIONS; i++) {
+		if (c->provisions[i].used && c->provisions[i].nonce == pid.nonce) {
+			eid = c->provisions[i].export_id;
+			c->provisions[i].used = 0;
+			break;
+		}
+	}
+	if (eid < 0)
+		return send_return_exception(c, ac.questionId,
+		                             "accept: no such provision");
+
+	capn_init_malloc(&msg);
+	cs = capn_root(&msg).seg;
+	memset(&m, 0, sizeof m);
+	memset(&r, 0, sizeof r);
+	memset(&pl, 0, sizeof pl);
+	plp = new_Payload(cs);
+	write_cap_payload(cs, &pl, eid, &pl.content);
+	write_Payload(&pl, plp);
+	r.answerId = ac.questionId;
+	r.which = Return_results;
+	r.results = plp;
+	rp = new_Return(cs);
+	write_Return(&r, rp);
+	m.which = Message__return;
+	m._return = rp;
+	mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	rc = send_answer(c, ac.questionId, &msg);
+	capn_free(&msg);
+	return rc;
+}
+
+int capn_rpc_pending_provisions(struct capn_rpc_conn *c, uint64_t *out, int cap)
+{
+	int i, n = 0;
+	for (i = 0; i < CAPN_RPC_MAX_PROVISIONS; i++) {
+		if (c->provisions[i].used) {
+			if (out && n < cap)
+				out[n] = c->provisions[i].nonce;
+			n++;
+		}
+	}
+	return n;
+}
+
 int capn_rpc_handle(struct capn_rpc_conn *c, const uint8_t *data, size_t len)
 {
 	struct capn msg;
@@ -945,10 +1087,14 @@ int capn_rpc_handle(struct capn_rpc_conn *c, const uint8_t *data, size_t len)
 	case Message_disembargo:
 		rc = handle_disembargo(c, m.disembargo);
 		break;
+	case Message_provide:
+		rc = handle_provide(c, m.provide);
+		break;
+	case Message_accept:
+		rc = handle_accept(c, m.accept);
+		break;
 	default:
-		/* Provide and Accept name a third vat, which a two-party
-		 * connection cannot; the obsolete save/delete messages are gone
-		 * from the protocol. */
+		/* The obsolete save/delete messages. */
 		rc = send_unimplemented(c, mp);
 		break;
 	}
