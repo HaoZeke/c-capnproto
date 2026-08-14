@@ -332,47 +332,89 @@ double TestAllTypes_get_float64Field(TestAllTypes_ptr p);
 
 capn_text TestAllTypes_get_textField(TestAllTypes_ptr p);
 
+int TestAllTypes_has_textField(TestAllTypes_ptr p);
+
 capn_data TestAllTypes_get_dataField(TestAllTypes_ptr p);
 
+int TestAllTypes_has_dataField(TestAllTypes_ptr p);
+
 TestAllTypes_ptr TestAllTypes_get_structField(TestAllTypes_ptr p);
+
+int TestAllTypes_has_structField(TestAllTypes_ptr p);
 
 enum TestEnum TestAllTypes_get_enumField(TestAllTypes_ptr p);
 
 TestInterface_ptr TestAllTypes_get_interfaceField(TestAllTypes_ptr p);
 
+int TestAllTypes_has_interfaceField(TestAllTypes_ptr p);
+
 capn_ptr TestAllTypes_get_voidList(TestAllTypes_ptr p);
+
+int TestAllTypes_has_voidList(TestAllTypes_ptr p);
 
 capn_list1 TestAllTypes_get_boolList(TestAllTypes_ptr p);
 
+int TestAllTypes_has_boolList(TestAllTypes_ptr p);
+
 capn_list8 TestAllTypes_get_int8List(TestAllTypes_ptr p);
+
+int TestAllTypes_has_int8List(TestAllTypes_ptr p);
 
 capn_list16 TestAllTypes_get_int16List(TestAllTypes_ptr p);
 
+int TestAllTypes_has_int16List(TestAllTypes_ptr p);
+
 capn_list32 TestAllTypes_get_int32List(TestAllTypes_ptr p);
+
+int TestAllTypes_has_int32List(TestAllTypes_ptr p);
 
 capn_list64 TestAllTypes_get_int64List(TestAllTypes_ptr p);
 
+int TestAllTypes_has_int64List(TestAllTypes_ptr p);
+
 capn_list8 TestAllTypes_get_uInt8List(TestAllTypes_ptr p);
+
+int TestAllTypes_has_uInt8List(TestAllTypes_ptr p);
 
 capn_list16 TestAllTypes_get_uInt16List(TestAllTypes_ptr p);
 
+int TestAllTypes_has_uInt16List(TestAllTypes_ptr p);
+
 capn_list32 TestAllTypes_get_uInt32List(TestAllTypes_ptr p);
+
+int TestAllTypes_has_uInt32List(TestAllTypes_ptr p);
 
 capn_list64 TestAllTypes_get_uInt64List(TestAllTypes_ptr p);
 
+int TestAllTypes_has_uInt64List(TestAllTypes_ptr p);
+
 capn_list32 TestAllTypes_get_float32List(TestAllTypes_ptr p);
+
+int TestAllTypes_has_float32List(TestAllTypes_ptr p);
 
 capn_list64 TestAllTypes_get_float64List(TestAllTypes_ptr p);
 
+int TestAllTypes_has_float64List(TestAllTypes_ptr p);
+
 capn_ptr_list TestAllTypes_get_textList(TestAllTypes_ptr p);
+
+int TestAllTypes_has_textList(TestAllTypes_ptr p);
 
 capn_ptr_list TestAllTypes_get_dataList(TestAllTypes_ptr p);
 
+int TestAllTypes_has_dataList(TestAllTypes_ptr p);
+
 TestAllTypes_list TestAllTypes_get_structList(TestAllTypes_ptr p);
+
+int TestAllTypes_has_structList(TestAllTypes_ptr p);
 
 capn_list16 TestAllTypes_get_enumList(TestAllTypes_ptr p);
 
+int TestAllTypes_has_enumList(TestAllTypes_ptr p);
+
 TestInterface_list TestAllTypes_get_interfaceList(TestAllTypes_ptr p);
+
+int TestAllTypes_has_interfaceList(TestAllTypes_ptr p);
 
 void TestAllTypes_set_boolField(TestAllTypes_ptr p, unsigned boolField);
 
@@ -507,47 +549,89 @@ double TestDefaults_get_float64Field(TestDefaults_ptr p);
 
 capn_text TestDefaults_get_textField(TestDefaults_ptr p);
 
+int TestDefaults_has_textField(TestDefaults_ptr p);
+
 capn_data TestDefaults_get_dataField(TestDefaults_ptr p);
 
+int TestDefaults_has_dataField(TestDefaults_ptr p);
+
 TestAllTypes_ptr TestDefaults_get_structField(TestDefaults_ptr p);
+
+int TestDefaults_has_structField(TestDefaults_ptr p);
 
 enum TestEnum TestDefaults_get_enumField(TestDefaults_ptr p);
 
 TestInterface_ptr TestDefaults_get_interfaceField(TestDefaults_ptr p);
 
+int TestDefaults_has_interfaceField(TestDefaults_ptr p);
+
 capn_ptr TestDefaults_get_voidList(TestDefaults_ptr p);
+
+int TestDefaults_has_voidList(TestDefaults_ptr p);
 
 capn_list1 TestDefaults_get_boolList(TestDefaults_ptr p);
 
+int TestDefaults_has_boolList(TestDefaults_ptr p);
+
 capn_list8 TestDefaults_get_int8List(TestDefaults_ptr p);
+
+int TestDefaults_has_int8List(TestDefaults_ptr p);
 
 capn_list16 TestDefaults_get_int16List(TestDefaults_ptr p);
 
+int TestDefaults_has_int16List(TestDefaults_ptr p);
+
 capn_list32 TestDefaults_get_int32List(TestDefaults_ptr p);
+
+int TestDefaults_has_int32List(TestDefaults_ptr p);
 
 capn_list64 TestDefaults_get_int64List(TestDefaults_ptr p);
 
+int TestDefaults_has_int64List(TestDefaults_ptr p);
+
 capn_list8 TestDefaults_get_uInt8List(TestDefaults_ptr p);
+
+int TestDefaults_has_uInt8List(TestDefaults_ptr p);
 
 capn_list16 TestDefaults_get_uInt16List(TestDefaults_ptr p);
 
+int TestDefaults_has_uInt16List(TestDefaults_ptr p);
+
 capn_list32 TestDefaults_get_uInt32List(TestDefaults_ptr p);
+
+int TestDefaults_has_uInt32List(TestDefaults_ptr p);
 
 capn_list64 TestDefaults_get_uInt64List(TestDefaults_ptr p);
 
+int TestDefaults_has_uInt64List(TestDefaults_ptr p);
+
 capn_list32 TestDefaults_get_float32List(TestDefaults_ptr p);
+
+int TestDefaults_has_float32List(TestDefaults_ptr p);
 
 capn_list64 TestDefaults_get_float64List(TestDefaults_ptr p);
 
+int TestDefaults_has_float64List(TestDefaults_ptr p);
+
 capn_ptr_list TestDefaults_get_textList(TestDefaults_ptr p);
+
+int TestDefaults_has_textList(TestDefaults_ptr p);
 
 capn_ptr_list TestDefaults_get_dataList(TestDefaults_ptr p);
 
+int TestDefaults_has_dataList(TestDefaults_ptr p);
+
 TestAllTypes_list TestDefaults_get_structList(TestDefaults_ptr p);
+
+int TestDefaults_has_structList(TestDefaults_ptr p);
 
 capn_list16 TestDefaults_get_enumList(TestDefaults_ptr p);
 
+int TestDefaults_has_enumList(TestDefaults_ptr p);
+
 TestInterface_list TestDefaults_get_interfaceList(TestDefaults_ptr p);
+
+int TestDefaults_has_interfaceList(TestDefaults_ptr p);
 
 void TestDefaults_set_boolField(TestDefaults_ptr p, unsigned boolField);
 
@@ -628,6 +712,8 @@ static const size_t TestAnyPointer_struct_bytes_count = 8;
 
 capn_ptr TestAnyPointer_get_anyPointerField(TestAnyPointer_ptr p);
 
+int TestAnyPointer_has_anyPointerField(TestAnyPointer_ptr p);
+
 void TestAnyPointer_set_anyPointerField(TestAnyPointer_ptr p, capn_ptr anyPointerField);
 
 struct TestOutOfOrder {
@@ -651,21 +737,39 @@ static const size_t TestOutOfOrder_struct_bytes_count = 72;
 
 capn_text TestOutOfOrder_get_foo(TestOutOfOrder_ptr p);
 
+int TestOutOfOrder_has_foo(TestOutOfOrder_ptr p);
+
 capn_text TestOutOfOrder_get_bar(TestOutOfOrder_ptr p);
+
+int TestOutOfOrder_has_bar(TestOutOfOrder_ptr p);
 
 capn_text TestOutOfOrder_get_baz(TestOutOfOrder_ptr p);
 
+int TestOutOfOrder_has_baz(TestOutOfOrder_ptr p);
+
 capn_text TestOutOfOrder_get_qux(TestOutOfOrder_ptr p);
+
+int TestOutOfOrder_has_qux(TestOutOfOrder_ptr p);
 
 capn_text TestOutOfOrder_get_quux(TestOutOfOrder_ptr p);
 
+int TestOutOfOrder_has_quux(TestOutOfOrder_ptr p);
+
 capn_text TestOutOfOrder_get_corge(TestOutOfOrder_ptr p);
+
+int TestOutOfOrder_has_corge(TestOutOfOrder_ptr p);
 
 capn_text TestOutOfOrder_get_grault(TestOutOfOrder_ptr p);
 
+int TestOutOfOrder_has_grault(TestOutOfOrder_ptr p);
+
 capn_text TestOutOfOrder_get_garply(TestOutOfOrder_ptr p);
 
+int TestOutOfOrder_has_garply(TestOutOfOrder_ptr p);
+
 capn_text TestOutOfOrder_get_waldo(TestOutOfOrder_ptr p);
+
+int TestOutOfOrder_has_waldo(TestOutOfOrder_ptr p);
 
 void TestOutOfOrder_set_foo(TestOutOfOrder_ptr p, capn_text foo);
 
@@ -863,6 +967,8 @@ static const size_t TestUnnamedUnion_struct_bytes_count = 32;
 
 capn_text TestUnnamedUnion_get_before(TestUnnamedUnion_ptr p);
 
+int TestUnnamedUnion_has_before(TestUnnamedUnion_ptr p);
+
 void TestUnnamedUnion_set_before(TestUnnamedUnion_ptr p, capn_text before);
 enum TestUnionInUnion_outer_inner_which {
 	TestUnionInUnion_outer_inner_foo = 0,
@@ -995,11 +1101,19 @@ static const size_t TestUnionDefaults_struct_bytes_count = 32;
 
 TestUnion_ptr TestUnionDefaults_get_s16s8s64s8Set(TestUnionDefaults_ptr p);
 
+int TestUnionDefaults_has_s16s8s64s8Set(TestUnionDefaults_ptr p);
+
 TestUnion_ptr TestUnionDefaults_get_s0sps1s32Set(TestUnionDefaults_ptr p);
+
+int TestUnionDefaults_has_s0sps1s32Set(TestUnionDefaults_ptr p);
 
 TestUnnamedUnion_ptr TestUnionDefaults_get_unnamed1(TestUnionDefaults_ptr p);
 
+int TestUnionDefaults_has_unnamed1(TestUnionDefaults_ptr p);
+
 TestUnnamedUnion_ptr TestUnionDefaults_get_unnamed2(TestUnionDefaults_ptr p);
+
+int TestUnionDefaults_has_unnamed2(TestUnionDefaults_ptr p);
 
 void TestUnionDefaults_set_s16s8s64s8Set(TestUnionDefaults_ptr p, TestUnion_ptr s16s8s64s8Set);
 
@@ -1023,6 +1137,8 @@ static const size_t TestNestedTypes_struct_bytes_count = 16;
 
 
 TestNestedTypes_NestedStruct_ptr TestNestedTypes_get_nestedStruct(TestNestedTypes_ptr p);
+
+int TestNestedTypes_has_nestedStruct(TestNestedTypes_ptr p);
 
 enum TestNestedTypes_NestedEnum TestNestedTypes_get_outerNestedEnum(TestNestedTypes_ptr p);
 
@@ -1096,23 +1212,43 @@ static const size_t TestLists_struct_bytes_count = 80;
 
 TestLists_Struct0_list TestLists_get_list0(TestLists_ptr p);
 
+int TestLists_has_list0(TestLists_ptr p);
+
 TestLists_Struct1_list TestLists_get_list1(TestLists_ptr p);
+
+int TestLists_has_list1(TestLists_ptr p);
 
 TestLists_Struct8_list TestLists_get_list8(TestLists_ptr p);
 
+int TestLists_has_list8(TestLists_ptr p);
+
 TestLists_Struct16_list TestLists_get_list16(TestLists_ptr p);
+
+int TestLists_has_list16(TestLists_ptr p);
 
 TestLists_Struct32_list TestLists_get_list32(TestLists_ptr p);
 
+int TestLists_has_list32(TestLists_ptr p);
+
 TestLists_Struct64_list TestLists_get_list64(TestLists_ptr p);
+
+int TestLists_has_list64(TestLists_ptr p);
 
 TestLists_StructP_list TestLists_get_listP(TestLists_ptr p);
 
+int TestLists_has_listP(TestLists_ptr p);
+
 capn_ptr_list TestLists_get_int32ListList(TestLists_ptr p);
+
+int TestLists_has_int32ListList(TestLists_ptr p);
 
 capn_ptr_list TestLists_get_textListList(TestLists_ptr p);
 
+int TestLists_has_textListList(TestLists_ptr p);
+
 capn_ptr_list TestLists_get_structListList(TestLists_ptr p);
+
+int TestLists_has_structListList(TestLists_ptr p);
 
 void TestLists_set_list0(TestLists_ptr p, TestLists_Struct0_list list0);
 
@@ -1135,6 +1271,7 @@ void TestLists_set_textListList(TestLists_ptr p, capn_ptr_list textListList);
 void TestLists_set_structListList(TestLists_ptr p, capn_ptr_list structListList);
 
 capnp_nowarn struct TestLists_Struct0 {
+	char _capnp_empty_struct_padding;
 };
 
 static const size_t TestLists_Struct0_word_count = 0;
@@ -1232,6 +1369,8 @@ static const size_t TestLists_StructP_struct_bytes_count = 8;
 
 capn_text TestLists_StructP_get_f(TestLists_StructP_ptr p);
 
+int TestLists_StructP_has_f(TestLists_StructP_ptr p);
+
 void TestLists_StructP_set_f(TestLists_StructP_ptr p, capn_text f);
 
 struct TestLists_Struct0c {
@@ -1246,6 +1385,8 @@ static const size_t TestLists_Struct0c_struct_bytes_count = 8;
 
 
 capn_text TestLists_Struct0c_get_pad(TestLists_Struct0c_ptr p);
+
+int TestLists_Struct0c_has_pad(TestLists_Struct0c_ptr p);
 
 void TestLists_Struct0c_set_pad(TestLists_Struct0c_ptr p, capn_text pad);
 
@@ -1264,6 +1405,8 @@ static const size_t TestLists_Struct1c_struct_bytes_count = 16;
 unsigned TestLists_Struct1c_get_f(TestLists_Struct1c_ptr p);
 
 capn_text TestLists_Struct1c_get_pad(TestLists_Struct1c_ptr p);
+
+int TestLists_Struct1c_has_pad(TestLists_Struct1c_ptr p);
 
 void TestLists_Struct1c_set_f(TestLists_Struct1c_ptr p, unsigned f);
 
@@ -1285,6 +1428,8 @@ uint8_t TestLists_Struct8c_get_f(TestLists_Struct8c_ptr p);
 
 capn_text TestLists_Struct8c_get_pad(TestLists_Struct8c_ptr p);
 
+int TestLists_Struct8c_has_pad(TestLists_Struct8c_ptr p);
+
 void TestLists_Struct8c_set_f(TestLists_Struct8c_ptr p, uint8_t f);
 
 void TestLists_Struct8c_set_pad(TestLists_Struct8c_ptr p, capn_text pad);
@@ -1304,6 +1449,8 @@ static const size_t TestLists_Struct16c_struct_bytes_count = 16;
 uint16_t TestLists_Struct16c_get_f(TestLists_Struct16c_ptr p);
 
 capn_text TestLists_Struct16c_get_pad(TestLists_Struct16c_ptr p);
+
+int TestLists_Struct16c_has_pad(TestLists_Struct16c_ptr p);
 
 void TestLists_Struct16c_set_f(TestLists_Struct16c_ptr p, uint16_t f);
 
@@ -1325,6 +1472,8 @@ uint32_t TestLists_Struct32c_get_f(TestLists_Struct32c_ptr p);
 
 capn_text TestLists_Struct32c_get_pad(TestLists_Struct32c_ptr p);
 
+int TestLists_Struct32c_has_pad(TestLists_Struct32c_ptr p);
+
 void TestLists_Struct32c_set_f(TestLists_Struct32c_ptr p, uint32_t f);
 
 void TestLists_Struct32c_set_pad(TestLists_Struct32c_ptr p, capn_text pad);
@@ -1345,6 +1494,8 @@ uint64_t TestLists_Struct64c_get_f(TestLists_Struct64c_ptr p);
 
 capn_text TestLists_Struct64c_get_pad(TestLists_Struct64c_ptr p);
 
+int TestLists_Struct64c_has_pad(TestLists_Struct64c_ptr p);
+
 void TestLists_Struct64c_set_f(TestLists_Struct64c_ptr p, uint64_t f);
 
 void TestLists_Struct64c_set_pad(TestLists_Struct64c_ptr p, capn_text pad);
@@ -1362,6 +1513,8 @@ static const size_t TestLists_StructPc_struct_bytes_count = 16;
 
 
 capn_text TestLists_StructPc_get_f(TestLists_StructPc_ptr p);
+
+int TestLists_StructPc_has_f(TestLists_StructPc_ptr p);
 
 uint64_t TestLists_StructPc_get_pad(TestLists_StructPc_ptr p);
 
@@ -1407,6 +1560,8 @@ static const size_t TestListDefaults_struct_bytes_count = 8;
 
 TestLists_ptr TestListDefaults_get_lists(TestListDefaults_ptr p);
 
+int TestListDefaults_has_lists(TestListDefaults_ptr p);
+
 void TestListDefaults_set_lists(TestListDefaults_ptr p, TestLists_ptr lists);
 enum TestLateUnion_theUnion_which {
 	TestLateUnion_theUnion_qux = 0,
@@ -1448,6 +1603,8 @@ int32_t TestLateUnion_get_foo(TestLateUnion_ptr p);
 
 capn_text TestLateUnion_get_bar(TestLateUnion_ptr p);
 
+int TestLateUnion_has_bar(TestLateUnion_ptr p);
+
 int16_t TestLateUnion_get_baz(TestLateUnion_ptr p);
 
 void TestLateUnion_set_foo(TestLateUnion_ptr p, int32_t foo);
@@ -1473,7 +1630,11 @@ int64_t TestOldVersion_get_old1(TestOldVersion_ptr p);
 
 capn_text TestOldVersion_get_old2(TestOldVersion_ptr p);
 
+int TestOldVersion_has_old2(TestOldVersion_ptr p);
+
 TestOldVersion_ptr TestOldVersion_get_old3(TestOldVersion_ptr p);
+
+int TestOldVersion_has_old3(TestOldVersion_ptr p);
 
 void TestOldVersion_set_old1(TestOldVersion_ptr p, int64_t old1);
 
@@ -1500,11 +1661,17 @@ int64_t TestNewVersion_get_old1(TestNewVersion_ptr p);
 
 capn_text TestNewVersion_get_old2(TestNewVersion_ptr p);
 
+int TestNewVersion_has_old2(TestNewVersion_ptr p);
+
 TestNewVersion_ptr TestNewVersion_get_old3(TestNewVersion_ptr p);
+
+int TestNewVersion_has_old3(TestNewVersion_ptr p);
 
 int64_t TestNewVersion_get_new1(TestNewVersion_ptr p);
 
 capn_text TestNewVersion_get_new2(TestNewVersion_ptr p);
+
+int TestNewVersion_has_new2(TestNewVersion_ptr p);
 
 void TestNewVersion_set_old1(TestNewVersion_ptr p, int64_t old1);
 
@@ -1549,7 +1716,11 @@ static const size_t TestStructUnion_SomeStruct_struct_bytes_count = 16;
 
 capn_text TestStructUnion_SomeStruct_get_someText(TestStructUnion_SomeStruct_ptr p);
 
+int TestStructUnion_SomeStruct_has_someText(TestStructUnion_SomeStruct_ptr p);
+
 capn_text TestStructUnion_SomeStruct_get_moreText(TestStructUnion_SomeStruct_ptr p);
+
+int TestStructUnion_SomeStruct_has_moreText(TestStructUnion_SomeStruct_ptr p);
 
 void TestStructUnion_SomeStruct_set_someText(TestStructUnion_SomeStruct_ptr p, capn_text someText);
 
@@ -1569,7 +1740,11 @@ static const size_t TestPrintInlineStructs_struct_bytes_count = 16;
 
 capn_text TestPrintInlineStructs_get_someText(TestPrintInlineStructs_ptr p);
 
+int TestPrintInlineStructs_has_someText(TestPrintInlineStructs_ptr p);
+
 TestPrintInlineStructs_InlineStruct_list TestPrintInlineStructs_get_structList(TestPrintInlineStructs_ptr p);
+
+int TestPrintInlineStructs_has_structList(TestPrintInlineStructs_ptr p);
 
 void TestPrintInlineStructs_set_someText(TestPrintInlineStructs_ptr p, capn_text someText);
 
@@ -1590,6 +1765,8 @@ static const size_t TestPrintInlineStructs_InlineStruct_struct_bytes_count = 16;
 int32_t TestPrintInlineStructs_InlineStruct_get_int32Field(TestPrintInlineStructs_InlineStruct_ptr p);
 
 capn_text TestPrintInlineStructs_InlineStruct_get_textField(TestPrintInlineStructs_InlineStruct_ptr p);
+
+int TestPrintInlineStructs_InlineStruct_has_textField(TestPrintInlineStructs_InlineStruct_ptr p);
 
 void TestPrintInlineStructs_InlineStruct_set_int32Field(TestPrintInlineStructs_InlineStruct_ptr p, int32_t int32Field);
 
@@ -1616,6 +1793,7 @@ void TestWholeFloatDefault_set_field(TestWholeFloatDefault_ptr p, float field);
 void TestWholeFloatDefault_set_bigField(TestWholeFloatDefault_ptr p, float bigField);
 
 capnp_nowarn struct TestEmptyStruct {
+	char _capnp_empty_struct_padding;
 };
 
 static const size_t TestEmptyStruct_word_count = 0;
@@ -1626,6 +1804,7 @@ static const size_t TestEmptyStruct_struct_bytes_count = 0;
 
 
 capnp_nowarn struct TestConstants {
+	char _capnp_empty_struct_padding;
 };
 
 static const size_t TestConstants_word_count = 0;
@@ -1649,7 +1828,11 @@ static const size_t TestSturdyRef_struct_bytes_count = 16;
 
 TestSturdyRefHostId_ptr TestSturdyRef_get_hostId(TestSturdyRef_ptr p);
 
+int TestSturdyRef_has_hostId(TestSturdyRef_ptr p);
+
 capn_ptr TestSturdyRef_get_objectId(TestSturdyRef_ptr p);
+
+int TestSturdyRef_has_objectId(TestSturdyRef_ptr p);
 
 void TestSturdyRef_set_hostId(TestSturdyRef_ptr p, TestSturdyRefHostId_ptr hostId);
 
@@ -1667,6 +1850,8 @@ static const size_t TestSturdyRefHostId_struct_bytes_count = 8;
 
 
 capn_text TestSturdyRefHostId_get_host(TestSturdyRefHostId_ptr p);
+
+int TestSturdyRefHostId_has_host(TestSturdyRefHostId_ptr p);
 
 void TestSturdyRefHostId_set_host(TestSturdyRefHostId_ptr p, capn_text host);
 
@@ -1686,6 +1871,7 @@ enum TestSturdyRefObjectId_Tag TestSturdyRefObjectId_get_tag(TestSturdyRefObject
 void TestSturdyRefObjectId_set_tag(TestSturdyRefObjectId_ptr p, enum TestSturdyRefObjectId_Tag tag);
 
 capnp_nowarn struct TestProvisionId {
+	char _capnp_empty_struct_padding;
 };
 
 static const size_t TestProvisionId_word_count = 0;
@@ -1696,6 +1882,7 @@ static const size_t TestProvisionId_struct_bytes_count = 0;
 
 
 capnp_nowarn struct TestRecipientId {
+	char _capnp_empty_struct_padding;
 };
 
 static const size_t TestRecipientId_word_count = 0;
@@ -1706,6 +1893,7 @@ static const size_t TestRecipientId_struct_bytes_count = 0;
 
 
 capnp_nowarn struct TestThirdPartyCapId {
+	char _capnp_empty_struct_padding;
 };
 
 static const size_t TestThirdPartyCapId_word_count = 0;
@@ -1716,6 +1904,7 @@ static const size_t TestThirdPartyCapId_struct_bytes_count = 0;
 
 
 capnp_nowarn struct TestJoinResult {
+	char _capnp_empty_struct_padding;
 };
 
 static const size_t TestJoinResult_word_count = 0;
@@ -1769,6 +1958,8 @@ static const size_t TestNameAnnotation_NestedStruct_struct_bytes_count = 16;
 unsigned TestNameAnnotation_NestedStruct_get_badNestedFieldName(TestNameAnnotation_NestedStruct_ptr p);
 
 TestNameAnnotation_NestedStruct_ptr TestNameAnnotation_NestedStruct_get_anotherBadNestedFieldName(TestNameAnnotation_NestedStruct_ptr p);
+
+int TestNameAnnotation_NestedStruct_has_anotherBadNestedFieldName(TestNameAnnotation_NestedStruct_ptr p);
 
 void TestNameAnnotation_NestedStruct_set_badNestedFieldName(TestNameAnnotation_NestedStruct_ptr p, unsigned badNestedFieldName);
 

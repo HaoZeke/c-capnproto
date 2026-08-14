@@ -69,6 +69,7 @@ static const size_t ProvisionId_struct_bytes_count = 8;
 
 
 capnp_nowarn struct RecipientId {
+	char _capnp_empty_struct_padding;
 };
 
 static const size_t RecipientId_word_count = 0;
@@ -79,6 +80,7 @@ static const size_t RecipientId_struct_bytes_count = 0;
 
 
 capnp_nowarn struct ThirdPartyCapId {
+	char _capnp_empty_struct_padding;
 };
 
 static const size_t ThirdPartyCapId_word_count = 0;

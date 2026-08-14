@@ -1336,7 +1336,16 @@ static void define_struct(struct node *n, const char *extattr, const char *extat
 			s.decl.len == 0 ? "capnp_nowarn " : "",
 			extattr, extattr_space,
 			n->name.str);
-	str_add(&HDR, s.decl.str, s.decl.len);
+	if (s.decl.len == 0) {
+		/* A schema struct with no fields (rpc-twoparty.capnp declares
+		 * RecipientId and ThirdPartyCapId that way) would emit an empty
+		 * struct, which C does not allow and MSVC rejects outright.
+		 * The member is padding: such a struct carries no wire data, so
+		 * nothing reads or writes it. */
+		str_addf(&HDR, "\tchar _capnp_empty_struct_padding;\n");
+	} else {
+		str_add(&HDR, s.decl.str, s.decl.len);
+	}
 	str_addf(&HDR, "};\n");
 
 	for (i = capn_len(n->n.annotations)-1; i >= 0; i--) {

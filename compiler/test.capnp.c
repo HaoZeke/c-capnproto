@@ -10,7 +10,7 @@
 
 static const capn_text capn_val0 = {0,"",0};
 static const capn_ptr capn_null = {CAPN_NULL};
-static const uint8_t capn_buf[9528] = {
+static const uint8_t capn_buf[9576] = {
 	102,111,111,0,0,0,0,0,
 	98,97,114,0,0,0,0,0,
 	1,244,128,13,14,16,76,251,
@@ -1069,26 +1069,32 @@ static const uint8_t capn_buf[9528] = {
 	5,0,0,0,34,0,0,0,
 	102,111,111,0,0,0,0,0,
 	98,97,114,0,0,0,0,0,
-	37,0,0,0,16,0,0,0,
-	33,0,0,0,37,0,0,0,
-	45,0,0,0,21,0,0,0,
-	49,0,0,0,21,0,0,0,
-	53,0,0,0,21,0,0,0,
-	57,0,0,0,21,0,0,0,
+	37,0,0,0,7,0,0,0,
+	37,0,0,0,39,0,0,0,
+	53,0,0,0,23,0,0,0,
 	61,0,0,0,23,0,0,0,
-	77,0,0,0,30,0,0,0,
+	69,0,0,0,23,0,0,0,
+	77,0,0,0,23,0,0,0,
+	85,0,0,0,23,0,0,0,
 	101,0,0,0,30,0,0,0,
-	149,0,0,0,22,0,0,0,
+	125,0,0,0,30,0,0,0,
+	173,0,0,0,22,0,0,0,
+	8,0,0,0,0,0,0,0,
+	16,0,0,0,1,0,0,0,
 	1,0,0,0,0,0,0,0,
 	0,0,0,0,0,0,0,0,
 	1,0,0,0,0,0,0,0,
 	1,0,0,0,0,0,0,0,
+	8,0,0,0,1,0,0,0,
 	123,0,0,0,0,0,0,0,
 	45,0,0,0,0,0,0,0,
+	8,0,0,0,1,0,0,0,
 	57,48,0,0,0,0,0,0,
 	133,26,0,0,0,0,0,0,
+	8,0,0,0,1,0,0,0,
 	21,205,91,7,0,0,0,0,
 	210,56,251,13,0,0,0,0,
+	8,0,0,0,1,0,0,0,
 	192,186,138,60,213,98,4,0,
 	135,75,170,237,97,85,8,0,
 	8,0,0,0,0,0,1,0,
@@ -1203,7 +1209,7 @@ static const uint8_t capn_buf[9528] = {
 	0,0,0,0,0,0,0,0,
 	98,97,122,0,0,0,0,0
 };
-static const struct capn_segment capn_seg = {{0},0,0,0,(char*)&capn_buf[0],9528,9528,0};
+static const struct capn_segment capn_seg = {{0},0,0,0,(char*)&capn_buf[0],9576,9576,0};
 const union capn_conv_f32 TestWholeFloatDefault_constant = {0x43e40000u};
 const union capn_conv_f32 TestWholeFloatDefault_bigConstant = {0x7249f2cau};
 const unsigned TestConstants_boolConst = TEST_CONSTANTS_BOOL_CONST;
@@ -1305,7 +1311,7 @@ void write_TestAllTypes(const struct TestAllTypes *s capnp_unused, TestAllTypes_
 	capn_write32(p.p, 32, capn_from_f32(s->float32Field));
 	capn_write64(p.p, 40, capn_from_f64(s->float64Field));
 	capn_set_text(p.p, 0, s->textField);
-	capn_setp(p.p, 1, (s->dataField.p.type != CAPN_NULL) ? s->dataField.p : capn_null);
+	capn_set_data(p.p, 1, s->dataField);
 	capn_setp(p.p, 2, (s->structField.p.type != CAPN_NULL) ? s->structField.p : capn_null);
 	capn_write16(p.p, 36, (uint16_t) (s->enumField));
 	capn_setp(p.p, 3, (s->interfaceField.p.type != CAPN_NULL) ? s->interfaceField.p : capn_null);
@@ -1434,6 +1440,14 @@ capn_text TestAllTypes_get_textField(TestAllTypes_ptr p)
 	return textField;
 }
 
+int TestAllTypes_has_textField(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr textField;
+	textField = capn_getp(p.p, 0, 1);
+	return textField.type != CAPN_NULL;
+}
+
 capn_data TestAllTypes_get_dataField(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
@@ -1442,12 +1456,28 @@ capn_data TestAllTypes_get_dataField(TestAllTypes_ptr p)
 	return dataField;
 }
 
+int TestAllTypes_has_dataField(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr dataField;
+	dataField = capn_getp(p.p, 1, 1);
+	return dataField.type != CAPN_NULL;
+}
+
 TestAllTypes_ptr TestAllTypes_get_structField(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	TestAllTypes_ptr structField;
 	structField.p = capn_getp(p.p, 2, 1);
 	return structField;
+}
+
+int TestAllTypes_has_structField(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr structField;
+	structField = capn_getp(p.p, 2, 1);
+	return structField.type != CAPN_NULL;
 }
 
 enum TestEnum TestAllTypes_get_enumField(TestAllTypes_ptr p)
@@ -1466,12 +1496,28 @@ TestInterface_ptr TestAllTypes_get_interfaceField(TestAllTypes_ptr p)
 	return interfaceField;
 }
 
+int TestAllTypes_has_interfaceField(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr interfaceField;
+	interfaceField = capn_getp(p.p, 3, 1);
+	return interfaceField.type != CAPN_NULL;
+}
+
 capn_ptr TestAllTypes_get_voidList(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_ptr voidList;
 	voidList = capn_getp(p.p, 4, 1);
 	return voidList;
+}
+
+int TestAllTypes_has_voidList(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr voidList;
+	voidList = capn_getp(p.p, 4, 1);
+	return voidList.type != CAPN_NULL;
 }
 
 capn_list1 TestAllTypes_get_boolList(TestAllTypes_ptr p)
@@ -1482,12 +1528,28 @@ capn_list1 TestAllTypes_get_boolList(TestAllTypes_ptr p)
 	return boolList;
 }
 
+int TestAllTypes_has_boolList(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr boolList;
+	boolList = capn_getp(p.p, 5, 1);
+	return boolList.type != CAPN_NULL;
+}
+
 capn_list8 TestAllTypes_get_int8List(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list8 int8List;
 	int8List.p = capn_getp(p.p, 6, 1);
 	return int8List;
+}
+
+int TestAllTypes_has_int8List(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr int8List;
+	int8List = capn_getp(p.p, 6, 1);
+	return int8List.type != CAPN_NULL;
 }
 
 capn_list16 TestAllTypes_get_int16List(TestAllTypes_ptr p)
@@ -1498,12 +1560,28 @@ capn_list16 TestAllTypes_get_int16List(TestAllTypes_ptr p)
 	return int16List;
 }
 
+int TestAllTypes_has_int16List(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr int16List;
+	int16List = capn_getp(p.p, 7, 1);
+	return int16List.type != CAPN_NULL;
+}
+
 capn_list32 TestAllTypes_get_int32List(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list32 int32List;
 	int32List.p = capn_getp(p.p, 8, 1);
 	return int32List;
+}
+
+int TestAllTypes_has_int32List(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr int32List;
+	int32List = capn_getp(p.p, 8, 1);
+	return int32List.type != CAPN_NULL;
 }
 
 capn_list64 TestAllTypes_get_int64List(TestAllTypes_ptr p)
@@ -1514,12 +1592,28 @@ capn_list64 TestAllTypes_get_int64List(TestAllTypes_ptr p)
 	return int64List;
 }
 
+int TestAllTypes_has_int64List(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr int64List;
+	int64List = capn_getp(p.p, 9, 1);
+	return int64List.type != CAPN_NULL;
+}
+
 capn_list8 TestAllTypes_get_uInt8List(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list8 uInt8List;
 	uInt8List.p = capn_getp(p.p, 10, 1);
 	return uInt8List;
+}
+
+int TestAllTypes_has_uInt8List(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr uInt8List;
+	uInt8List = capn_getp(p.p, 10, 1);
+	return uInt8List.type != CAPN_NULL;
 }
 
 capn_list16 TestAllTypes_get_uInt16List(TestAllTypes_ptr p)
@@ -1530,12 +1624,28 @@ capn_list16 TestAllTypes_get_uInt16List(TestAllTypes_ptr p)
 	return uInt16List;
 }
 
+int TestAllTypes_has_uInt16List(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr uInt16List;
+	uInt16List = capn_getp(p.p, 11, 1);
+	return uInt16List.type != CAPN_NULL;
+}
+
 capn_list32 TestAllTypes_get_uInt32List(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list32 uInt32List;
 	uInt32List.p = capn_getp(p.p, 12, 1);
 	return uInt32List;
+}
+
+int TestAllTypes_has_uInt32List(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr uInt32List;
+	uInt32List = capn_getp(p.p, 12, 1);
+	return uInt32List.type != CAPN_NULL;
 }
 
 capn_list64 TestAllTypes_get_uInt64List(TestAllTypes_ptr p)
@@ -1546,12 +1656,28 @@ capn_list64 TestAllTypes_get_uInt64List(TestAllTypes_ptr p)
 	return uInt64List;
 }
 
+int TestAllTypes_has_uInt64List(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr uInt64List;
+	uInt64List = capn_getp(p.p, 13, 1);
+	return uInt64List.type != CAPN_NULL;
+}
+
 capn_list32 TestAllTypes_get_float32List(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_list32 float32List;
 	float32List.p = capn_getp(p.p, 14, 1);
 	return float32List;
+}
+
+int TestAllTypes_has_float32List(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr float32List;
+	float32List = capn_getp(p.p, 14, 1);
+	return float32List.type != CAPN_NULL;
 }
 
 capn_list64 TestAllTypes_get_float64List(TestAllTypes_ptr p)
@@ -1562,12 +1688,28 @@ capn_list64 TestAllTypes_get_float64List(TestAllTypes_ptr p)
 	return float64List;
 }
 
+int TestAllTypes_has_float64List(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr float64List;
+	float64List = capn_getp(p.p, 15, 1);
+	return float64List.type != CAPN_NULL;
+}
+
 capn_ptr_list TestAllTypes_get_textList(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_ptr_list textList;
 	textList.p = capn_getp(p.p, 16, 1);
 	return textList;
+}
+
+int TestAllTypes_has_textList(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr textList;
+	textList = capn_getp(p.p, 16, 1);
+	return textList.type != CAPN_NULL;
 }
 
 capn_ptr_list TestAllTypes_get_dataList(TestAllTypes_ptr p)
@@ -1578,12 +1720,28 @@ capn_ptr_list TestAllTypes_get_dataList(TestAllTypes_ptr p)
 	return dataList;
 }
 
+int TestAllTypes_has_dataList(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr dataList;
+	dataList = capn_getp(p.p, 17, 1);
+	return dataList.type != CAPN_NULL;
+}
+
 TestAllTypes_list TestAllTypes_get_structList(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	TestAllTypes_list structList;
 	structList.p = capn_getp(p.p, 18, 1);
 	return structList;
+}
+
+int TestAllTypes_has_structList(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr structList;
+	structList = capn_getp(p.p, 18, 1);
+	return structList.type != CAPN_NULL;
 }
 
 capn_list16 TestAllTypes_get_enumList(TestAllTypes_ptr p)
@@ -1594,12 +1752,28 @@ capn_list16 TestAllTypes_get_enumList(TestAllTypes_ptr p)
 	return enumList;
 }
 
+int TestAllTypes_has_enumList(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr enumList;
+	enumList = capn_getp(p.p, 19, 1);
+	return enumList.type != CAPN_NULL;
+}
+
 TestInterface_list TestAllTypes_get_interfaceList(TestAllTypes_ptr p)
 {
 	capn_resolve(&p.p);
 	TestInterface_list interfaceList;
 	interfaceList.p = capn_getp(p.p, 20, 1);
 	return interfaceList;
+}
+
+int TestAllTypes_has_interfaceList(TestAllTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr interfaceList;
+	interfaceList = capn_getp(p.p, 20, 1);
+	return interfaceList.type != CAPN_NULL;
 }
 
 void TestAllTypes_set_boolField(TestAllTypes_ptr p, unsigned boolField)
@@ -1677,7 +1851,7 @@ void TestAllTypes_set_textField(TestAllTypes_ptr p, capn_text textField)
 void TestAllTypes_set_dataField(TestAllTypes_ptr p, capn_data dataField)
 {
 	capn_resolve(&p.p);
-	capn_setp(p.p, 1, (dataField.p.type != CAPN_NULL) ? dataField.p : capn_null);
+	capn_set_data(p.p, 1, dataField);
 }
 
 void TestAllTypes_set_structField(TestAllTypes_ptr p, TestAllTypes_ptr structField)
@@ -2064,6 +2238,14 @@ capn_text TestDefaults_get_textField(TestDefaults_ptr p)
 	return textField;
 }
 
+int TestDefaults_has_textField(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr textField;
+	textField = capn_getp(p.p, 0, 1);
+	return textField.type != CAPN_NULL;
+}
+
 capn_data TestDefaults_get_dataField(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
@@ -2075,6 +2257,14 @@ if (!dataField.p.type) {
 	return dataField;
 }
 
+int TestDefaults_has_dataField(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr dataField;
+	dataField = capn_getp(p.p, 1, 1);
+	return dataField.type != CAPN_NULL;
+}
+
 TestAllTypes_ptr TestDefaults_get_structField(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
@@ -2084,6 +2274,14 @@ if (!structField.p.type) {
 	structField = capn_val3;
 }
 	return structField;
+}
+
+int TestDefaults_has_structField(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr structField;
+	structField = capn_getp(p.p, 2, 1);
+	return structField.type != CAPN_NULL;
 }
 
 enum TestEnum TestDefaults_get_enumField(TestDefaults_ptr p)
@@ -2102,6 +2300,14 @@ TestInterface_ptr TestDefaults_get_interfaceField(TestDefaults_ptr p)
 	return interfaceField;
 }
 
+int TestDefaults_has_interfaceField(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr interfaceField;
+	interfaceField = capn_getp(p.p, 3, 1);
+	return interfaceField.type != CAPN_NULL;
+}
+
 capn_ptr TestDefaults_get_voidList(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
@@ -2111,6 +2317,14 @@ if (!voidList.type) {
 	voidList = capn_val4;
 }
 	return voidList;
+}
+
+int TestDefaults_has_voidList(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr voidList;
+	voidList = capn_getp(p.p, 4, 1);
+	return voidList.type != CAPN_NULL;
 }
 
 capn_list1 TestDefaults_get_boolList(TestDefaults_ptr p)
@@ -2124,6 +2338,14 @@ if (!boolList.p.type) {
 	return boolList;
 }
 
+int TestDefaults_has_boolList(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr boolList;
+	boolList = capn_getp(p.p, 5, 1);
+	return boolList.type != CAPN_NULL;
+}
+
 capn_list8 TestDefaults_get_int8List(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
@@ -2133,6 +2355,14 @@ if (!int8List.p.type) {
 	int8List = capn_val6;
 }
 	return int8List;
+}
+
+int TestDefaults_has_int8List(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr int8List;
+	int8List = capn_getp(p.p, 6, 1);
+	return int8List.type != CAPN_NULL;
 }
 
 capn_list16 TestDefaults_get_int16List(TestDefaults_ptr p)
@@ -2146,6 +2376,14 @@ if (!int16List.p.type) {
 	return int16List;
 }
 
+int TestDefaults_has_int16List(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr int16List;
+	int16List = capn_getp(p.p, 7, 1);
+	return int16List.type != CAPN_NULL;
+}
+
 capn_list32 TestDefaults_get_int32List(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
@@ -2155,6 +2393,14 @@ if (!int32List.p.type) {
 	int32List = capn_val8;
 }
 	return int32List;
+}
+
+int TestDefaults_has_int32List(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr int32List;
+	int32List = capn_getp(p.p, 8, 1);
+	return int32List.type != CAPN_NULL;
 }
 
 capn_list64 TestDefaults_get_int64List(TestDefaults_ptr p)
@@ -2168,6 +2414,14 @@ if (!int64List.p.type) {
 	return int64List;
 }
 
+int TestDefaults_has_int64List(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr int64List;
+	int64List = capn_getp(p.p, 9, 1);
+	return int64List.type != CAPN_NULL;
+}
+
 capn_list8 TestDefaults_get_uInt8List(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
@@ -2177,6 +2431,14 @@ if (!uInt8List.p.type) {
 	uInt8List = capn_val10;
 }
 	return uInt8List;
+}
+
+int TestDefaults_has_uInt8List(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr uInt8List;
+	uInt8List = capn_getp(p.p, 10, 1);
+	return uInt8List.type != CAPN_NULL;
 }
 
 capn_list16 TestDefaults_get_uInt16List(TestDefaults_ptr p)
@@ -2190,6 +2452,14 @@ if (!uInt16List.p.type) {
 	return uInt16List;
 }
 
+int TestDefaults_has_uInt16List(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr uInt16List;
+	uInt16List = capn_getp(p.p, 11, 1);
+	return uInt16List.type != CAPN_NULL;
+}
+
 capn_list32 TestDefaults_get_uInt32List(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
@@ -2199,6 +2469,14 @@ if (!uInt32List.p.type) {
 	uInt32List = capn_val12;
 }
 	return uInt32List;
+}
+
+int TestDefaults_has_uInt32List(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr uInt32List;
+	uInt32List = capn_getp(p.p, 12, 1);
+	return uInt32List.type != CAPN_NULL;
 }
 
 capn_list64 TestDefaults_get_uInt64List(TestDefaults_ptr p)
@@ -2212,6 +2490,14 @@ if (!uInt64List.p.type) {
 	return uInt64List;
 }
 
+int TestDefaults_has_uInt64List(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr uInt64List;
+	uInt64List = capn_getp(p.p, 13, 1);
+	return uInt64List.type != CAPN_NULL;
+}
+
 capn_list32 TestDefaults_get_float32List(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
@@ -2221,6 +2507,14 @@ if (!float32List.p.type) {
 	float32List = capn_val14;
 }
 	return float32List;
+}
+
+int TestDefaults_has_float32List(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr float32List;
+	float32List = capn_getp(p.p, 14, 1);
+	return float32List.type != CAPN_NULL;
 }
 
 capn_list64 TestDefaults_get_float64List(TestDefaults_ptr p)
@@ -2234,6 +2528,14 @@ if (!float64List.p.type) {
 	return float64List;
 }
 
+int TestDefaults_has_float64List(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr float64List;
+	float64List = capn_getp(p.p, 15, 1);
+	return float64List.type != CAPN_NULL;
+}
+
 capn_ptr_list TestDefaults_get_textList(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
@@ -2243,6 +2545,14 @@ if (!textList.p.type) {
 	textList = capn_val16;
 }
 	return textList;
+}
+
+int TestDefaults_has_textList(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr textList;
+	textList = capn_getp(p.p, 16, 1);
+	return textList.type != CAPN_NULL;
 }
 
 capn_ptr_list TestDefaults_get_dataList(TestDefaults_ptr p)
@@ -2256,6 +2566,14 @@ if (!dataList.p.type) {
 	return dataList;
 }
 
+int TestDefaults_has_dataList(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr dataList;
+	dataList = capn_getp(p.p, 17, 1);
+	return dataList.type != CAPN_NULL;
+}
+
 TestAllTypes_list TestDefaults_get_structList(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
@@ -2265,6 +2583,14 @@ if (!structList.p.type) {
 	structList = capn_val18;
 }
 	return structList;
+}
+
+int TestDefaults_has_structList(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr structList;
+	structList = capn_getp(p.p, 18, 1);
+	return structList.type != CAPN_NULL;
 }
 
 capn_list16 TestDefaults_get_enumList(TestDefaults_ptr p)
@@ -2278,12 +2604,28 @@ if (!enumList.p.type) {
 	return enumList;
 }
 
+int TestDefaults_has_enumList(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr enumList;
+	enumList = capn_getp(p.p, 19, 1);
+	return enumList.type != CAPN_NULL;
+}
+
 TestInterface_list TestDefaults_get_interfaceList(TestDefaults_ptr p)
 {
 	capn_resolve(&p.p);
 	TestInterface_list interfaceList;
 	interfaceList.p = capn_getp(p.p, 20, 1);
 	return interfaceList;
+}
+
+int TestDefaults_has_interfaceList(TestDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr interfaceList;
+	interfaceList = capn_getp(p.p, 20, 1);
+	return interfaceList.type != CAPN_NULL;
 }
 
 void TestDefaults_set_boolField(TestDefaults_ptr p, unsigned boolField)
@@ -2523,6 +2865,14 @@ capn_ptr TestAnyPointer_get_anyPointerField(TestAnyPointer_ptr p)
 	return anyPointerField;
 }
 
+int TestAnyPointer_has_anyPointerField(TestAnyPointer_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr anyPointerField;
+	anyPointerField = capn_getp(p.p, 0, 1);
+	return anyPointerField.type != CAPN_NULL;
+}
+
 void TestAnyPointer_set_anyPointerField(TestAnyPointer_ptr p, capn_ptr anyPointerField)
 {
 	capn_resolve(&p.p);
@@ -2584,12 +2934,28 @@ capn_text TestOutOfOrder_get_foo(TestOutOfOrder_ptr p)
 	return foo;
 }
 
+int TestOutOfOrder_has_foo(TestOutOfOrder_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr foo;
+	foo = capn_getp(p.p, 3, 1);
+	return foo.type != CAPN_NULL;
+}
+
 capn_text TestOutOfOrder_get_bar(TestOutOfOrder_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_text bar;
 	bar = capn_get_text(p.p, 2, capn_val0);
 	return bar;
+}
+
+int TestOutOfOrder_has_bar(TestOutOfOrder_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr bar;
+	bar = capn_getp(p.p, 2, 1);
+	return bar.type != CAPN_NULL;
 }
 
 capn_text TestOutOfOrder_get_baz(TestOutOfOrder_ptr p)
@@ -2600,12 +2966,28 @@ capn_text TestOutOfOrder_get_baz(TestOutOfOrder_ptr p)
 	return baz;
 }
 
+int TestOutOfOrder_has_baz(TestOutOfOrder_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr baz;
+	baz = capn_getp(p.p, 8, 1);
+	return baz.type != CAPN_NULL;
+}
+
 capn_text TestOutOfOrder_get_qux(TestOutOfOrder_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_text qux;
 	qux = capn_get_text(p.p, 0, capn_val0);
 	return qux;
+}
+
+int TestOutOfOrder_has_qux(TestOutOfOrder_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr qux;
+	qux = capn_getp(p.p, 0, 1);
+	return qux.type != CAPN_NULL;
 }
 
 capn_text TestOutOfOrder_get_quux(TestOutOfOrder_ptr p)
@@ -2616,12 +2998,28 @@ capn_text TestOutOfOrder_get_quux(TestOutOfOrder_ptr p)
 	return quux;
 }
 
+int TestOutOfOrder_has_quux(TestOutOfOrder_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr quux;
+	quux = capn_getp(p.p, 6, 1);
+	return quux.type != CAPN_NULL;
+}
+
 capn_text TestOutOfOrder_get_corge(TestOutOfOrder_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_text corge;
 	corge = capn_get_text(p.p, 4, capn_val0);
 	return corge;
+}
+
+int TestOutOfOrder_has_corge(TestOutOfOrder_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr corge;
+	corge = capn_getp(p.p, 4, 1);
+	return corge.type != CAPN_NULL;
 }
 
 capn_text TestOutOfOrder_get_grault(TestOutOfOrder_ptr p)
@@ -2632,6 +3030,14 @@ capn_text TestOutOfOrder_get_grault(TestOutOfOrder_ptr p)
 	return grault;
 }
 
+int TestOutOfOrder_has_grault(TestOutOfOrder_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr grault;
+	grault = capn_getp(p.p, 1, 1);
+	return grault.type != CAPN_NULL;
+}
+
 capn_text TestOutOfOrder_get_garply(TestOutOfOrder_ptr p)
 {
 	capn_resolve(&p.p);
@@ -2640,12 +3046,28 @@ capn_text TestOutOfOrder_get_garply(TestOutOfOrder_ptr p)
 	return garply;
 }
 
+int TestOutOfOrder_has_garply(TestOutOfOrder_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr garply;
+	garply = capn_getp(p.p, 7, 1);
+	return garply.type != CAPN_NULL;
+}
+
 capn_text TestOutOfOrder_get_waldo(TestOutOfOrder_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_text waldo;
 	waldo = capn_get_text(p.p, 5, capn_val0);
 	return waldo;
+}
+
+int TestOutOfOrder_has_waldo(TestOutOfOrder_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr waldo;
+	waldo = capn_getp(p.p, 5, 1);
+	return waldo.type != CAPN_NULL;
 }
 
 void TestOutOfOrder_set_foo(TestOutOfOrder_ptr p, capn_text foo)
@@ -3204,6 +3626,14 @@ capn_text TestUnnamedUnion_get_before(TestUnnamedUnion_ptr p)
 	return before;
 }
 
+int TestUnnamedUnion_has_before(TestUnnamedUnion_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr before;
+	before = capn_getp(p.p, 0, 1);
+	return before.type != CAPN_NULL;
+}
+
 void TestUnnamedUnion_set_before(TestUnnamedUnion_ptr p, capn_text before)
 {
 	capn_resolve(&p.p);
@@ -3523,6 +3953,14 @@ if (!s16s8s64s8Set.p.type) {
 	return s16s8s64s8Set;
 }
 
+int TestUnionDefaults_has_s16s8s64s8Set(TestUnionDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr s16s8s64s8Set;
+	s16s8s64s8Set = capn_getp(p.p, 0, 1);
+	return s16s8s64s8Set.type != CAPN_NULL;
+}
+
 TestUnion_ptr TestUnionDefaults_get_s0sps1s32Set(TestUnionDefaults_ptr p)
 {
 	capn_resolve(&p.p);
@@ -3532,6 +3970,14 @@ if (!s0sps1s32Set.p.type) {
 	s0sps1s32Set = capn_val21;
 }
 	return s0sps1s32Set;
+}
+
+int TestUnionDefaults_has_s0sps1s32Set(TestUnionDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr s0sps1s32Set;
+	s0sps1s32Set = capn_getp(p.p, 1, 1);
+	return s0sps1s32Set.type != CAPN_NULL;
 }
 
 TestUnnamedUnion_ptr TestUnionDefaults_get_unnamed1(TestUnionDefaults_ptr p)
@@ -3545,6 +3991,14 @@ if (!unnamed1.p.type) {
 	return unnamed1;
 }
 
+int TestUnionDefaults_has_unnamed1(TestUnionDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr unnamed1;
+	unnamed1 = capn_getp(p.p, 2, 1);
+	return unnamed1.type != CAPN_NULL;
+}
+
 TestUnnamedUnion_ptr TestUnionDefaults_get_unnamed2(TestUnionDefaults_ptr p)
 {
 	capn_resolve(&p.p);
@@ -3554,6 +4008,14 @@ if (!unnamed2.p.type) {
 	unnamed2 = capn_val23;
 }
 	return unnamed2;
+}
+
+int TestUnionDefaults_has_unnamed2(TestUnionDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr unnamed2;
+	unnamed2 = capn_getp(p.p, 3, 1);
+	return unnamed2.type != CAPN_NULL;
 }
 
 void TestUnionDefaults_set_s16s8s64s8Set(TestUnionDefaults_ptr p, TestUnion_ptr s16s8s64s8Set)
@@ -3621,6 +4083,14 @@ TestNestedTypes_NestedStruct_ptr TestNestedTypes_get_nestedStruct(TestNestedType
 	TestNestedTypes_NestedStruct_ptr nestedStruct;
 	nestedStruct.p = capn_getp(p.p, 0, 1);
 	return nestedStruct;
+}
+
+int TestNestedTypes_has_nestedStruct(TestNestedTypes_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr nestedStruct;
+	nestedStruct = capn_getp(p.p, 0, 1);
+	return nestedStruct.type != CAPN_NULL;
 }
 
 enum TestNestedTypes_NestedEnum TestNestedTypes_get_outerNestedEnum(TestNestedTypes_ptr p)
@@ -3836,12 +4306,28 @@ TestLists_Struct0_list TestLists_get_list0(TestLists_ptr p)
 	return list0;
 }
 
+int TestLists_has_list0(TestLists_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr list0;
+	list0 = capn_getp(p.p, 0, 1);
+	return list0.type != CAPN_NULL;
+}
+
 TestLists_Struct1_list TestLists_get_list1(TestLists_ptr p)
 {
 	capn_resolve(&p.p);
 	TestLists_Struct1_list list1;
 	list1.p = capn_getp(p.p, 1, 1);
 	return list1;
+}
+
+int TestLists_has_list1(TestLists_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr list1;
+	list1 = capn_getp(p.p, 1, 1);
+	return list1.type != CAPN_NULL;
 }
 
 TestLists_Struct8_list TestLists_get_list8(TestLists_ptr p)
@@ -3852,12 +4338,28 @@ TestLists_Struct8_list TestLists_get_list8(TestLists_ptr p)
 	return list8;
 }
 
+int TestLists_has_list8(TestLists_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr list8;
+	list8 = capn_getp(p.p, 2, 1);
+	return list8.type != CAPN_NULL;
+}
+
 TestLists_Struct16_list TestLists_get_list16(TestLists_ptr p)
 {
 	capn_resolve(&p.p);
 	TestLists_Struct16_list list16;
 	list16.p = capn_getp(p.p, 3, 1);
 	return list16;
+}
+
+int TestLists_has_list16(TestLists_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr list16;
+	list16 = capn_getp(p.p, 3, 1);
+	return list16.type != CAPN_NULL;
 }
 
 TestLists_Struct32_list TestLists_get_list32(TestLists_ptr p)
@@ -3868,12 +4370,28 @@ TestLists_Struct32_list TestLists_get_list32(TestLists_ptr p)
 	return list32;
 }
 
+int TestLists_has_list32(TestLists_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr list32;
+	list32 = capn_getp(p.p, 4, 1);
+	return list32.type != CAPN_NULL;
+}
+
 TestLists_Struct64_list TestLists_get_list64(TestLists_ptr p)
 {
 	capn_resolve(&p.p);
 	TestLists_Struct64_list list64;
 	list64.p = capn_getp(p.p, 5, 1);
 	return list64;
+}
+
+int TestLists_has_list64(TestLists_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr list64;
+	list64 = capn_getp(p.p, 5, 1);
+	return list64.type != CAPN_NULL;
 }
 
 TestLists_StructP_list TestLists_get_listP(TestLists_ptr p)
@@ -3884,12 +4402,28 @@ TestLists_StructP_list TestLists_get_listP(TestLists_ptr p)
 	return listP;
 }
 
+int TestLists_has_listP(TestLists_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr listP;
+	listP = capn_getp(p.p, 6, 1);
+	return listP.type != CAPN_NULL;
+}
+
 capn_ptr_list TestLists_get_int32ListList(TestLists_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_ptr_list int32ListList;
 	int32ListList.p = capn_getp(p.p, 7, 1);
 	return int32ListList;
+}
+
+int TestLists_has_int32ListList(TestLists_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr int32ListList;
+	int32ListList = capn_getp(p.p, 7, 1);
+	return int32ListList.type != CAPN_NULL;
 }
 
 capn_ptr_list TestLists_get_textListList(TestLists_ptr p)
@@ -3900,12 +4434,28 @@ capn_ptr_list TestLists_get_textListList(TestLists_ptr p)
 	return textListList;
 }
 
+int TestLists_has_textListList(TestLists_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr textListList;
+	textListList = capn_getp(p.p, 8, 1);
+	return textListList.type != CAPN_NULL;
+}
+
 capn_ptr_list TestLists_get_structListList(TestLists_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_ptr_list structListList;
 	structListList.p = capn_getp(p.p, 9, 1);
 	return structListList;
+}
+
+int TestLists_has_structListList(TestLists_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr structListList;
+	structListList = capn_getp(p.p, 9, 1);
+	return structListList.type != CAPN_NULL;
 }
 
 void TestLists_set_list0(TestLists_ptr p, TestLists_Struct0_list list0)
@@ -4261,6 +4811,14 @@ capn_text TestLists_StructP_get_f(TestLists_StructP_ptr p)
 	return f;
 }
 
+int TestLists_StructP_has_f(TestLists_StructP_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr f;
+	f = capn_getp(p.p, 0, 1);
+	return f.type != CAPN_NULL;
+}
+
 void TestLists_StructP_set_f(TestLists_StructP_ptr p, capn_text f)
 {
 	capn_resolve(&p.p);
@@ -4304,6 +4862,14 @@ capn_text TestLists_Struct0c_get_pad(TestLists_Struct0c_ptr p)
 	capn_text pad;
 	pad = capn_get_text(p.p, 0, capn_val0);
 	return pad;
+}
+
+int TestLists_Struct0c_has_pad(TestLists_Struct0c_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr pad;
+	pad = capn_getp(p.p, 0, 1);
+	return pad.type != CAPN_NULL;
 }
 
 void TestLists_Struct0c_set_pad(TestLists_Struct0c_ptr p, capn_text pad)
@@ -4359,6 +4925,14 @@ capn_text TestLists_Struct1c_get_pad(TestLists_Struct1c_ptr p)
 	capn_text pad;
 	pad = capn_get_text(p.p, 0, capn_val0);
 	return pad;
+}
+
+int TestLists_Struct1c_has_pad(TestLists_Struct1c_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr pad;
+	pad = capn_getp(p.p, 0, 1);
+	return pad.type != CAPN_NULL;
 }
 
 void TestLists_Struct1c_set_f(TestLists_Struct1c_ptr p, unsigned f)
@@ -4422,6 +4996,14 @@ capn_text TestLists_Struct8c_get_pad(TestLists_Struct8c_ptr p)
 	return pad;
 }
 
+int TestLists_Struct8c_has_pad(TestLists_Struct8c_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr pad;
+	pad = capn_getp(p.p, 0, 1);
+	return pad.type != CAPN_NULL;
+}
+
 void TestLists_Struct8c_set_f(TestLists_Struct8c_ptr p, uint8_t f)
 {
 	capn_resolve(&p.p);
@@ -4481,6 +5063,14 @@ capn_text TestLists_Struct16c_get_pad(TestLists_Struct16c_ptr p)
 	capn_text pad;
 	pad = capn_get_text(p.p, 0, capn_val0);
 	return pad;
+}
+
+int TestLists_Struct16c_has_pad(TestLists_Struct16c_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr pad;
+	pad = capn_getp(p.p, 0, 1);
+	return pad.type != CAPN_NULL;
 }
 
 void TestLists_Struct16c_set_f(TestLists_Struct16c_ptr p, uint16_t f)
@@ -4544,6 +5134,14 @@ capn_text TestLists_Struct32c_get_pad(TestLists_Struct32c_ptr p)
 	return pad;
 }
 
+int TestLists_Struct32c_has_pad(TestLists_Struct32c_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr pad;
+	pad = capn_getp(p.p, 0, 1);
+	return pad.type != CAPN_NULL;
+}
+
 void TestLists_Struct32c_set_f(TestLists_Struct32c_ptr p, uint32_t f)
 {
 	capn_resolve(&p.p);
@@ -4605,6 +5203,14 @@ capn_text TestLists_Struct64c_get_pad(TestLists_Struct64c_ptr p)
 	return pad;
 }
 
+int TestLists_Struct64c_has_pad(TestLists_Struct64c_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr pad;
+	pad = capn_getp(p.p, 0, 1);
+	return pad.type != CAPN_NULL;
+}
+
 void TestLists_Struct64c_set_f(TestLists_Struct64c_ptr p, uint64_t f)
 {
 	capn_resolve(&p.p);
@@ -4656,6 +5262,14 @@ capn_text TestLists_StructPc_get_f(TestLists_StructPc_ptr p)
 	capn_text f;
 	f = capn_get_text(p.p, 0, capn_val0);
 	return f;
+}
+
+int TestLists_StructPc_has_f(TestLists_StructPc_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr f;
+	f = capn_getp(p.p, 0, 1);
+	return f.type != CAPN_NULL;
 }
 
 uint64_t TestLists_StructPc_get_pad(TestLists_StructPc_ptr p)
@@ -4801,6 +5415,14 @@ if (!lists.p.type) {
 	return lists;
 }
 
+int TestListDefaults_has_lists(TestListDefaults_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr lists;
+	lists = capn_getp(p.p, 0, 1);
+	return lists.type != CAPN_NULL;
+}
+
 void TestListDefaults_set_lists(TestListDefaults_ptr p, TestLists_ptr lists)
 {
 	capn_resolve(&p.p);
@@ -4914,6 +5536,14 @@ capn_text TestLateUnion_get_bar(TestLateUnion_ptr p)
 	return bar;
 }
 
+int TestLateUnion_has_bar(TestLateUnion_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr bar;
+	bar = capn_getp(p.p, 0, 1);
+	return bar.type != CAPN_NULL;
+}
+
 int16_t TestLateUnion_get_baz(TestLateUnion_ptr p)
 {
 	capn_resolve(&p.p);
@@ -4991,12 +5621,28 @@ capn_text TestOldVersion_get_old2(TestOldVersion_ptr p)
 	return old2;
 }
 
+int TestOldVersion_has_old2(TestOldVersion_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr old2;
+	old2 = capn_getp(p.p, 0, 1);
+	return old2.type != CAPN_NULL;
+}
+
 TestOldVersion_ptr TestOldVersion_get_old3(TestOldVersion_ptr p)
 {
 	capn_resolve(&p.p);
 	TestOldVersion_ptr old3;
 	old3.p = capn_getp(p.p, 1, 1);
 	return old3;
+}
+
+int TestOldVersion_has_old3(TestOldVersion_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr old3;
+	old3 = capn_getp(p.p, 1, 1);
+	return old3.type != CAPN_NULL;
 }
 
 void TestOldVersion_set_old1(TestOldVersion_ptr p, int64_t old1)
@@ -5016,7 +5662,7 @@ void TestOldVersion_set_old3(TestOldVersion_ptr p, TestOldVersion_ptr old3)
 	capn_resolve(&p.p);
 	capn_setp(p.p, 1, (old3.p.type != CAPN_NULL) ? old3.p : capn_null);
 }
-static capn_text capn_val25 = {3,(char*)&capn_buf[9520],(struct capn_segment*)&capn_seg};
+static capn_text capn_val25 = {3,(char*)&capn_buf[9568],(struct capn_segment*)&capn_seg};
 
 TestNewVersion_ptr new_TestNewVersion(struct capn_segment *s) {
 	TestNewVersion_ptr p;
@@ -5073,12 +5719,28 @@ capn_text TestNewVersion_get_old2(TestNewVersion_ptr p)
 	return old2;
 }
 
+int TestNewVersion_has_old2(TestNewVersion_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr old2;
+	old2 = capn_getp(p.p, 0, 1);
+	return old2.type != CAPN_NULL;
+}
+
 TestNewVersion_ptr TestNewVersion_get_old3(TestNewVersion_ptr p)
 {
 	capn_resolve(&p.p);
 	TestNewVersion_ptr old3;
 	old3.p = capn_getp(p.p, 1, 1);
 	return old3;
+}
+
+int TestNewVersion_has_old3(TestNewVersion_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr old3;
+	old3 = capn_getp(p.p, 1, 1);
+	return old3.type != CAPN_NULL;
 }
 
 int64_t TestNewVersion_get_new1(TestNewVersion_ptr p)
@@ -5095,6 +5757,14 @@ capn_text TestNewVersion_get_new2(TestNewVersion_ptr p)
 	capn_text new2;
 	new2 = capn_get_text(p.p, 2, capn_val25);
 	return new2;
+}
+
+int TestNewVersion_has_new2(TestNewVersion_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr new2;
+	new2 = capn_getp(p.p, 2, 1);
+	return new2.type != CAPN_NULL;
 }
 
 void TestNewVersion_set_old1(TestNewVersion_ptr p, int64_t old1)
@@ -5219,12 +5889,28 @@ capn_text TestStructUnion_SomeStruct_get_someText(TestStructUnion_SomeStruct_ptr
 	return someText;
 }
 
+int TestStructUnion_SomeStruct_has_someText(TestStructUnion_SomeStruct_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr someText;
+	someText = capn_getp(p.p, 0, 1);
+	return someText.type != CAPN_NULL;
+}
+
 capn_text TestStructUnion_SomeStruct_get_moreText(TestStructUnion_SomeStruct_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_text moreText;
 	moreText = capn_get_text(p.p, 1, capn_val0);
 	return moreText;
+}
+
+int TestStructUnion_SomeStruct_has_moreText(TestStructUnion_SomeStruct_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr moreText;
+	moreText = capn_getp(p.p, 1, 1);
+	return moreText.type != CAPN_NULL;
 }
 
 void TestStructUnion_SomeStruct_set_someText(TestStructUnion_SomeStruct_ptr p, capn_text someText)
@@ -5280,12 +5966,28 @@ capn_text TestPrintInlineStructs_get_someText(TestPrintInlineStructs_ptr p)
 	return someText;
 }
 
+int TestPrintInlineStructs_has_someText(TestPrintInlineStructs_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr someText;
+	someText = capn_getp(p.p, 0, 1);
+	return someText.type != CAPN_NULL;
+}
+
 TestPrintInlineStructs_InlineStruct_list TestPrintInlineStructs_get_structList(TestPrintInlineStructs_ptr p)
 {
 	capn_resolve(&p.p);
 	TestPrintInlineStructs_InlineStruct_list structList;
 	structList.p = capn_getp(p.p, 1, 1);
 	return structList;
+}
+
+int TestPrintInlineStructs_has_structList(TestPrintInlineStructs_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr structList;
+	structList = capn_getp(p.p, 1, 1);
+	return structList.type != CAPN_NULL;
 }
 
 void TestPrintInlineStructs_set_someText(TestPrintInlineStructs_ptr p, capn_text someText)
@@ -5347,6 +6049,14 @@ capn_text TestPrintInlineStructs_InlineStruct_get_textField(TestPrintInlineStruc
 	capn_text textField;
 	textField = capn_get_text(p.p, 0, capn_val0);
 	return textField;
+}
+
+int TestPrintInlineStructs_InlineStruct_has_textField(TestPrintInlineStructs_InlineStruct_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr textField;
+	textField = capn_getp(p.p, 0, 1);
+	return textField.type != CAPN_NULL;
 }
 
 void TestPrintInlineStructs_InlineStruct_set_int32Field(TestPrintInlineStructs_InlineStruct_ptr p, int32_t int32Field)
@@ -5521,12 +6231,28 @@ TestSturdyRefHostId_ptr TestSturdyRef_get_hostId(TestSturdyRef_ptr p)
 	return hostId;
 }
 
+int TestSturdyRef_has_hostId(TestSturdyRef_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr hostId;
+	hostId = capn_getp(p.p, 0, 1);
+	return hostId.type != CAPN_NULL;
+}
+
 capn_ptr TestSturdyRef_get_objectId(TestSturdyRef_ptr p)
 {
 	capn_resolve(&p.p);
 	capn_ptr objectId;
 	objectId = capn_getp(p.p, 1, 1);
 	return objectId;
+}
+
+int TestSturdyRef_has_objectId(TestSturdyRef_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr objectId;
+	objectId = capn_getp(p.p, 1, 1);
+	return objectId.type != CAPN_NULL;
 }
 
 void TestSturdyRef_set_hostId(TestSturdyRef_ptr p, TestSturdyRefHostId_ptr hostId)
@@ -5578,6 +6304,14 @@ capn_text TestSturdyRefHostId_get_host(TestSturdyRefHostId_ptr p)
 	capn_text host;
 	host = capn_get_text(p.p, 0, capn_val0);
 	return host;
+}
+
+int TestSturdyRefHostId_has_host(TestSturdyRefHostId_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr host;
+	host = capn_getp(p.p, 0, 1);
+	return host.type != CAPN_NULL;
 }
 
 void TestSturdyRefHostId_set_host(TestSturdyRefHostId_ptr p, capn_text host)
@@ -5867,6 +6601,14 @@ TestNameAnnotation_NestedStruct_ptr TestNameAnnotation_NestedStruct_get_anotherB
 	TestNameAnnotation_NestedStruct_ptr anotherBadNestedFieldName;
 	anotherBadNestedFieldName.p = capn_getp(p.p, 0, 1);
 	return anotherBadNestedFieldName;
+}
+
+int TestNameAnnotation_NestedStruct_has_anotherBadNestedFieldName(TestNameAnnotation_NestedStruct_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr anotherBadNestedFieldName;
+	anotherBadNestedFieldName = capn_getp(p.p, 0, 1);
+	return anotherBadNestedFieldName.type != CAPN_NULL;
 }
 
 void TestNameAnnotation_NestedStruct_set_badNestedFieldName(TestNameAnnotation_NestedStruct_ptr p, unsigned badNestedFieldName)
