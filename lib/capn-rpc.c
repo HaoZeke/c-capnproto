@@ -1082,6 +1082,51 @@ int capn_rpc_is_failed(struct capn_rpc_conn *c, uint32_t question_id)
 	return q && q->answered && q->failed;
 }
 
+int capn_rpc_answer_cap_id(struct capn_rpc_conn *c, uint32_t question_id)
+{
+	struct capn msg;
+	struct Message m;
+	struct Return r;
+	struct Payload pl;
+	struct CapDescriptor cd;
+	Message_ptr mp;
+	struct capn_rpc_question *q = question_find(c, question_id);
+	int id = -1;
+
+	if (q == NULL || !q->answered || q->failed)
+		return -1;
+	if (capn_init_mem(&msg, q->reply, q->reply_len, 0) != 0)
+		return -1;
+	mp.p = capn_getp(capn_root(&msg), 0, 1);
+	read_Message(&m, mp);
+	if (m.which != Message__return)
+		goto out;
+	read_Return(&r, m._return);
+	if (r.which != Return_results)
+		goto out;
+	read_Payload(&pl, r.results);
+	/* Both may be far pointers into another segment. */
+	capn_resolve(&pl.content);
+	capn_resolve(&pl.capTable.p);
+	if (pl.content.type != CAPN_INTERFACE)
+		goto out;
+	/* The content pointer holds a capTable index; the descriptor beside
+	 * it names the export. */
+	if (pl.capTable.p.type == CAPN_NULL)
+		goto out;
+	if (pl.content.len < 0 || pl.content.len >= capn_ptr_len(pl.capTable.p))
+		goto out;
+	/* A struct list: read the element through the generated accessor,
+	 * not as a pointer list. */
+	get_CapDescriptor(&cd, pl.capTable, pl.content.len);
+	if (cd.which == CapDescriptor_senderHosted)
+		id = (int)cd.senderHosted;
+
+out:
+	capn_free(&msg);
+	return id;
+}
+
 int capn_rpc_answer_content(struct capn_rpc_conn *c, uint32_t question_id,
                             struct capn *msg_out, capn_ptr *out)
 {

@@ -49,11 +49,17 @@ void flush(Wire *w)
 		capn_rpc_handle(w->peer, frames[i].data(), frames[i].size());
 }
 
-int counting_dispatch(void *server, uint64_t, uint16_t, capn_ptr, capn_ptr results)
+/* Answers with its own mark, so a call shows which object it reached. */
+struct Marked {
+	int calls;
+	uint32_t mark;
+};
+
+int marked_dispatch(void *server, uint64_t, uint16_t, capn_ptr, capn_ptr results)
 {
-	int *calls = static_cast<int *>(server);
-	(*calls)++;
-	capn_write32(results, 0, 42);
+	Marked *m = static_cast<Marked *>(server);
+	m->calls++;
+	capn_write32(results, 0, m->mark);
 	return 0;
 }
 
@@ -82,9 +88,9 @@ Answer read_answer(struct capn_rpc_conn *c, uint32_t qid)
 	if (capn_rpc_answer_content(c, qid, &held, &content) != 0)
 		return a;
 	a.has_cap = content.type == CAPN_INTERFACE;
-	if (a.has_cap)
-		a.cap_id = static_cast<uint32_t>(content.len);
 	capn_free(&held);
+	if (a.has_cap)
+		a.cap_id = static_cast<uint32_t>(capn_rpc_answer_cap_id(c, qid));
 	return a;
 }
 
@@ -145,7 +151,12 @@ void tell_carol_where_to_go(struct capn_rpc_conn *alice, uint32_t qid,
 TEST(RpcHandoff, CarolEndsUpHoldingTheCapabilityBobHosts)
 {
 	const uint64_t nonce = 0x5eedULL;
-	int calls = 0;
+	Marked hosted = {0, 42};
+	/* Bob answers Carol's connection with a different object, so the two
+	 * connections do not agree on export ids by accident: the capability
+	 * Alice hands over must arrive under an id of Carol's connection,
+	 * not the one Alice used. */
+	Marked sidecar = {0, 1000};
 
 	/* Bob is one vat with two connections, so the arrangement Alice
 	 * makes on hers is claimable on Carol's. */
@@ -162,8 +173,8 @@ TEST(RpcHandoff, CarolEndsUpHoldingTheCapabilityBobHosts)
 	capn_rpc_init(&bob_to_carol, queue_frame, &b2c);
 	capn_rpc_set_vat(&bob_to_alice, &bob_vat);
 	capn_rpc_set_vat(&bob_to_carol, &bob_vat);
-	capn_rpc_set_bootstrap(&bob_to_alice, &calls, counting_dispatch);
-	capn_rpc_set_bootstrap(&bob_to_carol, &calls, counting_dispatch);
+	capn_rpc_set_bootstrap(&bob_to_alice, &hosted, marked_dispatch);
+	capn_rpc_set_bootstrap(&bob_to_carol, &sidecar, marked_dispatch);
 	a2b.peer = &bob_to_alice;
 	b2a.peer = &alice_to_bob;
 	c2b.peer = &bob_to_carol;
@@ -193,8 +204,8 @@ TEST(RpcHandoff, CarolEndsUpHoldingTheCapabilityBobHosts)
 	capn_rpc_init(&carol_to_alice, queue_frame, &c2a);
 	a2c.peer = &carol_to_alice;
 	c2a.peer = &alice_to_carol;
-	int carol_calls = 0;
-	capn_rpc_set_bootstrap(&carol_to_alice, &carol_calls, counting_dispatch);
+	Marked carols = {0, 1};
+	capn_rpc_set_bootstrap(&carol_to_alice, &carols, marked_dispatch);
 
 	{
 		/* Built on Alice's side, delivered to Carol. */
@@ -246,6 +257,13 @@ TEST(RpcHandoff, CarolEndsUpHoldingTheCapabilityBobHosts)
 	EXPECT_STREQ("10.0.0.1", learned[0].host);
 	EXPECT_EQ(5000, learned[0].port);
 
+	/* Carol bootstraps Bob first, so her connection's export 0 is the
+	 * sidecar and the handed-over capability cannot land on 0 too. */
+	uint32_t side = capn_rpc_send_bootstrap(&carol_to_bob);
+	flush(&c2b);
+	flush(&b2c);
+	ASSERT_TRUE(read_answer(&carol_to_bob, side).answered);
+
 	/* 3. Carol presents the nonce to Bob, over her own connection. She
 	 *    was never told which export id Alice used, and it would mean
 	 *    nothing here: the arrangement is keyed by the nonce alone. */
@@ -268,13 +286,20 @@ TEST(RpcHandoff, CarolEndsUpHoldingTheCapabilityBobHosts)
 	EXPECT_EQ(0, capn_rpc_introduction_done(&carol_to_alice, nonce));
 	EXPECT_EQ(0, capn_rpc_pending_introductions(&carol_to_alice, NULL, 0));
 
-	/* Carol now holds the capability Bob hosts: a call on it reaches the
-	 * very object Alice was talking to. */
-	int before = calls;
-	uint32_t q = capn_rpc_send_call(&carol_to_bob, 0, 0x1234, 0, 1, 0, NULL, NULL);
+	/* Carol now holds the capability Bob hosts. Calling it reaches the
+	 * object Alice was talking to, not whatever else sits at that id on
+	 * Carol's connection: this one answers 42, the sidecar 1000. */
+	int before = hosted.calls;
+	ASSERT_TRUE(got.has_cap);
+	/* Not the id Alice used: her connection called it 0, and 0 here is
+	 * the sidecar. */
+	EXPECT_NE(0u, got.cap_id);
+	uint32_t q = capn_rpc_send_call(&carol_to_bob, got.cap_id, 0x1234, 0, 1, 0,
+	                                NULL, NULL);
 	flush(&c2b);
 	flush(&b2c);
-	EXPECT_EQ(before + 1, calls);
+	EXPECT_EQ(before + 1, hosted.calls);
+	EXPECT_EQ(0, sidecar.calls);
 	EXPECT_TRUE(read_answer(&carol_to_bob, q).answered);
 
 	(void)tell_carol_where_to_go;

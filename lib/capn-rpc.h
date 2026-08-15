@@ -260,6 +260,12 @@ int capn_rpc_is_failed(struct capn_rpc_conn *c, uint32_t question_id);
 /* Results of an answered question. Returns 0 and fills `msg_out` / `out`
  * on success; non-zero while the question is outstanding or if it
  * failed. The caller frees `msg_out` with capn_free. */
+/* The import id of a capability an answer returned, or -1 when the
+ * answer carries none. A returned capability arrives as a pointer into
+ * the answer's capTable; calling it needs the id the descriptor beside
+ * it names, which is what this reads. */
+int capn_rpc_answer_cap_id(struct capn_rpc_conn *c, uint32_t question_id);
+
 int capn_rpc_answer_content(struct capn_rpc_conn *c, uint32_t question_id,
                             struct capn *msg_out, capn_ptr *out);
 
