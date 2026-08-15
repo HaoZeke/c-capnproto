@@ -8,6 +8,17 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-15
+
+### Changed
+
+- The C++ compiler is requested where the gtest suites and the live
+  capnp-C++ interop peer are built, not in `project()`. Building the C
+  runtime and `capnpc-c` no longer needs a C++ toolchain at all, which
+  is what a consumer of a C library expects. Found while packaging for
+  conda-forge, where the build environment has only what the recipe asks
+  for and meson stopped with `Unknown compiler(s): c++`.
+
 ## [0.4.0] - 2026-08-15
 
 RPC levels 1 through 4, with level 3 over a network layer this family
@@ -122,6 +133,7 @@ HaoZeke fork baseline of the unmaintained
 opensourcerouting/c-capnproto tree.
 
 [Unreleased]: https://github.com/HaoZeke/c-capnproto/compare/v0.4.0...main
+[0.4.1]: https://github.com/HaoZeke/c-capnproto/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/HaoZeke/c-capnproto/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HaoZeke/c-capnproto/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/HaoZeke/c-capnproto/compare/v0.1.0...v0.2.0

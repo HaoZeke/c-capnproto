@@ -1,7 +1,10 @@
+# C only. The C++ compiler is for the gtest suites and the live capnp-C++
+# interop peer, so it is added where those are built: a consumer of the C
+# runtime should not need a C++ toolchain to compile it.
 project(
   'c-capnproto',
-  ['c', 'cpp'],
-  version: '0.4.0',
+  'c',
+  version: '0.4.1',
   # c_shared_args / c_static_args below arrived in 1.3.0.
   meson_version: '>=1.3.0',
   default_options: ['c_std=c99', 'cpp_std=c++14', 'warning_level=1'],
@@ -94,6 +97,8 @@ install_data(
 )
 
 if get_option('enable_tests') and not meson.is_subproject()
+  # The suites are C++; ask for the compiler here rather than at the top.
+  add_languages('cpp', native: false)
   thread_dep = dependency('threads')
   gtest_proj = subproject('gtest')
   gtest_dep = gtest_proj.get_variable('gtest_dep')
