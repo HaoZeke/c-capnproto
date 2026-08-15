@@ -874,6 +874,23 @@ static std::vector<uint8_t> golden_frame(const char *name)
 	return bytes;
 }
 
+/* The frame the reference encoder writes, rather than one these tests
+ * built: a layout the writer and reader share but the wire format does
+ * not would pass every case above. */
+TEST_F(RpcJoin, ReferenceThirdPartyDescriptorIsRecorded)
+{
+	std::vector<uint8_t> frame = golden_frame("rpc-introduce.bin");
+	ASSERT_FALSE(frame.empty());
+	ASSERT_EQ(0, capn_rpc_handle(&conn, frame.data(), frame.size()));
+
+	struct capn_rpc_introduction got[4];
+	ASSERT_EQ(1, capn_rpc_pending_introductions(&conn, got, 4));
+	EXPECT_EQ(0xabcdefULL, got[0].nonce);
+	EXPECT_EQ(77u, got[0].vine_id);
+	EXPECT_EQ(5000, got[0].port);
+	EXPECT_STREQ("10.0.0.7", got[0].host);
+}
+
 TEST_F(RpcJoin, ReferenceEncoderFramesDriveTheHandoff)
 {
 	ASSERT_EQ(0u, live);
