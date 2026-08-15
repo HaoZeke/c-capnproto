@@ -10,8 +10,35 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ### Added
 
+- RPC level 3, both halves. `Provide` holds a capability under the
+  recipient's nonce and `Accept` claims it; an `Accept` with `embargo`
+  waits for `Disembargo` with `context.provide`. A `thirdPartyHosted`
+  CapDescriptor records an introduction, handed over by
+  `capn_rpc_pending_introductions` and finished by
+  `capn_rpc_introduction_done`, which releases the vine.
+  `capn_rpc_send_provide`, `capn_rpc_send_accept` and
+  `capn_rpc_send_disembargo_provide` are the introducer's side.
+- `compiler/rpc-threeparty.capnp`, the network layer that names a third
+  vat, shared verbatim with capnp-fortran, capnp-janet and capnp-ts.
+  `rpc.capnp` leaves those ids to the network, and `rpc-twoparty.capnp`
+  declares them empty because a two-party connection has no third to
+  name. A vat speaks one layer or the other, not both.
+- `capn_rpc_set_vat`: level 3 arrangements belong to a vat rather than a
+  connection, since a handoff is made on one and claimed on another.
+- `capn_rpc_answer_cap_id`, without which a capability returned in an
+  answer could not be called.
+- Level 3 goldens the reference `capnp` CLI encodes
+  (`tests/fixtures/rpc-{provide,accept,introduce}.bin`), regenerated and
+  verified by `scripts/gen-rpc-frames.sh`.
 - Sphinx docs from `docs/orgmode/` via ox-rst (`emacs --batch -l docs/export.el`).
   Generated RST is not tracked.
+
+### Fixed
+
+- `libcapnp_c` builds the RPC vat under CMake and autotools too, not
+  meson alone, and installs `capn-rpc.h`. The vat tests no longer sit
+  behind the `capnp` CLI, which had made the whole RPC suite vanish on a
+  runner without the compiler.
 
 ## [0.3.0] - 2026-08-10
 
