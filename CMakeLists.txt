@@ -6,7 +6,7 @@
 #   FetchContent_Declare(
 #     c_capnproto
 #     GIT_REPOSITORY https://github.com/HaoZeke/c-capnproto.git
-#     GIT_TAG        v0.3.0
+#     GIT_TAG        v0.4.0
 #   )
 #   FetchContent_MakeAvailable(c_capnproto)
 #   target_link_libraries(myapp PRIVATE c_capnproto::capnp_c)

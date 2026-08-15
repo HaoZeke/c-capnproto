@@ -8,6 +8,11 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-15
+
+RPC levels 1 through 4, with level 3 over a network layer this family
+defines. The vat builds under every build system, not meson alone.
+
 ### Added
 
 - RPC level 3, both halves. `Provide` holds a capability under the
@@ -116,7 +121,8 @@ First feature release on the HaoZeke fork after the v0.1.0 baseline.
 HaoZeke fork baseline of the unmaintained
 opensourcerouting/c-capnproto tree.
 
-[Unreleased]: https://github.com/HaoZeke/c-capnproto/compare/v0.3.0...main
+[Unreleased]: https://github.com/HaoZeke/c-capnproto/compare/v0.4.0...main
+[0.4.0]: https://github.com/HaoZeke/c-capnproto/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HaoZeke/c-capnproto/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/HaoZeke/c-capnproto/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/HaoZeke/c-capnproto/releases/tag/v0.1.0
