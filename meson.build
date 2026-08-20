@@ -159,6 +159,17 @@ if get_option('enable_tests') and not meson.is_subproject()
   )
   test('capn-test', exe)
 
+  compiler_str_test = executable(
+    'compiler-str-test',
+    ['tests' / 'compiler-str-test.c', 'compiler' / 'str.c'],
+    include_directories: include_directories(['lib', 'compiler']),
+    dependencies: test_dependencies,
+    c_args: common_c_args,
+    install: false,
+    implicit_include_directories: false,
+  )
+  test('compiler-str-test', compiler_str_test)
+
   create_min_sz_test = executable(
     'create-min-sz-test',
     [
