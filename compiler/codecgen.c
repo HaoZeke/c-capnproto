@@ -347,8 +347,7 @@ static void gen_call_list_decoder(capnp_ctx_t *ctx, struct str *func,
 
 static void gen_call_list_free(capnp_ctx_t *ctx, struct str *func,
                                struct Type *type, const char *tab,
-                               const char *var, const char *countvar,
-                               const char *var2) {
+                               const char *var, const char *countvar) {
   const struct list_type_info *info = find_list_type(type->which);
 
   (void)ctx;
@@ -696,7 +695,7 @@ void free_member(capnp_ctx_t *ctx, struct str *func, struct field *f,
         str_release(&buf2);
       }
 
-      gen_call_list_free(ctx, func, &list_type, tab, var2, buf.str, var);
+      gen_call_list_free(ctx, func, &list_type, tab, var2, buf.str);
       str_release(&buf);
     }
     break;
