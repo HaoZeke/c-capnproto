@@ -222,9 +222,8 @@ static void mk_simple_list_decoder(struct str *func, const char *tab,
 }
 
 static void mk_simple_list_free(struct str *func, const char *tab,
-                                const char *list_type, const char *getf,
-                                const char *dvar, const char *cvar,
-                                const char *svar) {
+                                const char *list_type, const char *dvar,
+                                const char *cvar) {
   str_add(func, tab, -1);
   str_addf(func, "if (1) {\n");
   str_add(func, tab, -1);
@@ -298,6 +297,8 @@ static void gen_call_list_encoder(capnp_ctx_t *ctx, struct str *func,
                                   const char *var2) {
   const struct list_type_info *info = find_list_type(type->which);
 
+  (void)ctx;
+
   str_add(func, tab, -1);
 
   if (info) {
@@ -350,11 +351,12 @@ static void gen_call_list_free(capnp_ctx_t *ctx, struct str *func,
                                const char *var2) {
   const struct list_type_info *info = find_list_type(type->which);
 
+  (void)ctx;
+
   str_add(func, tab, -1);
 
   if (info) {
-    mk_simple_list_free(func, tab, info->ctype, info->getf, var, countvar,
-                        var2);
+    mk_simple_list_free(func, tab, info->ctype, var, countvar);
   } else if (type->which == Type__struct) {
     struct node *n = find_node(type->_struct.typeId);
     if (n != NULL) {
