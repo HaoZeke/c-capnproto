@@ -21,8 +21,10 @@ cmake --build "$WORK/sub" >>"$WORK/sub.log" 2>&1
 "$WORK/sub/smoke"
 
 echo "== 2. CMake find_package against a staged install"
+# Packaging consumers do not require the producer's optional GTest setup.
 cmake -S "$ROOT" -B "$WORK/build" -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX="$PREFIX" >"$WORK/build.log" 2>&1
+  -DCMAKE_INSTALL_PREFIX="$PREFIX" -DBUILD_TESTING=OFF \
+  >"$WORK/build.log" 2>&1
 cmake --build "$WORK/build" >>"$WORK/build.log" 2>&1
 cmake --install "$WORK/build" >>"$WORK/build.log" 2>&1
 
