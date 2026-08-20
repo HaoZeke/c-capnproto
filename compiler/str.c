@@ -43,7 +43,8 @@ void str_add(struct str *v, const char *str, int sz) {
 	if (sz < 0)
 		sz = strlen(str);
 	str_reserve(v, v->len + sz);
-	memcpy(v->str+v->len, str, sz);
+	if (sz > 0)
+		memcpy(v->str+v->len, str, sz);
 	v->len += sz;
 	v->str[v->len] = '\0';
 }
