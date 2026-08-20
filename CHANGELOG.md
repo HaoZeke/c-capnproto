@@ -8,6 +8,15 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- `capnpc-c` accepts an empty string append without passing a null pointer to
+  `memcpy`, including under UBSan.
+- Generator-only helper parameters are limited to values that affect emitted
+  code, keeping production builds clean under `warning_level=3` and `werror`.
+- The installed-package smoke build disables the producer's optional test
+  dependencies, so downstream CMake consumers do not inherit GTest setup.
+
 ## [0.4.1] - 2026-08-15
 
 ### Changed
