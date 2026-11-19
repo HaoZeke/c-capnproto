@@ -129,6 +129,51 @@ int counter_like_dispatch(void *, uint64_t, uint16_t, capn_ptr, capn_ptr)
 	return 0;
 }
 
+/* Capabilities in payloads. The server hands out `doubler` objects and
+ * accepts a callback capability it then calls back. */
+struct capn_rpc_conn *g_vat;
+int g_callback_hits;
+int g_callback_arg;
+int g_callback_failed;
+
+int counter_dispatch(void *, uint64_t, uint16_t, capn_ptr params, capn_ptr results)
+{
+	capn_resolve(&params);
+	g_callback_arg = params.type == CAPN_STRUCT ? static_cast<int>(capn_read32(params, 0)) : -1;
+	g_callback_hits++;
+	capn_write32(results, 0, 1000u + static_cast<uint32_t>(g_callback_hits));
+	return 0;
+}
+
+/* method 0: return a new doubler capability in result pointer 0.
+ * method 1: take a callback capability in parameter pointer 0 and call it. */
+int cap_server_dispatch(void *, uint64_t, uint16_t method, capn_ptr params, capn_ptr results)
+{
+	if (method == 0) {
+		capn_ptr cap = capn_rpc_new_export_cap(g_vat, results.seg, &doubler_calls, doubler_dispatch);
+		if (cap.type != CAPN_INTERFACE)
+			return -1;
+		return capn_setp(results, 0, cap);
+	}
+	capn_resolve(&params);
+	capn_ptr cap = capn_getp(params, 0, 1);
+	int is_export = -1;
+	int id = capn_rpc_param_cap(g_vat, cap, &is_export);
+	if (id < 0 || is_export != 0) {
+		g_callback_failed = 1;
+		return -1;
+	}
+	uint32_t arg = 77;
+	return capn_rpc_send_call(g_vat, static_cast<uint32_t>(id), 0, 0, 8, 1, fill_u32, &arg) == (uint32_t)-1;
+}
+
+void fill_with_callback(void *ctx, capn_ptr params)
+{
+	struct capn_rpc_conn *c = static_cast<struct capn_rpc_conn *>(ctx);
+	capn_ptr cap = capn_rpc_new_export_cap(c, params.seg, &g_callback_hits, counter_dispatch);
+	capn_setp(params, 0, cap);
+}
+
 class RpcClient : public ::testing::Test {
  protected:
 	void SetUp() override
@@ -489,6 +534,106 @@ TEST_F(RpcClient, OneServerExportedWithTwoDispatchersGetsTwoIds)
 	EXPECT_EQ(a, b) << "the same object must keep one id";
 	EXPECT_NE(a, c2) << "a different dispatcher is a different capability";
 	EXPECT_EQ(2, vat.exports[a].refcount);
+}
+
+TEST_F(RpcClient, ServerReturnsACapabilityTheClientThenCalls)
+{
+	g_vat = &vat;
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, cap_server_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 0, 0, 1, NULL, NULL);
+	settle();
+	ASSERT_TRUE(capn_rpc_is_answered(&client, q));
+	ASSERT_FALSE(capn_rpc_is_failed(&client, q));
+
+	struct capn m;
+	capn_ptr content;
+	ASSERT_EQ(0, capn_rpc_answer_content(&client, q, &m, &content));
+	capn_ptr cap = capn_getp(content, 0, 1);
+	ASSERT_EQ(CAPN_INTERFACE, cap.type);
+	int is_export = -1;
+	int id = capn_rpc_answer_cap(&client, q, cap, &is_export);
+	ASSERT_GE(id, 0);
+	EXPECT_EQ(0, is_export);
+	capn_free(&m);
+
+	uint32_t arg = 21;
+	uint32_t q2 = capn_rpc_send_call(&client, static_cast<uint32_t>(id), 0, 0, 8, 1, fill_u32, &arg);
+	settle();
+	ASSERT_TRUE(capn_rpc_is_answered(&client, q2));
+	ASSERT_FALSE(capn_rpc_is_failed(&client, q2));
+	ASSERT_EQ(0, capn_rpc_answer_content(&client, q2, &m, &content));
+	EXPECT_EQ(42u, capn_read32(content, 0));
+	capn_free(&m);
+}
+
+TEST_F(RpcClient, PipelinedCallUsesTheCapabilityBeforeTheAnswerIsRead)
+{
+	g_vat = &vat;
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, cap_server_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 0, 0, 1, NULL, NULL);
+	/* Neither message has been delivered: the answer does not exist yet. */
+	const uint16_t path[] = {0};
+	uint32_t arg = 8;
+	uint32_t q2 = capn_rpc_send_pipelined_call(&client, q, path, 1, 0, 0, 8, 1, fill_u32, &arg);
+	ASSERT_NE((uint32_t)-1, q2);
+	settle();
+
+	ASSERT_TRUE(capn_rpc_is_answered(&client, q2));
+	ASSERT_FALSE(capn_rpc_is_failed(&client, q2));
+	struct capn m;
+	capn_ptr content;
+	ASSERT_EQ(0, capn_rpc_answer_content(&client, q2, &m, &content));
+	EXPECT_EQ(16u, capn_read32(content, 0));
+	capn_free(&m);
+}
+
+TEST_F(RpcClient, CapabilityInParamsLetsTheServerCallBack)
+{
+	g_vat = &vat;
+	g_callback_hits = 0;
+	g_callback_arg = 0;
+	g_callback_failed = 0;
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, cap_server_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 1, 0, 1, fill_with_callback, &client);
+	ASSERT_NE((uint32_t)-1, q);
+	/* The call, the server's call back into the client, and both Returns. */
+	for (int i = 0; i < 4; i++)
+		settle();
+
+	EXPECT_FALSE(g_callback_failed);
+	EXPECT_TRUE(capn_rpc_is_answered(&client, q));
+	EXPECT_FALSE(capn_rpc_is_failed(&client, q));
+	EXPECT_EQ(1, g_callback_hits);
+	EXPECT_EQ(77, g_callback_arg);
+}
+
+TEST_F(RpcClient, PassingBackACapabilityNamesTheReceiversExport)
+{
+	g_vat = &vat;
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, doubler_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	/* A receiverHosted entry (what a peer sends when it passes back one of
+	 * ours) resolves as an export, not an import. */
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+	capn_ptr cap = capn_rpc_new_import_cap(&client, cs, 5);
+	ASSERT_EQ(CAPN_INTERFACE, cap.type);
+	ASSERT_EQ(0, cap.len);
+	EXPECT_EQ(1, client.npending);
+	client.npending = 0;
+	capn_free(&msg);
 }
 
 } // namespace
