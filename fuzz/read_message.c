@@ -30,6 +30,7 @@ int main(int argc, char **argv)
 	if (capn_init_mem(&message, data, len, 0) == 0) {
 		root = capn_getp(capn_root(&message), 0, 1);
 		capn_resolve(&root);
+		(void) capn_validate(&message);
 		capn_free(&message);
 	}
 	free(data);
