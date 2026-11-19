@@ -1711,8 +1711,7 @@ static void define_interface_methods(struct node *n)
 
 /* Typed RPC stubs ($C.rpcstubs): for each method a client call helper, a
  * reader for its results, and a slot in a server vtable that
- * <Interface>_dispatch routes to. Superclass methods are not routed:
- * serve them with their own interface's dispatch. */
+ * <Interface>_dispatch routes to. */
 static void define_rpcstubs(struct node *n)
 {
 	int i, count = capn_len(n->n._interface.methods);
@@ -1727,6 +1726,16 @@ static void define_rpcstubs(struct node *n)
 	 * result reader. */
 	str_addf(&HDR, "\n/* RPC stubs for %s. */\n", I);
 	str_addf(&HDR, "struct %s_server {\n\tvoid *self;\n", I);
+	for (i = 0; i < capn_len(n->n._interface.superclasses); i++) {
+		struct Superclass superclass;
+		struct node *parent;
+
+		get_Superclass(&superclass, n->n._interface.superclasses, i);
+		parent = find_node_mayfail(superclass.id);
+		if (parent && parent->n.which == Node__interface)
+			str_addf(&HDR, "\tconst struct %s_server *super_%s;\n",
+				 parent->name.str, parent->name.str);
+	}
 	for (i = 0; i < count; i++) {
 		struct Method m;
 		struct node *pn, *rn;
@@ -1754,7 +1763,23 @@ static void define_rpcstubs(struct node *n)
 
 	str_addf(&SRC, "\nint %s_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn_ptr params, capn_ptr results) {\n", I);
 	str_addf(&SRC, "\tconst struct %s_server *srv = (const struct %s_server *) server;\n", I, I);
-	str_addf(&SRC, "\tcapnp_use(srv);\n\tcapnp_use(results);\n\tif (interface_id != %s_INTERFACE_ID)\n\t\treturn -1;\n\tswitch (method_id) {\n", I);
+	str_addf(&SRC, "\tcapnp_use(srv);\n\tcapnp_use(results);\n");
+	str_addf(&SRC, "\tif (interface_id != %s_INTERFACE_ID) {\n", I);
+	for (i = 0; i < capn_len(n->n._interface.superclasses); i++) {
+		struct Superclass superclass;
+		struct node *parent;
+
+		get_Superclass(&superclass, n->n._interface.superclasses, i);
+		parent = find_node_mayfail(superclass.id);
+		if (parent && parent->n.which == Node__interface) {
+			str_addf(&SRC,
+				 "\t\tif (interface_id == %s_INTERFACE_ID && srv->super_%s != NULL)\n"
+				 "\t\t\treturn %s_dispatch((void *) srv->super_%s, interface_id, method_id, params, results);\n",
+				 parent->name.str, parent->name.str, parent->name.str,
+				 parent->name.str);
+		}
+	}
+	str_addf(&SRC, "\t\treturn -1;\n\t}\n\tswitch (method_id) {\n");
 
 	for (i = 0; i < count; i++) {
 		struct Method m;
