@@ -37,6 +37,12 @@ if get_option('default_library') == 'static'
 endif
 
 # Library name libcapnp_c matches historical pc and avoids clashing with C++ libcapnp.
+# Sanitizer runtimes are resolved when the executable is linked.
+# --no-undefined fails the shared library on those symbols under clang.
+lib_override = []
+if get_option('b_sanitize') != 'none'
+  lib_override += 'b_lundef=false'
+endif
 libcapnp_c = library(
   'capnp_c',
   libcapnp_src,
@@ -45,6 +51,7 @@ libcapnp_c = library(
   c_static_args: ['-DCAPNP_C_STATIC'],
   include_directories: include_directories(['lib', 'compiler']),
   implicit_include_directories: false,
+  override_options: lib_override,
   soversion: '1',
   install: true,
   version: meson.project_version(),
@@ -311,6 +318,11 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
       find_program('bash'),
       args: [meson.project_source_root() / 'scripts' / 'check-rpc-listen-wait.sh'],
       timeout: 30,
+    )
+    test(
+      'const-name',
+      find_program('sh'),
+      args: [meson.project_source_root() / 'scripts' / 'check-const-name.sh'],
     )
 
     # Official `capnp` CLI interop. Skip these tests only when the
