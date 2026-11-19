@@ -192,6 +192,119 @@ int main(int argc, char **argv)
 		}
 	}
 
+	/* Pipeline add() through defer()'s promise, then fulfill it. The
+	 * Return for the pipelined call has to arrive, and the promise id
+	 * from defer() has to resolve, before this side is done. */
+	{
+		uint16_t path = 0;
+		uint32_t qdefer, qpipe, qful;
+		int64_t later[2];
+		int prom_id = -1;
+		int guard;
+
+		qdefer = capn_rpc_send_call(&conn, 0, Adder_INTERFACE_ID,
+		                            Adder_defer_method.ordinal,
+		                            Adder_defer_method.params_datasz,
+		                            Adder_defer_method.params_ptrs,
+		                            NULL, NULL);
+		later[0] = 7;
+		later[1] = 8;
+		qpipe = capn_rpc_send_pipelined_call(&conn, qdefer, &path, 1,
+		                                     Adder_INTERFACE_ID,
+		                                     Adder_add_method.ordinal,
+		                                     Adder_add_method.params_datasz,
+		                                     Adder_add_method.params_ptrs,
+		                                     fill_add, later);
+		if (qdefer == (uint32_t)-1 || qpipe == (uint32_t)-1) {
+			fprintf(stderr, "promise calls not sent\n");
+			return 1;
+		}
+		guard = 0;
+		while (!capn_rpc_is_answered(&conn, qdefer) && guard++ < 16) {
+			ssize_t n = read_frame(g_fd, buf, sizeof buf);
+			if (n <= 0 || capn_rpc_handle(&conn, buf, (size_t)n) != 0) {
+				fprintf(stderr, "defer reply not handled\n");
+				return 1;
+			}
+		}
+		if (!capn_rpc_is_answered(&conn, qdefer) ||
+		    capn_rpc_is_failed(&conn, qdefer)) {
+			fprintf(stderr, "capnp-C++ did not answer defer()\n");
+			return 1;
+		}
+		{
+			struct capn m;
+			capn_ptr content, cap;
+			int is_export = -1;
+			if (capn_rpc_answer_content(&conn, qdefer, &m, &content) != 0) {
+				fprintf(stderr, "defer() returned no content\n");
+				return 1;
+			}
+			cap = capn_getp(content, 0, 1);
+			prom_id = capn_rpc_answer_cap(&conn, qdefer, cap, &is_export);
+			capn_free(&m);
+			if (prom_id < 0 || is_export != 0) {
+				fprintf(stderr, "defer() did not return a promise cap\n");
+				return 1;
+			}
+		}
+
+		qful = capn_rpc_send_call(&conn, 0, Adder_INTERFACE_ID,
+		                          Adder_fulfill_method.ordinal,
+		                          Adder_fulfill_method.params_datasz,
+		                          Adder_fulfill_method.params_ptrs,
+		                          NULL, NULL);
+		if (qful == (uint32_t)-1) {
+			fprintf(stderr, "fulfill not sent\n");
+			return 1;
+		}
+		guard = 0;
+		while (guard++ < 16) {
+			int resolved = capn_rpc_promise_state(&conn, (uint32_t)prom_id,
+			                                      NULL, NULL, NULL);
+			if (capn_rpc_is_answered(&conn, qpipe) &&
+			    capn_rpc_is_answered(&conn, qful) && resolved)
+				break;
+			{
+				ssize_t n = read_frame(g_fd, buf, sizeof buf);
+				if (n <= 0 || capn_rpc_handle(&conn, buf, (size_t)n) != 0) {
+					fprintf(stderr, "promise resolution not handled\n");
+					return 1;
+				}
+			}
+		}
+		if (capn_rpc_is_failed(&conn, qpipe) || capn_rpc_is_failed(&conn, qful)) {
+			fprintf(stderr, "capnp-C++ failed the promised add()\n");
+			return 1;
+		}
+		if (!capn_rpc_is_answered(&conn, qpipe)) {
+			fprintf(stderr, "promised add() was not answered\n");
+			return 1;
+		}
+		{
+			struct capn m;
+			capn_ptr content;
+			int64_t sum;
+			int broken = 0;
+			if (capn_rpc_answer_content(&conn, qpipe, &m, &content) != 0) {
+				fprintf(stderr, "no results in the promised add()\n");
+				return 1;
+			}
+			sum = (int64_t)capn_read64(content, 0);
+			capn_free(&m);
+			if (sum != 15) {
+				fprintf(stderr, "promised add(7, 8) returned %lld, expected 15\n",
+				        (long long)sum);
+				return 1;
+			}
+			if (!capn_rpc_promise_state(&conn, (uint32_t)prom_id, &broken,
+			                            NULL, NULL) || broken) {
+				fprintf(stderr, "promise was not resolved\n");
+				return 1;
+			}
+		}
+	}
+
 	capn_rpc_free(&conn);
 	close(g_fd);
 	printf("All rpc interop assertions passed.\n");

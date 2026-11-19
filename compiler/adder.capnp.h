@@ -36,6 +36,8 @@ struct Adder_method {
 	int results_ptrs;
 };
 static const struct Adder_method Adder_add_method = {0, 16, 0, 8, 0};
+static const struct Adder_method Adder_defer_method = {1, 0, 0, 0, 1};
+static const struct Adder_method Adder_fulfill_method = {2, 0, 0, 0, 0};
 
 
 

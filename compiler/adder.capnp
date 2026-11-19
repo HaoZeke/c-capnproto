@@ -5,4 +5,7 @@
 
 interface Adder @0xea01e10cbc414411 {
   add @0 (a :Int64, b :Int64) -> (sum :Int64);
+  # A promise of an Adder. fulfill() resolves it to a working Adder.
+  defer @1 () -> (cap :Adder);
+  fulfill @2 () -> ();
 }
