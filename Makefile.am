@@ -179,7 +179,9 @@ EXTRA_DIST += \
 	fuzz/Person.txt \
 	fuzz/in/Person.bin \
 	fuzz/read_mem.c \
-	fuzz/read_fp.c
+	fuzz/read_fp.c \
+	fuzz/read_message.c \
+	fuzz/rpc_frame.c
 capn_test_CPPFLAGS = $(AM_CPPFLAGS) $(GTEST_CPPFLAGS) \
 	-DEXTRAHEADER_GENERATED_H=\"$(abs_srcdir)/tests/extraheader.capnp.h\" \
 	-DCODEGEN_DEFAULTS_GENERATED_C=\"$(abs_srcdir)/tests/codegen-defaults.capnp.c\" \
