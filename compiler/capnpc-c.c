@@ -334,7 +334,16 @@ static int brand_emitted(const char *name) {
 
 static void brand_mark(const char *name) {
 	struct brand_done *d = calloc(1, sizeof *d);
+	if (d == NULL) {
+		fprintf(stderr, "out of memory marking a brand\n");
+		exit(2);
+	}
 	d->name = strdup(name);
+	if (d->name == NULL) {
+		free(d);
+		fprintf(stderr, "out of memory marking a brand\n");
+		exit(2);
+	}
 	d->next = g_brand_done;
 	g_brand_done = d;
 }
