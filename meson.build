@@ -316,6 +316,7 @@ if get_option('enable_tests') and not meson.is_subproject()
         'tests' / 'capnp-cli-interop-test.cpp',
         'tests' / 'reflect-test.cpp',
         'tests' / 'json-ann-test.cpp',
+        'tests' / 'brand-test.cpp',
         'tests' / 'addressbook.capnp.c',
         'compiler' / 'test.capnp.c',
         reflect_gen,
