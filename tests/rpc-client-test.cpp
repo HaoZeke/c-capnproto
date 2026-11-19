@@ -332,4 +332,47 @@ TEST_F(RpcClient, ResultStructSizeFollowsTheConnectionSetting)
 	capn_free(&m);
 }
 
+TEST_F(RpcClient, UnimplementedEchoesTheOriginalMessageNotAWrapper)
+{
+	/* A Resolve this vat does not adopt is answered with Unimplemented
+	 * whose payload is that Resolve itself. */
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+	struct Resolve rs;
+	memset(&rs, 0, sizeof rs);
+	rs.promiseId = 5;
+	Resolve_ptr rp = new_Resolve(cs);
+	write_Resolve(&rs, rp);
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_resolve;
+	m.resolve = rp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	uint8_t buf[512];
+	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
+	capn_free(&msg);
+	ASSERT_GT(sz, 0);
+
+	ASSERT_EQ(0, capn_rpc_handle(&vat, buf, static_cast<size_t>(sz)));
+	ASSERT_EQ(1u, wire.to_client.size());
+
+	struct capn reply;
+	ASSERT_EQ(0, capn_init_mem(&reply, wire.to_client[0].data(), wire.to_client[0].size(), 0));
+	Message_ptr rmp;
+	rmp.p = capn_getp(capn_root(&reply), 0, 1);
+	struct Message out;
+	read_Message(&out, rmp);
+	ASSERT_EQ(Message_unimplemented, out.which);
+	struct Message echoed;
+	read_Message(&echoed, out.unimplemented);
+	EXPECT_EQ(Message_resolve, echoed.which);
+	struct Resolve back;
+	read_Resolve(&back, echoed.resolve);
+	EXPECT_EQ(5u, back.promiseId);
+	capn_free(&reply);
+}
+
 } // namespace
