@@ -122,7 +122,7 @@ const cTextList :List(Text) = ["x", "yy"];
 const cStruct :Defaults = (i32 = 123, t = "cs");
 const cStructList :List(Other.Other) = [(x = 9)];
 const cVoid :Void = void;
-const cAliased :Int64 = Other.otherConst;
+const cFromOther :Int64 = Other.otherConst;
 
 interface Calc {
   add @0 (a :Int32, b :Int32) -> (sum :Int32);
