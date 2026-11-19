@@ -950,12 +950,20 @@ static void json_value(struct jctx *j, const struct capn_dyn_type *t,
 	case CAPN_DYN_FLOAT64:
 		json_float(b, capn_to_f64(v->bits));
 		break;
-	case CAPN_DYN_ENUM:
-		if (t->en != NULL && v->bits < (uint64_t) t->en->n && t->en->names[v->bits] != NULL)
-			json_escape(b, t->en->names[v->bits], (int) strlen(t->en->names[v->bits]));
+	case CAPN_DYN_ENUM: {
+		const char *en = NULL;
+		if (t->en != NULL && v->bits < (uint64_t) t->en->n) {
+			if (t->en->json_names != NULL && t->en->json_names[v->bits] != NULL)
+				en = t->en->json_names[v->bits];
+			else
+				en = t->en->names[v->bits];
+		}
+		if (en != NULL)
+			json_escape(b, en, (int) strlen(en));
 		else
 			sb_int(b, CAPN_DYN_UINT16, v->bits);
 		break;
+	}
 	case CAPN_DYN_TEXT:
 		json_escape(b, v->text.str ? v->text.str : "", v->text.len);
 		break;
@@ -1005,53 +1013,183 @@ static void json_value(struct jctx *j, const struct capn_dyn_type *t,
 	}
 }
 
-static int json_member(struct jctx *j, const struct capn_dyn_struct *s, capn_ptr st,
-                       const struct capn_dyn_field *f, const struct frame *fr, int first)
+static const char *json_key(const struct capn_dyn_field *f)
+{
+	return f->json_name != NULL ? f->json_name : f->name;
+}
+
+static void json_escape_prefixed(struct sb *b, const char *prefix, const char *name)
+{
+	size_t np = prefix != NULL ? strlen(prefix) : 0;
+	size_t nn = strlen(name);
+	char *tmp;
+
+	if (np == 0) {
+		json_escape(b, name, (int) nn);
+		return;
+	}
+	tmp = (char *) malloc(np + nn + 1);
+	if (tmp == NULL) {
+		b->err = 1;
+		return;
+	}
+	memcpy(tmp, prefix, np);
+	memcpy(tmp + np, name, nn + 1);
+	json_escape(b, tmp, (int) (np + nn));
+	free(tmp);
+}
+
+static void json_bytes(struct jctx *j, const uint8_t *p, int n, int enc)
+{
+	static const char b64[] =
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	static const char hexd[] = "0123456789abcdef";
+	int i;
+
+	sb_str(j->b, "\"");
+	if (enc == 1) {
+		for (i = 0; i < n; i += 3) {
+			unsigned v = (unsigned) p[i] << 16;
+			int left = n - i;
+			if (left > 1)
+				v |= (unsigned) p[i + 1] << 8;
+			if (left > 2)
+				v |= (unsigned) p[i + 2];
+			sb_fmt(j->b, "%c", b64[(v >> 18) & 63]);
+			sb_fmt(j->b, "%c", b64[(v >> 12) & 63]);
+			sb_fmt(j->b, "%c", left > 1 ? b64[(v >> 6) & 63] : '=');
+			sb_fmt(j->b, "%c", left > 2 ? b64[v & 63] : '=');
+		}
+	} else {
+		for (i = 0; i < n; i++) {
+			sb_fmt(j->b, "%c", hexd[p[i] >> 4]);
+			sb_fmt(j->b, "%c", hexd[p[i] & 15]);
+		}
+	}
+	sb_str(j->b, "\"");
+}
+
+static void json_data_value(struct jctx *j, struct dv *v, int enc)
+{
+	capn_list8 l;
+	int n, i;
+	uint8_t *tmp;
+
+	if (enc == 0) {
+		json_value(j, &(struct capn_dyn_type){CAPN_DYN_DATA}, NULL, v);
+		return;
+	}
+	l.p = v->data.p;
+	n = capn_len(v->data);
+	if (n < 0)
+		n = 0;
+	tmp = n > 0 ? (uint8_t *) malloc((size_t) n) : NULL;
+	if (n > 0 && tmp == NULL) {
+		j->b->err = 1;
+		return;
+	}
+	for (i = 0; i < n; i++)
+		tmp[i] = capn_get8(l, i);
+	json_bytes(j, tmp, n, enc);
+	free(tmp);
+}
+
+static int json_fields(struct jctx *j, const struct capn_dyn_struct *s, capn_ptr st,
+                       const struct frame *fr, const char *prefix, int first);
+
+static const struct capn_dyn_field *active_union_field(const struct capn_dyn_struct *s, capn_ptr st)
+{
+	int which = capn_dyn_which(s, st);
+	int i;
+	if (which < 0)
+		return NULL;
+	for (i = 0; i < s->nfields; i++) {
+		if (s->fields[i].discriminant == (uint32_t) which)
+			return &s->fields[i];
+	}
+	return NULL;
+}
+
+static int json_emit_field(struct jctx *j, const struct capn_dyn_struct *s, capn_ptr st,
+                           const struct capn_dyn_field *f, const struct frame *fr,
+                           const char *prefix, const char *key, int first)
 {
 	struct dv v;
 	const struct frame *ffr = fr;
 	const struct capn_dyn_type *rt = resolve(&f->type, &ffr);
+	char nested[512];
 
-	/* Interface and AnyPointer have no JSON form here: leave them out. */
 	if (rt->kind == CAPN_DYN_INTERFACE || rt->kind == CAPN_DYN_ANYPOINTER)
 		return first;
 	if (rt->kind == CAPN_DYN_STRUCT && !f->is_group && rt->st == NULL)
 		return first;
 	if (!field_has(s, st, f, rt))
 		return first;
+	get_field_value(st, f, rt, &v);
+	if (f->json_flatten && rt->kind == CAPN_DYN_STRUCT && rt->st != NULL) {
+		const char *pre = f->json_prefix != NULL ? f->json_prefix : "";
+		const char *outer = prefix != NULL ? prefix : "";
+		snprintf(nested, sizeof nested, "%s%s", outer, pre);
+		if (f->is_group)
+			return json_fields(j, rt->st, st, fr, nested, first);
+		{
+			struct frame nf;
+			enter_struct(&nf, rt, ffr);
+			return json_fields(j, rt->st, v.p, &nf, nested, first);
+		}
+	}
 	if (!first)
 		sb_str(j->b, j->comma);
-	json_escape(j->b, f->name, (int) strlen(f->name));
+	json_escape_prefixed(j->b, prefix, key != NULL ? key : json_key(f));
 	sb_str(j->b, j->colon);
-	get_field_value(st, f, rt, &v);
 	if (f->is_group)
 		json_struct(j, rt->st, v.p, fr);
+	else if (rt->kind == CAPN_DYN_DATA && f->json_data != 0)
+		json_data_value(j, &v, f->json_data);
 	else
 		json_value(j, rt, ffr, &v);
 	return 0;
 }
 
+static int json_fields(struct jctx *j, const struct capn_dyn_struct *s, capn_ptr st,
+                       const struct frame *fr, const char *prefix, int first)
+{
+	int i;
+	const struct capn_dyn_field *u;
+
+	capn_resolve(&st);
+	for (i = 0; i < s->nfields; i++) {
+		if (s->fields[i].discriminant == CAPN_DYN_NO_DISCRIMINANT)
+			first = json_emit_field(j, s, st, &s->fields[i], fr, prefix, NULL, first);
+	}
+	u = active_union_field(s, st);
+	if (u == NULL)
+		return first;
+	if (s->json_has_disc && s->json_disc_name != NULL && s->json_disc_name[0] != '\0') {
+		struct dv tag;
+		const struct capn_dyn_type text = {CAPN_DYN_TEXT};
+		if (!first)
+			sb_str(j->b, j->comma);
+		json_escape_prefixed(j->b, prefix, s->json_disc_name);
+		sb_str(j->b, j->colon);
+		tag.text.str = json_key(u);
+		tag.text.len = (int) strlen(json_key(u));
+		tag.text.seg = NULL;
+		json_value(j, &text, NULL, &tag);
+		first = 0;
+	}
+	if (s->json_has_disc && u->type.kind == CAPN_DYN_VOID)
+		return first;
+	if (s->json_has_disc && s->json_disc_value != NULL)
+		return json_emit_field(j, s, st, u, fr, prefix, s->json_disc_value, first);
+	return json_emit_field(j, s, st, u, fr, prefix, NULL, first);
+}
+
 static void json_struct(struct jctx *j, const struct capn_dyn_struct *s, capn_ptr st,
                         const struct frame *fr)
 {
-	int i, first = 1, which;
-
-	capn_resolve(&st);
 	sb_str(j->b, "{");
-	/* Fields outside a union in declaration order, then the active member. */
-	for (i = 0; i < s->nfields; i++) {
-		if (s->fields[i].discriminant == CAPN_DYN_NO_DISCRIMINANT)
-			first = json_member(j, s, st, &s->fields[i], fr, first);
-	}
-	which = capn_dyn_which(s, st);
-	if (which >= 0) {
-		for (i = 0; i < s->nfields; i++) {
-			if (s->fields[i].discriminant == (uint32_t) which) {
-				first = json_member(j, s, st, &s->fields[i], fr, first);
-				break;
-			}
-		}
-	}
+	json_fields(j, s, st, fr, NULL, 1);
 	sb_str(j->b, "}");
 }
 
@@ -1689,6 +1827,7 @@ static struct vnode *parse_text(struct pctx *c)
 struct bctx {
 	struct capn_dyn_error *err;
 	int failed;
+	int json;
 };
 
 static int berr(struct bctx *b, const struct vnode *at, const char *fmt, ...)
@@ -1786,7 +1925,12 @@ static int parse_scalar(struct bctx *b, const struct capn_dyn_type *t,
 		int i;
 		if ((n->kind == V_STR || n->kind == V_IDENT) && t->en != NULL) {
 			for (i = 0; i < t->en->n; i++) {
+				const char *jn = t->en->json_names != NULL ? t->en->json_names[i] : NULL;
 				if (t->en->names[i] != NULL && strcmp(t->en->names[i], n->s) == 0) {
+					*bits = (uint64_t) i;
+					return 0;
+				}
+				if (jn != NULL && strcmp(jn, n->s) == 0) {
 					*bits = (uint64_t) i;
 					return 0;
 				}
@@ -1988,6 +2132,77 @@ static int build_list(struct bctx *b, struct capn_segment *seg, const struct cap
 	return 0;
 }
 
+static int b64_digit(int c)
+{
+	if (c >= 'A' && c <= 'Z') return c - 'A';
+	if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+	if (c >= '0' && c <= '9') return c - '0' + 52;
+	if (c == '+') return 62;
+	if (c == '/') return 63;
+	return -1;
+}
+
+static int decode_base64(const char *s, size_t n, uint8_t **out, int *outn)
+{
+	size_t i = 0, o = 0;
+	uint8_t *buf;
+	if (n % 4 != 0)
+		return -1;
+	buf = (uint8_t *) malloc(n / 4 * 3 + 1);
+	if (buf == NULL)
+		return -1;
+	while (i < n) {
+		int a = b64_digit(s[i]);
+		int b = b64_digit(s[i + 1]);
+		int c = s[i + 2] == '=' ? 0 : b64_digit(s[i + 2]);
+		int d = s[i + 3] == '=' ? 0 : b64_digit(s[i + 3]);
+		if (a < 0 || b < 0 || c < 0 || d < 0) {
+			free(buf);
+			return -1;
+		}
+		buf[o++] = (uint8_t) ((a << 2) | (b >> 4));
+		if (s[i + 2] != '=')
+			buf[o++] = (uint8_t) ((b << 4) | (c >> 2));
+		if (s[i + 3] != '=')
+			buf[o++] = (uint8_t) ((c << 6) | d);
+		i += 4;
+	}
+	*out = buf;
+	*outn = (int) o;
+	return 0;
+}
+
+static int hex_digit(int c)
+{
+	if (c >= '0' && c <= '9') return c - '0';
+	if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+	if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+	return -1;
+}
+
+static int decode_hex(const char *s, size_t n, uint8_t **out, int *outn)
+{
+	size_t i;
+	uint8_t *buf;
+	if (n % 2 != 0)
+		return -1;
+	buf = (uint8_t *) malloc(n / 2 + 1);
+	if (buf == NULL)
+		return -1;
+	for (i = 0; i < n; i += 2) {
+		int hi = hex_digit(s[i]);
+		int lo = hex_digit(s[i + 1]);
+		if (hi < 0 || lo < 0) {
+			free(buf);
+			return -1;
+		}
+		buf[i / 2] = (uint8_t) ((hi << 4) | lo);
+	}
+	*out = buf;
+	*outn = (int) (n / 2);
+	return 0;
+}
+
 static int assign_field(struct bctx *b, const struct capn_dyn_struct *s, const struct frame *fr,
                         capn_ptr st, const struct capn_dyn_field *f,
                         const struct capn_dyn_type *rt, const struct frame *ffr,
@@ -2007,8 +2222,30 @@ static int assign_field(struct bctx *b, const struct capn_dyn_struct *s, const s
 		capn_ptr d;
 		if (val->kind == V_NULL)
 			return 0;
-		if (build_data(b, st.seg, val, &d) != 0)
+		if (b->json && f->json_data != 0) {
+			uint8_t *raw = NULL;
+			int rn = 0;
+			capn_list8 l;
+			if (val->kind != V_STR)
+				return berr(b, val, "expected a string for %s", f->name);
+			if (f->json_data == 1) {
+				if (decode_base64(val->s, val->n, &raw, &rn) != 0)
+					return berr(b, val, "invalid base64");
+			} else if (decode_hex(val->s, val->n, &raw, &rn) != 0) {
+				return berr(b, val, "invalid hex");
+			}
+			l = capn_new_list8(st.seg, rn);
+			if (l.p.type == CAPN_NULL) {
+				free(raw);
+				return berr(b, val, "out of memory");
+			}
+			if (rn)
+				capn_setv8(l, 0, raw, rn);
+			free(raw);
+			d = l.p;
+		} else if (build_data(b, st.seg, val, &d) != 0) {
 			return -1;
+		}
 		return capn_setp(st, (int) f->offset, d) ? berr(b, val, "could not store data") : 0;
 	}
 	case CAPN_DYN_LIST: {
@@ -2046,6 +2283,187 @@ static int assign_field(struct bctx *b, const struct capn_dyn_struct *s, const s
 	}
 }
 
+enum { J_FIELD = 0, J_TAG = 1, J_VALUE = 2 };
+
+struct jstep {
+	const struct capn_dyn_struct *owner;
+	const struct capn_dyn_field *f;
+};
+
+struct jhit {
+	struct jstep step[8];
+	int n;
+	int kind;
+};
+
+static int jfind(const struct capn_dyn_struct *s, const struct frame *fr,
+                 const char *key, struct jhit *h, int depth)
+{
+	int i;
+	if (s == NULL || depth > 8)
+		return 0;
+	if (s->json_has_disc && s->json_disc_name != NULL &&
+	    strcmp(key, s->json_disc_name) == 0) {
+		h->kind = J_TAG;
+		return 1;
+	}
+	if (s->json_has_disc && s->json_disc_value != NULL &&
+	    strcmp(key, s->json_disc_value) == 0) {
+		h->kind = J_VALUE;
+		return 1;
+	}
+	for (i = 0; i < s->nfields; i++) {
+		const struct capn_dyn_field *f = &s->fields[i];
+		const struct frame *ffr = fr;
+		const struct capn_dyn_type *rt = resolve(&f->type, &ffr);
+		if (f->json_flatten)
+			continue;
+		if (strcmp(json_key(f), key) == 0) {
+			if (h->n >= 8)
+				return 0;
+			h->step[h->n].owner = s;
+			h->step[h->n].f = f;
+			h->n++;
+			h->kind = J_FIELD;
+			return 1;
+		}
+		(void) rt;
+	}
+	for (i = 0; i < s->nfields; i++) {
+		const struct capn_dyn_field *f = &s->fields[i];
+		const struct frame *ffr = fr;
+		const struct capn_dyn_type *rt = resolve(&f->type, &ffr);
+		const char *pre, *rest;
+		size_t np;
+		int saved;
+		if (!f->json_flatten || rt->kind != CAPN_DYN_STRUCT || rt->st == NULL)
+			continue;
+		pre = f->json_prefix != NULL ? f->json_prefix : "";
+		np = strlen(pre);
+		if (np != 0 && strncmp(key, pre, np) != 0)
+			continue;
+		rest = key + np;
+		if (h->n >= 8)
+			return 0;
+		h->step[h->n].owner = s;
+		h->step[h->n].f = f;
+		h->n++;
+		saved = h->n;
+		{
+			struct frame nf;
+			const struct frame *child_fr;
+			if (f->is_group) {
+				child_fr = fr;
+			} else {
+				enter_struct(&nf, rt, ffr);
+				child_fr = &nf;
+			}
+			if (jfind(rt->st, child_fr, rest, h, depth + 1))
+				return 1;
+		}
+		h->n = saved - 1;
+	}
+	return 0;
+}
+
+/* Walk flattened containers. *curs is the struct the remaining key
+ * belongs to. */
+static int jwalk(struct bctx *b, const struct vnode *at,
+                 const struct capn_dyn_struct *s, const struct frame *fr, capn_ptr st,
+                 const struct jhit *h, int ncont, struct frame *owned,
+                 const struct capn_dyn_struct **curs, const struct frame **curf, capn_ptr *cur)
+{
+	int i;
+	*curs = s;
+	*curf = fr;
+	*cur = st;
+	for (i = 0; i < ncont; i++) {
+		const struct jstep *step = &h->step[i];
+		const struct frame *ffr = *curf;
+		const struct capn_dyn_type *rt = resolve(&step->f->type, &ffr);
+		if (step->f->discriminant != CAPN_DYN_NO_DISCRIMINANT &&
+		    capn_dyn_set_which(step->owner, *cur, step->f) != 0)
+			return berr(b, at, "cannot select %s", step->f->name);
+		if (step->f->is_group) {
+			*curs = rt->st;
+			continue;
+		}
+		if (rt->st == NULL)
+			return berr(b, at, "field %s has no descriptor", step->f->name);
+		{
+			capn_ptr sub = capn_dyn_get_ptr(*cur, step->f);
+			if (sub.type == CAPN_NULL) {
+				sub = capn_new_struct((*cur).seg, rt->st->data_words * 8, rt->st->pointers);
+				if (sub.type == CAPN_NULL)
+					return berr(b, at, "could not allocate the struct");
+				if (capn_setp(*cur, (int) step->f->offset, sub))
+					return berr(b, at, "could not store struct");
+			}
+			enter_struct(&owned[i], rt, ffr);
+			*cur = sub;
+			*curs = rt->st;
+			*curf = &owned[i];
+		}
+	}
+	return 0;
+}
+
+static int japply_leaf(struct bctx *b, const struct capn_dyn_struct *s, const struct frame *fr,
+                       capn_ptr st, const struct capn_dyn_field *f, const struct vnode *val)
+{
+	const struct frame *ffr = fr;
+	const struct capn_dyn_type *rt = resolve(&f->type, &ffr);
+	if (f->discriminant != CAPN_DYN_NO_DISCRIMINANT &&
+	    capn_dyn_set_which(s, st, f) != 0)
+		return berr(b, val, "cannot select %s", f->name);
+	if (f->is_group) {
+		if (rt->st == NULL)
+			return berr(b, val, "group %s has no descriptor", f->name);
+		return fill_struct(b, rt->st, fr, st, val);
+	}
+	return assign_field(b, s, fr, st, f, rt, ffr, val);
+}
+
+static int japply(struct bctx *b, const struct capn_dyn_struct *s, const struct frame *fr,
+                  capn_ptr st, const struct jhit *h, const struct vnode *val)
+{
+	const struct capn_dyn_struct *curs;
+	const struct frame *curf;
+	struct frame owned[8];
+	capn_ptr cur;
+	int ncont = h->n;
+
+	if (h->kind == J_FIELD)
+		ncont = h->n - 1;
+	if (jwalk(b, val, s, fr, st, h, ncont, owned, &curs, &curf, &cur) != 0)
+		return -1;
+	if (h->kind == J_TAG) {
+		int i;
+		const struct capn_dyn_field *mem = NULL;
+		if (val->kind != V_STR)
+			return berr(b, val, "discriminator must be a string");
+		for (i = 0; i < curs->nfields; i++) {
+			if (curs->fields[i].discriminant != CAPN_DYN_NO_DISCRIMINANT &&
+			    strcmp(json_key(&curs->fields[i]), val->s) == 0) {
+				mem = &curs->fields[i];
+				break;
+			}
+		}
+		if (mem == NULL)
+			return berr(b, val, "no union member named %s", val->s);
+		if (capn_dyn_set_which(curs, cur, mem) != 0)
+			return berr(b, val, "cannot select %s", mem->name);
+		return 0;
+	}
+	if (h->kind == J_VALUE) {
+		const struct capn_dyn_field *mem = active_union_field(curs, cur);
+		if (mem == NULL)
+			return berr(b, val, "union value without a selected member");
+		return japply_leaf(b, curs, curf, cur, mem, val);
+	}
+	return japply_leaf(b, h->step[h->n - 1].owner, curf, cur, h->step[h->n - 1].f, val);
+}
+
 static int fill_struct(struct bctx *b, const struct capn_dyn_struct *s,
                        const struct frame *fr, capn_ptr st, const struct vnode *obj)
 {
@@ -2053,25 +2471,47 @@ static int fill_struct(struct bctx *b, const struct capn_dyn_struct *s,
 
 	if (obj->kind != V_OBJ)
 		return berr(b, obj, "expected an object for %s", s->name);
-	for (i = 0; i < obj->count; i++) {
-		const struct capn_dyn_field *f = capn_dyn_find_field(s, obj->k[i]);
-		const struct frame *ffr = fr;
-		const struct capn_dyn_type *rt;
+	if (!b->json) {
+		for (i = 0; i < obj->count; i++) {
+			const struct capn_dyn_field *f = capn_dyn_find_field(s, obj->k[i]);
+			const struct frame *ffr = fr;
+			const struct capn_dyn_type *rt;
 
-		if (f == NULL)
-			return berr(b, obj->v[i], "no field named %s in %s", obj->k[i], s->name);
-		if (f->discriminant != CAPN_DYN_NO_DISCRIMINANT &&
-		    capn_dyn_set_which(s, st, f) != 0)
-			return berr(b, obj->v[i], "cannot select %s", f->name);
-		rt = resolve(&f->type, &ffr);
-		if (f->is_group) {
-			if (rt->st == NULL)
-				return berr(b, obj->v[i], "group %s has no descriptor", f->name);
-			if (fill_struct(b, rt->st, fr, st, obj->v[i]) != 0)
+			if (f == NULL)
+				return berr(b, obj->v[i], "no field named %s in %s", obj->k[i], s->name);
+			if (f->discriminant != CAPN_DYN_NO_DISCRIMINANT &&
+			    capn_dyn_set_which(s, st, f) != 0)
+				return berr(b, obj->v[i], "cannot select %s", f->name);
+			rt = resolve(&f->type, &ffr);
+			if (f->is_group) {
+				if (rt->st == NULL)
+					return berr(b, obj->v[i], "group %s has no descriptor", f->name);
+				if (fill_struct(b, rt->st, fr, st, obj->v[i]) != 0)
+					return -1;
+			} else if (assign_field(b, s, fr, st, f, rt, ffr, obj->v[i]) != 0) {
 				return -1;
-		} else if (assign_field(b, s, fr, st, f, rt, ffr, obj->v[i]) != 0) {
-			return -1;
+			}
 		}
+		return 0;
+	}
+
+	for (i = 0; i < obj->count; i++) {
+		struct jhit h;
+		memset(&h, 0, sizeof h);
+		if (!jfind(s, fr, obj->k[i], &h, 0))
+			return berr(b, obj->v[i], "no field named %s in %s", obj->k[i], s->name);
+		if (h.kind == J_TAG && japply(b, s, fr, st, &h, obj->v[i]) != 0)
+			return -1;
+	}
+	for (i = 0; i < obj->count; i++) {
+		struct jhit h;
+		memset(&h, 0, sizeof h);
+		if (!jfind(s, fr, obj->k[i], &h, 0))
+			return berr(b, obj->v[i], "no field named %s in %s", obj->k[i], s->name);
+		if (h.kind == J_TAG)
+			continue;
+		if (japply(b, s, fr, st, &h, obj->v[i]) != 0)
+			return -1;
 	}
 	return 0;
 }
@@ -2087,6 +2527,7 @@ static int decode(const struct capn_dyn_struct *s, const char *in, size_t len, i
 
 	memset(&c, 0, sizeof c);
 	memset(&b, 0, sizeof b);
+	b.json = json;
 	c.p = in;
 	c.len = len;
 	c.err = err;
