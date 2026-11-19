@@ -21,6 +21,11 @@ AC_LANG([C])
 AC_PROG_CC
 AC_PROG_CXX
 
+# The gtest submodule is not part of the release tarball. Use it when
+# it is checked out, and the system library otherwise.
+AM_CONDITIONAL([BUNDLED_GTEST],
+  [test -f "$srcdir/gtest/googletest/include/gtest/gtest.h"])
+
 AC_PROG_INSTALL
 AC_PROG_LN_S
 
