@@ -133,6 +133,7 @@ endif
 # Meson builds its tests from a tarball, so the lists below stay
 # outside WITH_GTEST.
 EXTRA_DIST += \
+	fuzz/read_message.c \
 	fuzz/rpc_frame.c \
 	tests/null-ptr-write-test.c \
 	tests/packed-header-write-test.c
