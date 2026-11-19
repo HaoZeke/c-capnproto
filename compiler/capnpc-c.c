@@ -37,7 +37,7 @@ static struct str SRC = STR_INIT, HDR = STR_INIT;
 static struct capn g_valcapn;
 static struct capn_segment g_valseg;
 static int g_valc;
-static int g_val0used, g_nullused;
+static int g_val0used, g_nullused, g_textnullused;
 
 static int g_fieldgetset = 0;
 static int g_codecgen = 0;
@@ -676,13 +676,14 @@ static void set_member(struct str *func, struct field *f, const char *ptr, const
 		str_addf(func, "capn_write64(%s, %d, capn_from_f64(%s)%s);\n", ptr, 8*f->f.slot.offset, var, xor);
 		break;
 	case Type_text:
+		g_textnullused = 1;
 		if (f->v.ptrval.type) {
-			g_val0used = 1;
-			str_addf(func, "capn_set_text(%s, %d, (%s.str != capn_val%d.str) ? %s : capn_val0);\n",
+			str_addf(func, "capn_set_text(%s, %d, (%s.str != capn_val%d.str) ? %s : capn_text_null);\n",
 					ptr, f->f.slot.offset, var, (int)f->v.intval, var);
 		} else {
-			str_addf(func, "capn_set_text(%s, %d, %s);\n",
-					ptr, f->f.slot.offset, var);
+			g_val0used = 1;
+			str_addf(func, "capn_set_text(%s, %d, (%s.str != capn_val0.str) ? %s : capn_text_null);\n",
+					ptr, f->f.slot.offset, var, var);
 		}
 		break;
 	case Type_data:
@@ -1885,6 +1886,7 @@ int main() {
 		g_valseg.len = 0;
 		g_val0used = 0;
 		g_nullused = 0;
+		g_textnullused = 0;
 		g_codecgen = 0;
 		capn_init_malloc(&g_valcapn);
 		capn_append_segment(&g_valcapn, &g_valseg);
@@ -2115,6 +2117,8 @@ int main() {
 					"static const capn_text capn_val0 = {0,capn_val0_str,0};\n");
 		if (g_nullused)
 			fprintf(srcf, "static const capn_ptr capn_null = {CAPN_NULL};\n");
+		if (g_textnullused)
+			fprintf(srcf, "static const capn_text capn_text_null = {0,0,0};\n");
 
 		if (g_valseg.len > 8) {
 			size_t k;

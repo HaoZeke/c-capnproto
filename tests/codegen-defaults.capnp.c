@@ -8,7 +8,14 @@
 # define capnp_use(x)
 #endif
 
+static const char capn_val0_str[1] = {0};
+static const capn_text capn_val0 = {0,capn_val0_str,0};
 static const capn_ptr capn_null = {CAPN_NULL};
+static const capn_text capn_text_null = {0,0,0};
+static const uint8_t capn_buf[8] = {
+	104,105,0,0,0,0,0,0
+};
+static const struct capn_segment capn_seg = {{0},0,0,0,(char*)&capn_buf[0],8,8,0};
 const int32_t answer = ANSWER;
 const unsigned flag = FLAG;
 const uint16_t count = COUNT;
@@ -106,6 +113,84 @@ void Rec_set_tags(Rec_ptr p, capn_ptr_list tags)
 {
 	capn_resolve(&p.p);
 	capn_setp(p.p, 1, (tags.p.data != capn_val2.p.data) ? tags.p : capn_null);
+}
+static capn_text capn_val3 = {2,(char*)&capn_buf[0],(struct capn_segment*)&capn_seg};
+
+Greeting_ptr new_Greeting(struct capn_segment *s) {
+	Greeting_ptr p;
+	p.p = capn_new_struct(s, 0, 2);
+	return p;
+}
+Greeting_list new_Greeting_list(struct capn_segment *s, int len) {
+	Greeting_list p;
+	p.p = capn_new_struct_list(s, len, 0, 2);
+	return p;
+}
+void read_Greeting(struct Greeting *s capnp_unused, Greeting_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	s->hello = capn_get_text(p.p, 0, capn_val3);
+	s->plain = capn_get_text(p.p, 1, capn_val0);
+}
+void write_Greeting(const struct Greeting *s capnp_unused, Greeting_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	capn_set_text(p.p, 0, (s->hello.str != capn_val3.str) ? s->hello : capn_text_null);
+	capn_set_text(p.p, 1, (s->plain.str != capn_val0.str) ? s->plain : capn_text_null);
+}
+void get_Greeting(struct Greeting *s, Greeting_list l, int i) {
+	Greeting_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_Greeting(s, p);
+}
+void set_Greeting(const struct Greeting *s, Greeting_list l, int i) {
+	Greeting_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_Greeting(s, p);
+}
+
+capn_text Greeting_get_hello(Greeting_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_text hello;
+	hello = capn_get_text(p.p, 0, capn_val3);
+	return hello;
+}
+
+int Greeting_has_hello(Greeting_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr hello;
+	hello = capn_getp(p.p, 0, 1);
+	return hello.type != CAPN_NULL;
+}
+
+capn_text Greeting_get_plain(Greeting_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_text plain;
+	plain = capn_get_text(p.p, 1, capn_val0);
+	return plain;
+}
+
+int Greeting_has_plain(Greeting_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr plain;
+	plain = capn_getp(p.p, 1, 1);
+	return plain.type != CAPN_NULL;
+}
+
+void Greeting_set_hello(Greeting_ptr p, capn_text hello)
+{
+	capn_resolve(&p.p);
+	capn_set_text(p.p, 0, (hello.str != capn_val3.str) ? hello : capn_text_null);
+}
+
+void Greeting_set_plain(Greeting_ptr p, capn_text plain)
+{
+	capn_resolve(&p.p);
+	capn_set_text(p.p, 1, (plain.str != capn_val0.str) ? plain : capn_text_null);
 }
 
 Event_ptr new_Event(struct capn_segment *s) {

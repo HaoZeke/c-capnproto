@@ -21,12 +21,15 @@ extern "C" {
 #endif
 
 struct Rec;
+struct Greeting;
 struct Event;
 
 typedef struct {capn_ptr p;} Rec_ptr;
+typedef struct {capn_ptr p;} Greeting_ptr;
 typedef struct {capn_ptr p;} Event_ptr;
 
 typedef struct {capn_ptr p;} Rec_list;
+typedef struct {capn_ptr p;} Greeting_list;
 typedef struct {capn_ptr p;} Event_list;
 
 enum Color {
@@ -72,6 +75,30 @@ void Rec_set_info(Rec_ptr p, capn_data info);
 
 void Rec_set_tags(Rec_ptr p, capn_ptr_list tags);
 
+struct Greeting {
+	capn_text hello;
+	capn_text plain;
+};
+
+static const size_t Greeting_word_count = 0;
+
+static const size_t Greeting_pointer_count = 2;
+
+static const size_t Greeting_struct_bytes_count = 16;
+
+
+capn_text Greeting_get_hello(Greeting_ptr p);
+
+int Greeting_has_hello(Greeting_ptr p);
+
+capn_text Greeting_get_plain(Greeting_ptr p);
+
+int Greeting_has_plain(Greeting_ptr p);
+
+void Greeting_set_hello(Greeting_ptr p, capn_text hello);
+
+void Greeting_set_plain(Greeting_ptr p, capn_text plain);
+
 struct Event {
 	capn_ptr_list args;
 };
@@ -90,21 +117,27 @@ int Event_has_args(Event_ptr p);
 void Event_set_args(Event_ptr p, capn_ptr_list args);
 
 Rec_ptr new_Rec(struct capn_segment*);
+Greeting_ptr new_Greeting(struct capn_segment*);
 Event_ptr new_Event(struct capn_segment*);
 
 Rec_list new_Rec_list(struct capn_segment*, int len);
+Greeting_list new_Greeting_list(struct capn_segment*, int len);
 Event_list new_Event_list(struct capn_segment*, int len);
 
 void read_Rec(struct Rec*, Rec_ptr);
+void read_Greeting(struct Greeting*, Greeting_ptr);
 void read_Event(struct Event*, Event_ptr);
 
 void write_Rec(const struct Rec*, Rec_ptr);
+void write_Greeting(const struct Greeting*, Greeting_ptr);
 void write_Event(const struct Event*, Event_ptr);
 
 void get_Rec(struct Rec*, Rec_list, int i);
+void get_Greeting(struct Greeting*, Greeting_list, int i);
 void get_Event(struct Event*, Event_list, int i);
 
 void set_Rec(const struct Rec*, Rec_list, int i);
+void set_Greeting(const struct Greeting*, Greeting_list, int i);
 void set_Event(const struct Event*, Event_list, int i);
 
 #ifdef __cplusplus
