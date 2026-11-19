@@ -254,6 +254,17 @@ if get_option('enable_tests') and not meson.is_subproject()
   )
   test('rpc-client-test', rpc_client_test)
 
+  gate_r5_test = executable(
+    'gate-r5-test',
+    'tests' / 'gate-r5-test.cpp',
+    include_directories: include_directories(['lib', 'tests', 'compiler']),
+    dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
+    cpp_args: common_cpp_args,
+    implicit_include_directories: false,
+    install: false,
+  )
+  test('gate-r5-test', gate_r5_test)
+
   capnp = find_program('capnp', required: false)
   if capnp.found()
     codec_c_args = common_c_args + ['-D_POSIX_C_SOURCE=200809L']
@@ -370,6 +381,14 @@ if get_option('enable_tests') and not meson.is_subproject()
         c_args: ['-D_POSIX_C_SOURCE=200809L'],
         implicit_include_directories: false,
       )
+      frame_wrap_test = executable(
+        'frame-wrap-test',
+        'interop' / 'frame_wrap_test.c',
+        c_args: ['-D_POSIX_C_SOURCE=200809L'],
+        implicit_include_directories: false,
+      )
+      test('frame-wrap', frame_wrap_test, args: [rpc_client_c.full_path()],
+           depends: [rpc_client_c])
 
       rpc_server_c = executable(
         'rpc_server_c',
