@@ -18,30 +18,33 @@ static void attach_cap_table(struct capn_rpc_conn *c, struct capn_segment *cs,
 static struct capn_rpc_answer *answer_find(struct capn_rpc_conn *c,
                                            uint32_t qid);
 
-static int table_grow(void **table, int *cap, size_t item_size)
+/* Grow `table` and return the new pointer. The caller stores it back
+ * into the typed slot. Writing through a void ** would alias a
+ * struct pointer, which compilers may treat as a different object. */
+static void *table_grow(void *table, int *cap, size_t item_size)
 {
 	void *next;
+	int old = *cap;
 	int next_cap;
 
-	if (*cap <= 0)
+	if (old <= 0)
 		next_cap = CAPN_RPC_INITIAL_TABLE_CAPACITY;
-	else if (*cap >= CAPN_RPC_MAX_TABLE_CAPACITY ||
-		 *cap > CAPN_RPC_MAX_TABLE_CAPACITY / 2)
-		return -1;
+	else if (old >= CAPN_RPC_MAX_TABLE_CAPACITY ||
+		 old > CAPN_RPC_MAX_TABLE_CAPACITY / 2)
+		return NULL;
 	else
-		next_cap = *cap * 2;
+		next_cap = old * 2;
 	if (next_cap > CAPN_RPC_MAX_TABLE_CAPACITY)
-		return -1;
-	if ((size_t) next_cap > SIZE_MAX / item_size)
-		return -1;
-	next = realloc(*table, (size_t) next_cap * item_size);
+		return NULL;
+	if (item_size == 0 || (size_t) next_cap > SIZE_MAX / item_size)
+		return NULL;
+	next = realloc(table, (size_t) next_cap * item_size);
 	if (next == NULL)
-		return -1;
-	memset((char *) next + (size_t) *cap * item_size, 0,
-	       (size_t) (next_cap - *cap) * item_size);
-	*table = next;
+		return NULL;
+	memset((char *) next + (size_t) old * item_size, 0,
+	       (size_t) (next_cap - old) * item_size);
 	*cap = next_cap;
-	return 0;
+	return next;
 }
 
 void capn_rpc_init(struct capn_rpc_conn *c, capn_rpc_send_fn send,
@@ -124,9 +127,13 @@ int capn_rpc_export(struct capn_rpc_conn *c, void *server,
 		}
 	}
 	i = c->exports_cap;
-	if (table_grow((void **) &c->exports, &c->exports_cap,
-	               sizeof *c->exports) != 0)
-		return -1;
+	{
+		void *grown = table_grow(c->exports, &c->exports_cap,
+		                         sizeof *c->exports);
+		if (grown == NULL)
+			return -1;
+		c->exports = grown;
+	}
 	c->exports[i].used = 1;
 	c->exports[i].refcount = 1;
 	c->exports[i].server = server;
@@ -282,10 +289,14 @@ static int send_answer(struct capn_rpc_conn *c, uint32_t qid, struct capn *msg)
 		}
 	}
 	i = c->answers_cap;
-	if (table_grow((void **) &c->answers, &c->answers_cap,
-	               sizeof *c->answers) != 0) {
-		free(buf);
-		return -1;
+	{
+		void *grown = table_grow(c->answers, &c->answers_cap,
+		                         sizeof *c->answers);
+		if (grown == NULL) {
+			free(buf);
+			return -1;
+		}
+		c->answers = grown;
 	}
 	c->answers[i].used = 1;
 	c->answers[i].question_id = qid;
@@ -1024,9 +1035,13 @@ static struct capn_rpc_question *question_claim(struct capn_rpc_conn *c,
 		}
 	}
 	i = c->questions_cap;
-	if (table_grow((void **) &c->questions, &c->questions_cap,
-	               sizeof *c->questions) != 0)
-		return NULL;
+	{
+		void *grown = table_grow(c->questions, &c->questions_cap,
+		                         sizeof *c->questions);
+		if (grown == NULL)
+			return NULL;
+		c->questions = grown;
+	}
 	c->questions[i].used = 1;
 	c->questions[i].question_id = c->next_question_id++;
 	*qid_out = c->questions[i].question_id;
