@@ -2167,6 +2167,7 @@ static int queue_frame(struct capn_rpc_conn *c, int export_id,
 	c->queued[i].export_id = export_id;
 	c->queued[i].frame = copy;
 	c->queued[i].len = len;
+	c->queued[i].seq = ++c->queue_clock;
 	return 0;
 }
 
@@ -2521,21 +2522,40 @@ static int queue_on_question(struct capn_rpc_conn *c, uint32_t question_id,
 	c->queued[i].question_id = question_id;
 	c->queued[i].frame = copy;
 	c->queued[i].len = len;
+	c->queued[i].seq = ++c->queue_clock;
 	return 0;
+}
+
+/* Oldest frame waiting on this export, or on this question when
+ * `on_question` is set. Slot index is not arrival order: a resolve can
+ * free a low slot that a later call then takes. */
+static int oldest_queued(struct capn_rpc_conn *c, int on_question,
+                         int export_id, uint32_t question_id)
+{
+	int i, best = -1;
+
+	for (i = 0; i < CAPN_RPC_MAX_QUEUED; i++) {
+		if (!c->queued[i].used || c->queued[i].on_question != on_question)
+			continue;
+		if (on_question) {
+			if (c->queued[i].question_id != question_id)
+				continue;
+		} else if (c->queued[i].export_id != export_id) {
+			continue;
+		}
+		if (best < 0 || c->queued[i].seq < c->queued[best].seq)
+			best = i;
+	}
+	return best;
 }
 
 static void flush_questions(struct capn_rpc_conn *c, uint32_t question_id)
 {
 	int i;
 
-	for (i = 0; i < CAPN_RPC_MAX_QUEUED; i++) {
-		uint8_t *frame;
-		size_t len;
-		if (!c->queued[i].used || !c->queued[i].on_question ||
-		    c->queued[i].question_id != question_id)
-			continue;
-		frame = c->queued[i].frame;
-		len = c->queued[i].len;
+	while ((i = oldest_queued(c, 1, 0, question_id)) >= 0) {
+		uint8_t *frame = c->queued[i].frame;
+		size_t len = c->queued[i].len;
 		memset(&c->queued[i], 0, sizeof c->queued[i]);
 		capn_rpc_handle(c, frame, len);
 		free(frame);
@@ -2547,11 +2567,8 @@ static void reject_questions(struct capn_rpc_conn *c, uint32_t question_id,
 {
 	int i;
 
-	for (i = 0; i < CAPN_RPC_MAX_QUEUED; i++) {
+	while ((i = oldest_queued(c, 1, 0, question_id)) >= 0) {
 		uint32_t qid;
-		if (!c->queued[i].used || !c->queued[i].on_question ||
-		    c->queued[i].question_id != question_id)
-			continue;
 		if (frame_question_id(c->queued[i].frame, c->queued[i].len, &qid) == 0)
 			send_return_exception(c, qid, reason ? reason : "promise released");
 		free(c->queued[i].frame);
@@ -2695,11 +2712,8 @@ static void flush_reject(struct capn_rpc_conn *c, int export_id, const char *rea
 {
 	int i;
 
-	for (i = 0; i < CAPN_RPC_MAX_QUEUED; i++) {
+	while ((i = oldest_queued(c, 0, export_id, 0)) >= 0) {
 		uint32_t qid;
-		if (!c->queued[i].used || c->queued[i].on_question ||
-		    c->queued[i].export_id != export_id)
-			continue;
 		if (frame_question_id(c->queued[i].frame, c->queued[i].len, &qid) == 0)
 			send_return_exception(c, qid, reason ? reason : "promise released");
 		free(c->queued[i].frame);
@@ -2712,14 +2726,9 @@ static void flush_replay(struct capn_rpc_conn *c, int export_id)
 {
 	int i;
 
-	for (i = 0; i < CAPN_RPC_MAX_QUEUED; i++) {
-		uint8_t *frame;
-		size_t len;
-		if (!c->queued[i].used || c->queued[i].on_question ||
-		    c->queued[i].export_id != export_id)
-			continue;
-		frame = c->queued[i].frame;
-		len = c->queued[i].len;
+	while ((i = oldest_queued(c, 0, export_id, 0)) >= 0) {
+		uint8_t *frame = c->queued[i].frame;
+		size_t len = c->queued[i].len;
 		memset(&c->queued[i], 0, sizeof c->queued[i]);
 		capn_rpc_handle(c, frame, len);
 		free(frame);
@@ -2846,10 +2855,7 @@ static void relay_on_return(struct capn_rpc_conn *c, uint32_t local_qid,
 static void flush_forward(struct capn_rpc_conn *c, int export_id, uint32_t import_id)
 {
 	int i;
-	for (i = 0; i < CAPN_RPC_MAX_QUEUED; i++) {
-		if (!c->queued[i].used || c->queued[i].on_question ||
-		    c->queued[i].export_id != export_id)
-			continue;
+	while ((i = oldest_queued(c, 0, export_id, 0)) >= 0) {
 		/* Straight to this import. Do not follow a later resolution
 		 * of it: that is the Tribble rule, and reflect_send is what
 		 * implements it. */

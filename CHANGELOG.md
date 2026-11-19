@@ -70,6 +70,9 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ### Fixed
 
+- Calls queued on one promise are replayed in arrival order. A resolve
+  of another promise can free a lower queue slot, and a later call must
+  not be delivered before an earlier one on the same promise.
 - A Text field read from a null pointer wrote back as an empty string,
   turning a schema default or a null into explicit data; it now writes a
   null again.

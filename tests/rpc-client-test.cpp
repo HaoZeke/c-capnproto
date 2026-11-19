@@ -1939,6 +1939,56 @@ TEST_F(RpcClient, DisembargoWaitsUntilQueuedCallsAreSent)
 	(void)q;
 }
 
+/* A1, B1, A2, resolve B, A3, resolve A. B's resolve frees the slot B1
+ * occupied, and A3 must not be replayed ahead of A2. */
+uint32_t g_arrival[8];
+int g_arrival_n;
+
+int arrival_dispatch(void *, uint64_t, uint16_t, capn_ptr params, capn_ptr results)
+{
+	capn_resolve(&params);
+	uint32_t in = params.type == CAPN_STRUCT ? capn_read32(params, 0) : 0;
+	if (g_arrival_n < 8)
+		g_arrival[g_arrival_n++] = in;
+	capn_write32(results, 0, in);
+	return 0;
+}
+
+TEST_F(RpcClient, QueuedCallsReplayInArrivalOrder)
+{
+	int obj_a = 1;
+	int obj_b = 2;
+	int settled = 3;
+	uint32_t a1 = 1, b1 = 10, a2 = 2, a3 = 3;
+
+	g_arrival_n = 0;
+	ASSERT_EQ(0, capn_rpc_export_promise(&vat, &obj_a, arrival_dispatch));
+	ASSERT_EQ(1, capn_rpc_export_promise(&vat, &obj_b, arrival_dispatch));
+	ASSERT_NE(static_cast<uint32_t>(-1),
+	          capn_rpc_send_call(&client, 0, 0, 0, 8, 0, fill_u32, &a1));
+	ASSERT_NE(static_cast<uint32_t>(-1),
+	          capn_rpc_send_call(&client, 1, 0, 0, 8, 0, fill_u32, &b1));
+	ASSERT_NE(static_cast<uint32_t>(-1),
+	          capn_rpc_send_call(&client, 0, 0, 0, 8, 0, fill_u32, &a2));
+	pump(&vat, wire.to_vat);
+	EXPECT_EQ(0, g_arrival_n);
+
+	ASSERT_EQ(0, capn_rpc_resolve(&vat, 1, &settled, arrival_dispatch));
+	ASSERT_EQ(1, g_arrival_n);
+	EXPECT_EQ(10u, g_arrival[0]);
+
+	ASSERT_NE(static_cast<uint32_t>(-1),
+	          capn_rpc_send_call(&client, 0, 0, 0, 8, 0, fill_u32, &a3));
+	pump(&vat, wire.to_vat);
+	EXPECT_EQ(1, g_arrival_n);
+
+	ASSERT_EQ(0, capn_rpc_resolve(&vat, 0, &settled, arrival_dispatch));
+	ASSERT_EQ(4, g_arrival_n);
+	EXPECT_EQ(1u, g_arrival[1]);
+	EXPECT_EQ(2u, g_arrival[2]);
+	EXPECT_EQ(3u, g_arrival[3]);
+}
+
 /* Once a promise is resolved to import R, a call that was waiting on it
  * is forwarded to R even when R has already resolved to something else.
  * rpc.capnp Disembargo, "The Tribble 4-way Race Condition". */
