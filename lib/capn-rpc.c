@@ -1066,6 +1066,8 @@ static int handle_disembargo(struct capn_rpc_conn *c, Disembargo_ptr dp)
 	}
 	if (in.context_which != Disembargo_context_senderLoopback)
 		return 0;
+	if (resolve_target(c, in.target) < 0)
+		return 0;
 
 	capn_init_malloc(&msg);
 	cs = capn_root(&msg).seg;
