@@ -43,6 +43,12 @@ extern "C" {
 #define CAPN_RPC_MAX_RELAYS 32
 #define CAPN_RPC_MAX_IMPORTS 4096
 #define CAPN_RPC_PATH_MAX 8
+/* Pipelined calls recorded against one question, so a later Resolve
+ * can embargo the capability they actually addressed. */
+#define CAPN_RPC_MAX_PIPE_NOTES 4
+/* Disembargo messages held until the promise they name has resolved
+ * and its queued calls are on the wire. */
+#define CAPN_RPC_MAX_ECHOES 8
 /* What a pending capability becomes in the cap table. */
 #define CAPN_RPC_CAP_HOSTED 0
 #define CAPN_RPC_CAP_PROMISE 1
@@ -93,6 +99,14 @@ struct capn_rpc_answer {
 	size_t len;
 };
 
+/* One pipelined call path sent against a question that had not
+ * returned yet. `calls` is how many were sent along `path`. */
+struct capn_rpc_pipe_note {
+	int calls;
+	int npath;
+	uint16_t path[CAPN_RPC_PATH_MAX];
+};
+
 /* A question this vat asked, from send until its Return arrives. */
 struct capn_rpc_question {
 	int used;
@@ -101,6 +115,13 @@ struct capn_rpc_question {
 	int failed;
 	uint8_t *reply;
 	size_t reply_len;
+	struct capn_rpc_pipe_note pipes[CAPN_RPC_MAX_PIPE_NOTES];
+	int npipes;
+	/* Return(takeFromOtherQuestion) arrived before the reflected call
+	 * finished. tail_from is the peer's question id whose results are
+	 * the answer. rpc.capnp Call.sendResultsTo.yourself. */
+	int tail_wait;
+	uint32_t tail_from;
 };
 
 /* A capability promised to a third vat, awaiting its Accept.
@@ -222,10 +243,13 @@ struct capn_rpc_import {
 };
 
 /* A call that arrived for a promise (or an embargoed export) and cannot
- * be answered until the resolution is on the wire. */
+ * be answered until the resolution is on the wire. `on_question` waits
+ * for the Return of `question_id` instead of an export. */
 struct capn_rpc_queued {
 	int used;
+	int on_question;
 	int export_id;
+	uint32_t question_id;
 	uint8_t *frame;
 	size_t len;
 };
@@ -245,6 +269,20 @@ struct capn_rpc_held {
 	int npath;
 	struct capn *msg;
 	capn_ptr params;
+	/* Caps the fill function registered, in cap-table order. The
+	 * outgoing call rebuilds its table from these; a local dispatch
+	 * swaps hosted fields so param_cap reads them. */
+	int ncaps;
+	struct capn_rpc_pending_cap caps[CAPN_RPC_MAX_PENDING_CAPS];
+};
+
+/* A senderLoopback Disembargo that arrived while its target was still
+ * a promise. Echoed after the queued calls, not before. */
+struct capn_rpc_echo {
+	int used;
+	uint32_t export_id;
+	uint8_t *frame;
+	size_t len;
 };
 
 /* A call forwarded to a resolved import, so its Return can be rewritten
@@ -268,6 +306,9 @@ struct capn_rpc_pending_call {
 	uint32_t generation;
 	struct capn *msg;
 	capn_ptr results;
+	/* The peer asked us to keep the results; a later Return names them
+	 * with takeFromOtherQuestion. */
+	int redirect;
 };
 
 struct capn_rpc_conn {
@@ -311,6 +352,7 @@ struct capn_rpc_conn {
 	struct capn_rpc_held held[CAPN_RPC_MAX_HELD];
 	struct capn_rpc_relay relays[CAPN_RPC_MAX_RELAYS];
 	uint32_t next_embargo;
+	struct capn_rpc_echo echoes[CAPN_RPC_MAX_ECHOES];
 };
 
 /* Zero the tables and install the transmit callback. */
