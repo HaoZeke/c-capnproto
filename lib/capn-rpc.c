@@ -2,6 +2,7 @@
 
 #include "capn-rpc.h"
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -16,6 +17,28 @@ static void attach_cap_table(struct capn_rpc_conn *c, struct capn_segment *cs,
                              struct Payload *pl);
 static struct capn_rpc_answer *answer_find(struct capn_rpc_conn *c,
                                            uint32_t qid);
+
+static int table_grow(void **table, int *cap, size_t item_size)
+{
+	void *next;
+	int next_cap = *cap ? *cap : CAPN_RPC_INITIAL_TABLE_CAPACITY;
+
+	if (*cap) {
+		if (*cap > INT_MAX / 2)
+			return -1;
+		next_cap *= 2;
+	}
+	if ((size_t) next_cap > SIZE_MAX / item_size)
+		return -1;
+	next = realloc(*table, (size_t) next_cap * item_size);
+	if (next == NULL)
+		return -1;
+	memset((char *) next + (size_t) *cap * item_size, 0,
+	       (size_t) (next_cap - *cap) * item_size);
+	*table = next;
+	*cap = next_cap;
+	return 0;
+}
 
 void capn_rpc_init(struct capn_rpc_conn *c, capn_rpc_send_fn send,
                    void *send_ctx)
@@ -40,9 +63,9 @@ void capn_rpc_free(struct capn_rpc_conn *c)
 {
 	int i;
 
-	for (i = 0; i < CAPN_RPC_MAX_ANSWERS; i++)
+	for (i = 0; i < c->answers_cap; i++)
 		free(c->answers[i].frame);
-	for (i = 0; i < CAPN_RPC_MAX_QUESTIONS; i++)
+	for (i = 0; i < c->questions_cap; i++)
 		free(c->questions[i].reply);
 	for (i = 0; i < CAPN_RPC_MAX_PENDING_CALLS; i++) {
 		if (c->pending_calls[i].used) {
@@ -51,8 +74,15 @@ void capn_rpc_free(struct capn_rpc_conn *c)
 		}
 	}
 	memset(c->pending_calls, 0, sizeof c->pending_calls);
-	memset(c->answers, 0, sizeof c->answers);
-	memset(c->questions, 0, sizeof c->questions);
+	free(c->exports);
+	free(c->answers);
+	free(c->questions);
+	c->exports = NULL;
+	c->answers = NULL;
+	c->questions = NULL;
+	c->exports_cap = 0;
+	c->answers_cap = 0;
+	c->questions_cap = 0;
 }
 
 void capn_rpc_set_vat(struct capn_rpc_conn *c, struct capn_rpc_vat *vat)
@@ -73,14 +103,14 @@ int capn_rpc_export(struct capn_rpc_conn *c, void *server,
 	int i;
 	/* Reuse the export already naming this server: the peer must see one
 	 * id per object, or reference equality could not be answered. */
-	for (i = 0; i < CAPN_RPC_MAX_EXPORTS; i++) {
+	for (i = 0; i < c->exports_cap; i++) {
 		if (c->exports[i].used && c->exports[i].server == server &&
 		    c->exports[i].dispatch == dispatch) {
 			c->exports[i].refcount++;
 			return i;
 		}
 	}
-	for (i = 0; i < CAPN_RPC_MAX_EXPORTS; i++) {
+	for (i = 0; i < c->exports_cap; i++) {
 		if (!c->exports[i].used) {
 			c->exports[i].used = 1;
 			c->exports[i].refcount = 1;
@@ -89,7 +119,15 @@ int capn_rpc_export(struct capn_rpc_conn *c, void *server,
 			return i;
 		}
 	}
-	return -1;
+	i = c->exports_cap;
+	if (table_grow((void **) &c->exports, &c->exports_cap,
+	               sizeof *c->exports) != 0)
+		return -1;
+	c->exports[i].used = 1;
+	c->exports[i].refcount = 1;
+	c->exports[i].server = server;
+	c->exports[i].dispatch = dispatch;
+	return i;
 }
 
 /* Resolve a MessageTarget to a local export index, or -1 when it names
@@ -108,7 +146,7 @@ static int resolve_target(struct capn_rpc_conn *c, MessageTarget_ptr tp)
 		return resolve_promised_answer(c, t.promisedAnswer);
 	if (t.which != MessageTarget_importedCap)
 		return -1;
-	if (t.importedCap >= CAPN_RPC_MAX_EXPORTS)
+	if (t.importedCap >= (uint32_t) c->exports_cap)
 		return -1;
 	return c->exports[t.importedCap].used ? (int)t.importedCap : -1;
 }
@@ -173,7 +211,7 @@ static int resolve_promised_answer(struct capn_rpc_conn *c,
 	get_CapDescriptor(&cd, pl.capTable, cursor.len);
 	if (cd.which != CapDescriptor_senderHosted)
 		goto out;
-	if (cd.senderHosted < CAPN_RPC_MAX_EXPORTS &&
+	if (cd.senderHosted < (uint32_t) c->exports_cap &&
 	    c->exports[cd.senderHosted].used)
 		eid = (int)cd.senderHosted;
 
@@ -228,25 +266,33 @@ static int send_answer(struct capn_rpc_conn *c, uint32_t qid, struct capn *msg)
 
 	if (buf == NULL)
 		return -1;
-	rc = c->send(c->send_ctx, buf, len);
-	for (i = 0; i < CAPN_RPC_MAX_ANSWERS; i++) {
+	for (i = 0; i < c->answers_cap; i++) {
 		if (!c->answers[i].used) {
 			c->answers[i].used = 1;
 			c->answers[i].question_id = qid;
 			c->answers[i].frame = buf;
 			c->answers[i].len = len;
-			return rc;
+			return c->send(c->send_ctx, buf, len);
 		}
 	}
-	/* No slot to keep it in: it was still sent, but cannot be pipelined. */
-	free(buf);
+	i = c->answers_cap;
+	if (table_grow((void **) &c->answers, &c->answers_cap,
+	               sizeof *c->answers) != 0) {
+		free(buf);
+		return -1;
+	}
+	c->answers[i].used = 1;
+	c->answers[i].question_id = qid;
+	c->answers[i].frame = buf;
+	c->answers[i].len = len;
+	rc = c->send(c->send_ctx, buf, len);
 	return rc;
 }
 
 static struct capn_rpc_answer *answer_find(struct capn_rpc_conn *c, uint32_t qid)
 {
 	int i;
-	for (i = 0; i < CAPN_RPC_MAX_ANSWERS; i++)
+	for (i = 0; i < c->answers_cap; i++)
 		if (c->answers[i].used && c->answers[i].question_id == qid)
 			return &c->answers[i];
 	return NULL;
@@ -676,7 +722,7 @@ static void handle_release(struct capn_rpc_conn *c, Release_ptr rp)
 {
 	struct Release rel;
 	read_Release(&rel, rp);
-	if (rel.id >= CAPN_RPC_MAX_EXPORTS || !c->exports[rel.id].used)
+	if (rel.id >= (uint32_t) c->exports_cap || !c->exports[rel.id].used)
 		return;
 	/* Releasing more references than were handed out drops the export;
 	 * the count is peer-controlled, so compare before subtracting. */
@@ -917,7 +963,7 @@ static struct capn_rpc_question *question_claim(struct capn_rpc_conn *c,
                                                 uint32_t *qid_out)
 {
 	int i;
-	for (i = 0; i < CAPN_RPC_MAX_QUESTIONS; i++) {
+	for (i = 0; i < c->questions_cap; i++) {
 		if (!c->questions[i].used) {
 			question_clear(&c->questions[i]);
 			c->questions[i].used = 1;
@@ -926,14 +972,21 @@ static struct capn_rpc_question *question_claim(struct capn_rpc_conn *c,
 			return &c->questions[i];
 		}
 	}
-	return NULL;
+	i = c->questions_cap;
+	if (table_grow((void **) &c->questions, &c->questions_cap,
+	               sizeof *c->questions) != 0)
+		return NULL;
+	c->questions[i].used = 1;
+	c->questions[i].question_id = c->next_question_id++;
+	*qid_out = c->questions[i].question_id;
+	return &c->questions[i];
 }
 
 static struct capn_rpc_question *question_find(struct capn_rpc_conn *c,
                                                uint32_t qid)
 {
 	int i;
-	for (i = 0; i < CAPN_RPC_MAX_QUESTIONS; i++)
+	for (i = 0; i < c->questions_cap; i++)
 		if (c->questions[i].used && c->questions[i].question_id == qid)
 			return &c->questions[i];
 	return NULL;
@@ -1829,7 +1882,7 @@ static void connection_abort(struct capn_rpc_conn *c)
 	int i;
 
 	c->aborted = 1;
-	for (i = 0; i < CAPN_RPC_MAX_QUESTIONS; i++) {
+	for (i = 0; i < c->questions_cap; i++) {
 		struct capn_rpc_question *q = &c->questions[i];
 		if (q->used && !q->answered) {
 			q->answered = 1;
