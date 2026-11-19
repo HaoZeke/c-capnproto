@@ -428,6 +428,32 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
     )
     test('codec-roundtrip-test', codec_roundtrip_test)
 
+    rpcstubs_gen = custom_target(
+      'rpcstubs-capnp',
+      input: 'tests' / 'rpcstubs.capnp',
+      output: ['rpcstubs.capnp.c', 'rpcstubs.capnp.h'],
+      command: [
+        capnp, 'compile',
+        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-I', meson.current_source_dir() / 'compiler',
+        '--src-prefix', meson.current_source_dir() / 'tests',
+        '@INPUT@',
+      ],
+      depends: [capnpc_c],
+    )
+
+    rpcstubs_test = executable(
+      'rpcstubs-test',
+      'tests' / 'rpcstubs-test.cpp',
+      rpcstubs_gen,
+      include_directories: include_directories(['lib', 'tests', 'compiler']),
+      dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
+      c_args: codec_c_args,
+      cpp_args: common_cpp_args,
+      install: false,
+    )
+    test('rpcstubs-test', rpcstubs_test)
+
     group_in_union_gen = custom_target(
       'group-in-union-capnp',
       input: 'tests' / 'group-in-union.capnp',

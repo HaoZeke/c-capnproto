@@ -202,6 +202,8 @@ EXTRA_DIST += \
 	tests/capnp-cli.h \
 	tests/reflect-test.cpp \
 	tests/reflect.capnp \
+	tests/rpcstubs.capnp \
+	tests/rpcstubs-test.cpp \
 	tests/reflect-other.capnp \
 	tests/interface-field.capnp \
 	tests/interface-field-test.cpp \

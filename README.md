@@ -378,6 +378,16 @@ sent (there are no deferred replies), `Resolve` is answered
 connection. For a stream socket or pipe, `capn_rpc_fd_send` and
 `capn_rpc_fd_pump` are a blocking transport (Unix-like systems only).
 
+With `$C.rpcstubs;` in a schema file, `capnpc-c` also generates, for each
+interface, the parameter and result structs of every method, a client
+helper `<Interface>_call_<method>` and result reader
+`<Interface>_results_<method>`, and `struct <Interface>_server`, a vtable of
+`on_<method>` handlers that `<Interface>_dispatch` routes to (set the
+connection's result size from `<Interface>_RESULT_DATASZ` and
+`_RESULT_PTRS`). `-> stream` methods get a call helper and a handler
+without results. Methods of superclasses are not routed by a subclass's
+dispatch.
+
 A handoff is arranged on one connection and claimed on another, so the
 arrangement belongs to the vat rather than the connection:
 `capn_rpc_set_vat` shares it between a vat's connections, and it holds
