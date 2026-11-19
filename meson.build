@@ -262,6 +262,11 @@ if get_option('enable_tests') and not meson.is_subproject()
       args: [meson.project_source_root() / 'scripts' / 'check-rpc-listen-wait.sh'],
       timeout: 30,
     )
+    test(
+      'const-name',
+      find_program('sh'),
+      args: [meson.project_source_root() / 'scripts' / 'check-const-name.sh'],
+    )
 
     # Official `capnp` CLI interop. Skip these tests only when the
     # binary is missing (this branch is not taken). Do not GTEST_SKIP
