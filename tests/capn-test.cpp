@@ -1044,3 +1044,91 @@ TEST(WireFormat, SetpCopiesSameSessionFarPointerIntoTheNamedSlot) {
   ASSERT_EQ(3, got.len);
   EXPECT_EQ(0, memcmp(got.str, "far", 3));
 }
+TEST(ListAccess, VectorOffsetsAreInElements) {
+  Session ctx;
+  capn_list64 l64 = capn_new_list64(capn_root(&ctx.capn).seg, 4);
+  capn_list32 l32 = capn_new_list32(capn_root(&ctx.capn).seg, 4);
+  capn_list16 l16 = capn_new_list16(capn_root(&ctx.capn).seg, 4);
+  for (int i = 0; i < 4; i++) {
+    capn_set64(l64, i, 100 + i);
+    capn_set32(l32, i, 200 + i);
+    capn_set16(l16, i, 300 + i);
+  }
+
+  uint64_t b64[2];
+  uint32_t b32[2];
+  uint16_t b16[2];
+  EXPECT_EQ(2, capn_getv64(l64, 1, b64, 2));
+  EXPECT_EQ(101u, b64[0]);
+  EXPECT_EQ(102u, b64[1]);
+  EXPECT_EQ(2, capn_getv32(l32, 2, b32, 2));
+  EXPECT_EQ(202u, b32[0]);
+  EXPECT_EQ(203u, b32[1]);
+  EXPECT_EQ(2, capn_getv16(l16, 1, b16, 2));
+  EXPECT_EQ(301u, b16[0]);
+  EXPECT_EQ(302u, b16[1]);
+
+  const uint64_t w64[2] = {7, 8};
+  EXPECT_EQ(2, capn_setv64(l64, 2, w64, 2));
+  EXPECT_EQ(100u, capn_get64(l64, 0));
+  EXPECT_EQ(101u, capn_get64(l64, 1));
+  EXPECT_EQ(7u, capn_get64(l64, 2));
+  EXPECT_EQ(8u, capn_get64(l64, 3));
+
+  /* Past the end the count is clamped; before the start or past it is an error. */
+  EXPECT_EQ(1, capn_getv64(l64, 3, b64, 2));
+  EXPECT_EQ(0, capn_getv64(l64, 4, b64, 2));
+  EXPECT_EQ(-1, capn_getv64(l64, 5, b64, 2));
+  EXPECT_EQ(-1, capn_getv64(l64, -1, b64, 2));
+  EXPECT_EQ(-1, capn_getv64(l64, 0, b64, -1));
+  EXPECT_EQ(-1, capn_setv64(l64, -1, w64, 2));
+}
+
+TEST(ListAccess, NegativeIndexIsOutOfRange) {
+  Session ctx;
+  struct capn_segment *seg = capn_root(&ctx.capn).seg;
+  capn_list8 l8 = capn_new_list8(seg, 8);
+  capn_list1 l1 = capn_new_list1(seg, 8);
+  capn_ptr pl = capn_new_ptr_list(seg, 2);
+  capn_ptr sl = capn_new_struct_list(seg, 2, 8, 1);
+
+  EXPECT_EQ(0, capn_get8(l8, -1));
+  EXPECT_EQ(-1, capn_set8(l8, -1, 1));
+  EXPECT_EQ(0, capn_get8(l8, INT32_MIN));
+  EXPECT_EQ(-1, capn_set1(l1, -1, 1));
+  EXPECT_EQ(CAPN_NULL, capn_getp(pl, -1, 1).type);
+  EXPECT_EQ(CAPN_NULL, capn_getp(sl, -1, 0).type);
+  EXPECT_EQ(CAPN_NULL, capn_getp(sl, INT32_MIN, 0).type);
+  EXPECT_EQ(-1, capn_setp(pl, -1, sl));
+  EXPECT_EQ(-1, capn_setp(sl, INT32_MIN, sl));
+}
+
+TEST(ListAccess, BitVectorsStayWithinTheRequestedCount) {
+  Session ctx;
+  capn_list1 l = capn_new_list1(capn_root(&ctx.capn).seg, 64);
+  uint8_t pattern[8] = {0xff, 0x0f, 0, 0, 0, 0, 0, 0};
+  ASSERT_EQ(64, capn_setv1(l, 0, pattern, 64));
+
+  uint8_t out[8];
+  memset(out, 0xaa, sizeof(out));
+  EXPECT_EQ(12, capn_getv1(l, 0, out, 12));
+  EXPECT_EQ(0xff, out[0]);
+  EXPECT_EQ(0x0f, out[1]);
+  EXPECT_EQ(0xaa, out[2]) << "read past the requested twelve bits";
+
+  /* A partial last byte must not clobber the bits after it. */
+  const uint8_t ones[1] = {0x00};
+  EXPECT_EQ(4, capn_setv1(l, 8, ones, 4));
+  EXPECT_EQ(0, capn_get1(l, 8));
+  EXPECT_EQ(0, capn_get1(l, 11));
+  EXPECT_EQ(0, capn_get1(l, 12));
+  capn_list1 l2 = capn_new_list1(capn_root(&ctx.capn).seg, 16);
+  const uint8_t all[2] = {0xff, 0xff};
+  ASSERT_EQ(16, capn_setv1(l2, 0, all, 16));
+  const uint8_t zero[1] = {0};
+  EXPECT_EQ(4, capn_setv1(l2, 8, zero, 4));
+  EXPECT_EQ(0, capn_get1(l2, 11));
+  EXPECT_EQ(1, capn_get1(l2, 12)) << "bits past the written count were cleared";
+  EXPECT_EQ(-1, capn_getv1(l, -8, out, 8));
+  EXPECT_EQ(-1, capn_getv1(l, 0, out, -1));
+}

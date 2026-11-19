@@ -15,7 +15,8 @@
 UINT_T CAT(capn_get,SZ) (LIST_T l, int off) {
 	char *d;
 	capn_ptr p = l.p;
-	if (off >= p.len) {
+	capn_resolve(&p);
+	if (off < 0 || off >= p.len) {
 		return 0;
 	}
 
@@ -44,14 +45,17 @@ int CAT(capn_getv,SZ) (LIST_T l, int off, UINT_T *to, int sz) {
 	capn_ptr p;
 	capn_resolve(&l.p);
 	p = l.p;
-	if (off + sz > p.len) {
+	if (off < 0 || sz < 0 || off > p.len) {
+		return -1;
+	}
+	if (sz > p.len - off) {
 		sz = p.len - off;
 	}
 
 	switch (p.type) {
 	case CAPN_LIST:
 		if (p.datasz == SZ/8 && !p.ptrs && (SZ == 8 || CAPN_LITTLE)) {
-			memcpy(to, p.data + off, sz * (SZ/8));
+			memcpy(to, p.data + (size_t) off * (SZ/8), (size_t) sz * (SZ/8));
 			return sz;
 		} else if (p.datasz < SZ/8) {
 			return -1;
@@ -82,7 +86,8 @@ int CAT(capn_getv,SZ) (LIST_T l, int off, UINT_T *to, int sz) {
 int CAT(capn_set,SZ) (LIST_T l, int off, UINT_T v) {
 	char *d;
 	capn_ptr p = l.p;
-	if (off >= p.len) {
+	capn_resolve(&p);
+	if (off < 0 || off >= p.len) {
 		return -1;
 	}
 
@@ -110,14 +115,18 @@ int CAT(capn_set,SZ) (LIST_T l, int off, UINT_T v) {
 int CAT(capn_setv,SZ) (LIST_T l, int off, const UINT_T *from, int sz) {
 	int i;
 	capn_ptr p = l.p;
-	if (off + sz > p.len) {
+	capn_resolve(&p);
+	if (off < 0 || sz < 0 || off > p.len) {
+		return -1;
+	}
+	if (sz > p.len - off) {
 		sz = p.len - off;
 	}
 
 	switch (p.type) {
 	case CAPN_LIST:
 		if (p.datasz == SZ/8 && !p.ptrs && (SZ == 8 || CAPN_LITTLE)) {
-			memcpy(p.data + off, from, sz * (SZ/8));
+			memcpy(p.data + (size_t) off * (SZ/8), from, (size_t) sz * (SZ/8));
 			return sz;
 		} else if (p.datasz < SZ/8) {
 			return -1;
