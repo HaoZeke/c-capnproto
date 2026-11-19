@@ -66,10 +66,21 @@ static void walk(capn_ptr p, int depth)
 				touch = capn_get8(l, 0);
 				touch = capn_get8(l, n - 1);
 				(void)touch;
-			} else if (p.data != NULL && p.datasz > 0) {
-				size_t bytes = (size_t)p.datasz * (size_t)n;
-				touch = (uint8_t)p.data[0];
-				touch = (uint8_t)p.data[bytes - 1];
+			} else if (p.datasz == 2) {
+				capn_list16 l;
+				l.p = p;
+				touch = (uint8_t)capn_get16(l, 0);
+				touch = (uint8_t)capn_get16(l, n - 1);
+			} else if (p.datasz == 4) {
+				capn_list32 l;
+				l.p = p;
+				touch = (uint8_t)capn_get32(l, 0);
+				touch = (uint8_t)capn_get32(l, n - 1);
+			} else if (p.datasz == 8) {
+				capn_list64 l;
+				l.p = p;
+				touch = (uint8_t)capn_get64(l, 0);
+				touch = (uint8_t)capn_get64(l, n - 1);
 				(void)touch;
 			}
 		}
