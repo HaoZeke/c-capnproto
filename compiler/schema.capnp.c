@@ -16,12 +16,12 @@ const uint16_t Field_noDiscriminant = FIELD_NO_DISCRIMINANT;
 
 Node_ptr new_Node(struct capn_segment *s) {
 	Node_ptr p;
-	p.p = capn_new_struct(s, 40, 6);
+	p.p = capn_new_struct(s, 48, 6);
 	return p;
 }
 Node_list new_Node_list(struct capn_segment *s, int len) {
 	Node_list p;
-	p.p = capn_new_struct_list(s, len, 40, 6);
+	p.p = capn_new_struct_list(s, len, 48, 6);
 	return p;
 }
 void read_Node(struct Node *s capnp_unused, Node_ptr p) {
@@ -75,6 +75,8 @@ void read_Node(struct Node *s capnp_unused, Node_ptr p) {
 	default:
 		break;
 	}
+	s->startByte = capn_read32(p.p, 40);
+	s->endByte = capn_read32(p.p, 44);
 }
 void write_Node(const struct Node *s capnp_unused, Node_ptr p) {
 	capn_resolve(&p.p);
@@ -127,6 +129,8 @@ void write_Node(const struct Node *s capnp_unused, Node_ptr p) {
 	default:
 		break;
 	}
+	capn_write32(p.p, 40, s->startByte);
+	capn_write32(p.p, 44, s->endByte);
 }
 void get_Node(struct Node *s, Node_list l, int i) {
 	Node_ptr p;
@@ -403,6 +407,184 @@ void Node_NestedNode_set_id(Node_NestedNode_ptr p, uint64_t id)
 {
 	capn_resolve(&p.p);
 	capn_write64(p.p, 0, id);
+}
+
+Node_SourceInfo_ptr new_Node_SourceInfo(struct capn_segment *s) {
+	Node_SourceInfo_ptr p;
+	p.p = capn_new_struct(s, 16, 2);
+	return p;
+}
+Node_SourceInfo_list new_Node_SourceInfo_list(struct capn_segment *s, int len) {
+	Node_SourceInfo_list p;
+	p.p = capn_new_struct_list(s, len, 16, 2);
+	return p;
+}
+void read_Node_SourceInfo(struct Node_SourceInfo *s capnp_unused, Node_SourceInfo_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	s->id = capn_read64(p.p, 0);
+	s->docComment = capn_get_text(p.p, 0, capn_val0);
+	s->members.p = capn_getp(p.p, 1, 0);
+	s->startByte = capn_read32(p.p, 8);
+	s->endByte = capn_read32(p.p, 12);
+}
+void write_Node_SourceInfo(const struct Node_SourceInfo *s capnp_unused, Node_SourceInfo_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	capn_write64(p.p, 0, s->id);
+	capn_set_text(p.p, 0, (s->docComment.str != capn_val0.str) ? s->docComment : capn_text_null);
+	capn_setp(p.p, 1, (s->members.p.type != CAPN_NULL) ? s->members.p : capn_null);
+	capn_write32(p.p, 8, s->startByte);
+	capn_write32(p.p, 12, s->endByte);
+}
+void get_Node_SourceInfo(struct Node_SourceInfo *s, Node_SourceInfo_list l, int i) {
+	Node_SourceInfo_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_Node_SourceInfo(s, p);
+}
+void set_Node_SourceInfo(const struct Node_SourceInfo *s, Node_SourceInfo_list l, int i) {
+	Node_SourceInfo_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_Node_SourceInfo(s, p);
+}
+
+uint64_t Node_SourceInfo_get_id(Node_SourceInfo_ptr p)
+{
+	capn_resolve(&p.p);
+	uint64_t id;
+	id = capn_read64(p.p, 0);
+	return id;
+}
+
+capn_text Node_SourceInfo_get_docComment(Node_SourceInfo_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_text docComment;
+	docComment = capn_get_text(p.p, 0, capn_val0);
+	return docComment;
+}
+
+int Node_SourceInfo_has_docComment(Node_SourceInfo_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr docComment;
+	docComment = capn_getp(p.p, 0, 1);
+	return docComment.type != CAPN_NULL;
+}
+
+Node_SourceInfo_Member_list Node_SourceInfo_get_members(Node_SourceInfo_ptr p)
+{
+	capn_resolve(&p.p);
+	Node_SourceInfo_Member_list members;
+	members.p = capn_getp(p.p, 1, 1);
+	return members;
+}
+
+int Node_SourceInfo_has_members(Node_SourceInfo_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr members;
+	members = capn_getp(p.p, 1, 1);
+	return members.type != CAPN_NULL;
+}
+
+uint32_t Node_SourceInfo_get_startByte(Node_SourceInfo_ptr p)
+{
+	capn_resolve(&p.p);
+	uint32_t startByte;
+	startByte = capn_read32(p.p, 8);
+	return startByte;
+}
+
+uint32_t Node_SourceInfo_get_endByte(Node_SourceInfo_ptr p)
+{
+	capn_resolve(&p.p);
+	uint32_t endByte;
+	endByte = capn_read32(p.p, 12);
+	return endByte;
+}
+
+void Node_SourceInfo_set_id(Node_SourceInfo_ptr p, uint64_t id)
+{
+	capn_resolve(&p.p);
+	capn_write64(p.p, 0, id);
+}
+
+void Node_SourceInfo_set_docComment(Node_SourceInfo_ptr p, capn_text docComment)
+{
+	capn_resolve(&p.p);
+	capn_set_text(p.p, 0, (docComment.str != capn_val0.str) ? docComment : capn_text_null);
+}
+
+void Node_SourceInfo_set_members(Node_SourceInfo_ptr p, Node_SourceInfo_Member_list members)
+{
+	capn_resolve(&p.p);
+	capn_setp(p.p, 1, (members.p.type != CAPN_NULL) ? members.p : capn_null);
+}
+
+void Node_SourceInfo_set_startByte(Node_SourceInfo_ptr p, uint32_t startByte)
+{
+	capn_resolve(&p.p);
+	capn_write32(p.p, 8, startByte);
+}
+
+void Node_SourceInfo_set_endByte(Node_SourceInfo_ptr p, uint32_t endByte)
+{
+	capn_resolve(&p.p);
+	capn_write32(p.p, 12, endByte);
+}
+
+Node_SourceInfo_Member_ptr new_Node_SourceInfo_Member(struct capn_segment *s) {
+	Node_SourceInfo_Member_ptr p;
+	p.p = capn_new_struct(s, 0, 1);
+	return p;
+}
+Node_SourceInfo_Member_list new_Node_SourceInfo_Member_list(struct capn_segment *s, int len) {
+	Node_SourceInfo_Member_list p;
+	p.p = capn_new_struct_list(s, len, 0, 1);
+	return p;
+}
+void read_Node_SourceInfo_Member(struct Node_SourceInfo_Member *s capnp_unused, Node_SourceInfo_Member_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	s->docComment = capn_get_text(p.p, 0, capn_val0);
+}
+void write_Node_SourceInfo_Member(const struct Node_SourceInfo_Member *s capnp_unused, Node_SourceInfo_Member_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	capn_set_text(p.p, 0, (s->docComment.str != capn_val0.str) ? s->docComment : capn_text_null);
+}
+void get_Node_SourceInfo_Member(struct Node_SourceInfo_Member *s, Node_SourceInfo_Member_list l, int i) {
+	Node_SourceInfo_Member_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_Node_SourceInfo_Member(s, p);
+}
+void set_Node_SourceInfo_Member(const struct Node_SourceInfo_Member *s, Node_SourceInfo_Member_list l, int i) {
+	Node_SourceInfo_Member_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_Node_SourceInfo_Member(s, p);
+}
+
+capn_text Node_SourceInfo_Member_get_docComment(Node_SourceInfo_Member_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_text docComment;
+	docComment = capn_get_text(p.p, 0, capn_val0);
+	return docComment;
+}
+
+int Node_SourceInfo_Member_has_docComment(Node_SourceInfo_Member_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr docComment;
+	docComment = capn_getp(p.p, 0, 1);
+	return docComment.type != CAPN_NULL;
+}
+
+void Node_SourceInfo_Member_set_docComment(Node_SourceInfo_Member_ptr p, capn_text docComment)
+{
+	capn_resolve(&p.p);
+	capn_set_text(p.p, 0, (docComment.str != capn_val0.str) ? docComment : capn_text_null);
 }
 
 Field_ptr new_Field(struct capn_segment *s) {
@@ -950,6 +1132,13 @@ void read_Type(struct Type *s capnp_unused, Type_ptr p) {
 	case Type_anyPointer:
 		s->anyPointer.which = (enum Type_anyPointer_which)(int) capn_read16(p.p, 8);
 		switch (s->anyPointer.which) {
+		case Type_anyPointer_unconstrained:
+			s->anyPointer.unconstrained.which = (enum Type_anyPointer_unconstrained_which)(int) capn_read16(p.p, 10);
+			switch (s->anyPointer.unconstrained.which) {
+			default:
+				break;
+			}
+			break;
 		case Type_anyPointer_parameter:
 			s->anyPointer.parameter.scopeId = capn_read64(p.p, 16);
 			s->anyPointer.parameter.parameterIndex = capn_read16(p.p, 10);
@@ -988,6 +1177,13 @@ void write_Type(const struct Type *s capnp_unused, Type_ptr p) {
 	case Type_anyPointer:
 		capn_write16(p.p, 8, s->anyPointer.which);
 		switch (s->anyPointer.which) {
+		case Type_anyPointer_unconstrained:
+			capn_write16(p.p, 10, s->anyPointer.unconstrained.which);
+			switch (s->anyPointer.unconstrained.which) {
+			default:
+				break;
+			}
+			break;
 		case Type_anyPointer_parameter:
 			capn_write64(p.p, 16, s->anyPointer.parameter.scopeId);
 			capn_write16(p.p, 10, s->anyPointer.parameter.parameterIndex);
@@ -1407,26 +1603,107 @@ void Annotation_set_value(Annotation_ptr p, Value_ptr value)
 	capn_setp(p.p, 0, (value.p.type != CAPN_NULL) ? value.p : capn_null);
 }
 
+CapnpVersion_ptr new_CapnpVersion(struct capn_segment *s) {
+	CapnpVersion_ptr p;
+	p.p = capn_new_struct(s, 8, 0);
+	return p;
+}
+CapnpVersion_list new_CapnpVersion_list(struct capn_segment *s, int len) {
+	CapnpVersion_list p;
+	p.p = capn_new_struct_list(s, len, 8, 0);
+	return p;
+}
+void read_CapnpVersion(struct CapnpVersion *s capnp_unused, CapnpVersion_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	s->major = capn_read16(p.p, 0);
+	s->minor = capn_read8(p.p, 2);
+	s->micro = capn_read8(p.p, 3);
+}
+void write_CapnpVersion(const struct CapnpVersion *s capnp_unused, CapnpVersion_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	capn_write16(p.p, 0, s->major);
+	capn_write8(p.p, 2, s->minor);
+	capn_write8(p.p, 3, s->micro);
+}
+void get_CapnpVersion(struct CapnpVersion *s, CapnpVersion_list l, int i) {
+	CapnpVersion_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_CapnpVersion(s, p);
+}
+void set_CapnpVersion(const struct CapnpVersion *s, CapnpVersion_list l, int i) {
+	CapnpVersion_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_CapnpVersion(s, p);
+}
+
+uint16_t CapnpVersion_get_major(CapnpVersion_ptr p)
+{
+	capn_resolve(&p.p);
+	uint16_t major;
+	major = capn_read16(p.p, 0);
+	return major;
+}
+
+uint8_t CapnpVersion_get_minor(CapnpVersion_ptr p)
+{
+	capn_resolve(&p.p);
+	uint8_t minor;
+	minor = capn_read8(p.p, 2);
+	return minor;
+}
+
+uint8_t CapnpVersion_get_micro(CapnpVersion_ptr p)
+{
+	capn_resolve(&p.p);
+	uint8_t micro;
+	micro = capn_read8(p.p, 3);
+	return micro;
+}
+
+void CapnpVersion_set_major(CapnpVersion_ptr p, uint16_t major)
+{
+	capn_resolve(&p.p);
+	capn_write16(p.p, 0, major);
+}
+
+void CapnpVersion_set_minor(CapnpVersion_ptr p, uint8_t minor)
+{
+	capn_resolve(&p.p);
+	capn_write8(p.p, 2, minor);
+}
+
+void CapnpVersion_set_micro(CapnpVersion_ptr p, uint8_t micro)
+{
+	capn_resolve(&p.p);
+	capn_write8(p.p, 3, micro);
+}
+
 CodeGeneratorRequest_ptr new_CodeGeneratorRequest(struct capn_segment *s) {
 	CodeGeneratorRequest_ptr p;
-	p.p = capn_new_struct(s, 0, 2);
+	p.p = capn_new_struct(s, 0, 4);
 	return p;
 }
 CodeGeneratorRequest_list new_CodeGeneratorRequest_list(struct capn_segment *s, int len) {
 	CodeGeneratorRequest_list p;
-	p.p = capn_new_struct_list(s, len, 0, 2);
+	p.p = capn_new_struct_list(s, len, 0, 4);
 	return p;
 }
 void read_CodeGeneratorRequest(struct CodeGeneratorRequest *s capnp_unused, CodeGeneratorRequest_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
+	s->capnpVersion.p = capn_getp(p.p, 2, 0);
 	s->nodes.p = capn_getp(p.p, 0, 0);
+	s->sourceInfo.p = capn_getp(p.p, 3, 0);
 	s->requestedFiles.p = capn_getp(p.p, 1, 0);
 }
 void write_CodeGeneratorRequest(const struct CodeGeneratorRequest *s capnp_unused, CodeGeneratorRequest_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
+	capn_setp(p.p, 2, (s->capnpVersion.p.type != CAPN_NULL) ? s->capnpVersion.p : capn_null);
 	capn_setp(p.p, 0, (s->nodes.p.type != CAPN_NULL) ? s->nodes.p : capn_null);
+	capn_setp(p.p, 3, (s->sourceInfo.p.type != CAPN_NULL) ? s->sourceInfo.p : capn_null);
 	capn_setp(p.p, 1, (s->requestedFiles.p.type != CAPN_NULL) ? s->requestedFiles.p : capn_null);
 }
 void get_CodeGeneratorRequest(struct CodeGeneratorRequest *s, CodeGeneratorRequest_list l, int i) {
@@ -1438,6 +1715,22 @@ void set_CodeGeneratorRequest(const struct CodeGeneratorRequest *s, CodeGenerato
 	CodeGeneratorRequest_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_CodeGeneratorRequest(s, p);
+}
+
+CapnpVersion_ptr CodeGeneratorRequest_get_capnpVersion(CodeGeneratorRequest_ptr p)
+{
+	capn_resolve(&p.p);
+	CapnpVersion_ptr capnpVersion;
+	capnpVersion.p = capn_getp(p.p, 2, 1);
+	return capnpVersion;
+}
+
+int CodeGeneratorRequest_has_capnpVersion(CodeGeneratorRequest_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr capnpVersion;
+	capnpVersion = capn_getp(p.p, 2, 1);
+	return capnpVersion.type != CAPN_NULL;
 }
 
 Node_list CodeGeneratorRequest_get_nodes(CodeGeneratorRequest_ptr p)
@@ -1456,6 +1749,22 @@ int CodeGeneratorRequest_has_nodes(CodeGeneratorRequest_ptr p)
 	return nodes.type != CAPN_NULL;
 }
 
+Node_SourceInfo_list CodeGeneratorRequest_get_sourceInfo(CodeGeneratorRequest_ptr p)
+{
+	capn_resolve(&p.p);
+	Node_SourceInfo_list sourceInfo;
+	sourceInfo.p = capn_getp(p.p, 3, 1);
+	return sourceInfo;
+}
+
+int CodeGeneratorRequest_has_sourceInfo(CodeGeneratorRequest_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr sourceInfo;
+	sourceInfo = capn_getp(p.p, 3, 1);
+	return sourceInfo.type != CAPN_NULL;
+}
+
 CodeGeneratorRequest_RequestedFile_list CodeGeneratorRequest_get_requestedFiles(CodeGeneratorRequest_ptr p)
 {
 	capn_resolve(&p.p);
@@ -1472,10 +1781,22 @@ int CodeGeneratorRequest_has_requestedFiles(CodeGeneratorRequest_ptr p)
 	return requestedFiles.type != CAPN_NULL;
 }
 
+void CodeGeneratorRequest_set_capnpVersion(CodeGeneratorRequest_ptr p, CapnpVersion_ptr capnpVersion)
+{
+	capn_resolve(&p.p);
+	capn_setp(p.p, 2, (capnpVersion.p.type != CAPN_NULL) ? capnpVersion.p : capn_null);
+}
+
 void CodeGeneratorRequest_set_nodes(CodeGeneratorRequest_ptr p, Node_list nodes)
 {
 	capn_resolve(&p.p);
 	capn_setp(p.p, 0, (nodes.p.type != CAPN_NULL) ? nodes.p : capn_null);
+}
+
+void CodeGeneratorRequest_set_sourceInfo(CodeGeneratorRequest_ptr p, Node_SourceInfo_list sourceInfo)
+{
+	capn_resolve(&p.p);
+	capn_setp(p.p, 3, (sourceInfo.p.type != CAPN_NULL) ? sourceInfo.p : capn_null);
 }
 
 void CodeGeneratorRequest_set_requestedFiles(CodeGeneratorRequest_ptr p, CodeGeneratorRequest_RequestedFile_list requestedFiles)
@@ -1486,12 +1807,12 @@ void CodeGeneratorRequest_set_requestedFiles(CodeGeneratorRequest_ptr p, CodeGen
 
 CodeGeneratorRequest_RequestedFile_ptr new_CodeGeneratorRequest_RequestedFile(struct capn_segment *s) {
 	CodeGeneratorRequest_RequestedFile_ptr p;
-	p.p = capn_new_struct(s, 8, 2);
+	p.p = capn_new_struct(s, 8, 3);
 	return p;
 }
 CodeGeneratorRequest_RequestedFile_list new_CodeGeneratorRequest_RequestedFile_list(struct capn_segment *s, int len) {
 	CodeGeneratorRequest_RequestedFile_list p;
-	p.p = capn_new_struct_list(s, len, 8, 2);
+	p.p = capn_new_struct_list(s, len, 8, 3);
 	return p;
 }
 void read_CodeGeneratorRequest_RequestedFile(struct CodeGeneratorRequest_RequestedFile *s capnp_unused, CodeGeneratorRequest_RequestedFile_ptr p) {
@@ -1500,6 +1821,7 @@ void read_CodeGeneratorRequest_RequestedFile(struct CodeGeneratorRequest_Request
 	s->id = capn_read64(p.p, 0);
 	s->filename = capn_get_text(p.p, 0, capn_val0);
 	s->imports.p = capn_getp(p.p, 1, 0);
+	s->fileSourceInfo.p = capn_getp(p.p, 2, 0);
 }
 void write_CodeGeneratorRequest_RequestedFile(const struct CodeGeneratorRequest_RequestedFile *s capnp_unused, CodeGeneratorRequest_RequestedFile_ptr p) {
 	capn_resolve(&p.p);
@@ -1507,6 +1829,7 @@ void write_CodeGeneratorRequest_RequestedFile(const struct CodeGeneratorRequest_
 	capn_write64(p.p, 0, s->id);
 	capn_set_text(p.p, 0, (s->filename.str != capn_val0.str) ? s->filename : capn_text_null);
 	capn_setp(p.p, 1, (s->imports.p.type != CAPN_NULL) ? s->imports.p : capn_null);
+	capn_setp(p.p, 2, (s->fileSourceInfo.p.type != CAPN_NULL) ? s->fileSourceInfo.p : capn_null);
 }
 void get_CodeGeneratorRequest_RequestedFile(struct CodeGeneratorRequest_RequestedFile *s, CodeGeneratorRequest_RequestedFile_list l, int i) {
 	CodeGeneratorRequest_RequestedFile_ptr p;
@@ -1559,6 +1882,22 @@ int CodeGeneratorRequest_RequestedFile_has_imports(CodeGeneratorRequest_Requeste
 	return imports.type != CAPN_NULL;
 }
 
+CodeGeneratorRequest_RequestedFile_FileSourceInfo_ptr CodeGeneratorRequest_RequestedFile_get_fileSourceInfo(CodeGeneratorRequest_RequestedFile_ptr p)
+{
+	capn_resolve(&p.p);
+	CodeGeneratorRequest_RequestedFile_FileSourceInfo_ptr fileSourceInfo;
+	fileSourceInfo.p = capn_getp(p.p, 2, 1);
+	return fileSourceInfo;
+}
+
+int CodeGeneratorRequest_RequestedFile_has_fileSourceInfo(CodeGeneratorRequest_RequestedFile_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr fileSourceInfo;
+	fileSourceInfo = capn_getp(p.p, 2, 1);
+	return fileSourceInfo.type != CAPN_NULL;
+}
+
 void CodeGeneratorRequest_RequestedFile_set_id(CodeGeneratorRequest_RequestedFile_ptr p, uint64_t id)
 {
 	capn_resolve(&p.p);
@@ -1575,6 +1914,12 @@ void CodeGeneratorRequest_RequestedFile_set_imports(CodeGeneratorRequest_Request
 {
 	capn_resolve(&p.p);
 	capn_setp(p.p, 1, (imports.p.type != CAPN_NULL) ? imports.p : capn_null);
+}
+
+void CodeGeneratorRequest_RequestedFile_set_fileSourceInfo(CodeGeneratorRequest_RequestedFile_ptr p, CodeGeneratorRequest_RequestedFile_FileSourceInfo_ptr fileSourceInfo)
+{
+	capn_resolve(&p.p);
+	capn_setp(p.p, 2, (fileSourceInfo.p.type != CAPN_NULL) ? fileSourceInfo.p : capn_null);
 }
 
 CodeGeneratorRequest_RequestedFile_Import_ptr new_CodeGeneratorRequest_RequestedFile_Import(struct capn_segment *s) {
@@ -1644,4 +1989,142 @@ void CodeGeneratorRequest_RequestedFile_Import_set_name(CodeGeneratorRequest_Req
 {
 	capn_resolve(&p.p);
 	capn_set_text(p.p, 0, (name.str != capn_val0.str) ? name : capn_text_null);
+}
+
+CodeGeneratorRequest_RequestedFile_FileSourceInfo_ptr new_CodeGeneratorRequest_RequestedFile_FileSourceInfo(struct capn_segment *s) {
+	CodeGeneratorRequest_RequestedFile_FileSourceInfo_ptr p;
+	p.p = capn_new_struct(s, 0, 1);
+	return p;
+}
+CodeGeneratorRequest_RequestedFile_FileSourceInfo_list new_CodeGeneratorRequest_RequestedFile_FileSourceInfo_list(struct capn_segment *s, int len) {
+	CodeGeneratorRequest_RequestedFile_FileSourceInfo_list p;
+	p.p = capn_new_struct_list(s, len, 0, 1);
+	return p;
+}
+void read_CodeGeneratorRequest_RequestedFile_FileSourceInfo(struct CodeGeneratorRequest_RequestedFile_FileSourceInfo *s capnp_unused, CodeGeneratorRequest_RequestedFile_FileSourceInfo_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	s->identifiers.p = capn_getp(p.p, 0, 0);
+}
+void write_CodeGeneratorRequest_RequestedFile_FileSourceInfo(const struct CodeGeneratorRequest_RequestedFile_FileSourceInfo *s capnp_unused, CodeGeneratorRequest_RequestedFile_FileSourceInfo_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	capn_setp(p.p, 0, (s->identifiers.p.type != CAPN_NULL) ? s->identifiers.p : capn_null);
+}
+void get_CodeGeneratorRequest_RequestedFile_FileSourceInfo(struct CodeGeneratorRequest_RequestedFile_FileSourceInfo *s, CodeGeneratorRequest_RequestedFile_FileSourceInfo_list l, int i) {
+	CodeGeneratorRequest_RequestedFile_FileSourceInfo_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_CodeGeneratorRequest_RequestedFile_FileSourceInfo(s, p);
+}
+void set_CodeGeneratorRequest_RequestedFile_FileSourceInfo(const struct CodeGeneratorRequest_RequestedFile_FileSourceInfo *s, CodeGeneratorRequest_RequestedFile_FileSourceInfo_list l, int i) {
+	CodeGeneratorRequest_RequestedFile_FileSourceInfo_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_CodeGeneratorRequest_RequestedFile_FileSourceInfo(s, p);
+}
+
+CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_list CodeGeneratorRequest_RequestedFile_FileSourceInfo_get_identifiers(CodeGeneratorRequest_RequestedFile_FileSourceInfo_ptr p)
+{
+	capn_resolve(&p.p);
+	CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_list identifiers;
+	identifiers.p = capn_getp(p.p, 0, 1);
+	return identifiers;
+}
+
+int CodeGeneratorRequest_RequestedFile_FileSourceInfo_has_identifiers(CodeGeneratorRequest_RequestedFile_FileSourceInfo_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr identifiers;
+	identifiers = capn_getp(p.p, 0, 1);
+	return identifiers.type != CAPN_NULL;
+}
+
+void CodeGeneratorRequest_RequestedFile_FileSourceInfo_set_identifiers(CodeGeneratorRequest_RequestedFile_FileSourceInfo_ptr p, CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_list identifiers)
+{
+	capn_resolve(&p.p);
+	capn_setp(p.p, 0, (identifiers.p.type != CAPN_NULL) ? identifiers.p : capn_null);
+}
+
+CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_ptr new_CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier(struct capn_segment *s) {
+	CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_ptr p;
+	p.p = capn_new_struct(s, 24, 0);
+	return p;
+}
+CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_list new_CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_list(struct capn_segment *s, int len) {
+	CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_list p;
+	p.p = capn_new_struct_list(s, len, 24, 0);
+	return p;
+}
+void read_CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier(struct CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier *s capnp_unused, CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	s->startByte = capn_read32(p.p, 0);
+	s->endByte = capn_read32(p.p, 4);
+	s->which = (enum CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_which)(int) capn_read16(p.p, 16);
+	switch (s->which) {
+	case CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_typeId:
+		s->typeId = capn_read64(p.p, 8);
+		break;
+	case CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_member:
+		s->member.parentTypeId = capn_read64(p.p, 8);
+		s->member.ordinal = capn_read16(p.p, 18);
+		break;
+	default:
+		break;
+	}
+}
+void write_CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier(const struct CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier *s capnp_unused, CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	capn_write32(p.p, 0, s->startByte);
+	capn_write32(p.p, 4, s->endByte);
+	capn_write16(p.p, 16, s->which);
+	switch (s->which) {
+	case CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_typeId:
+		capn_write64(p.p, 8, s->typeId);
+		break;
+	case CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_member:
+		capn_write64(p.p, 8, s->member.parentTypeId);
+		capn_write16(p.p, 18, s->member.ordinal);
+		break;
+	default:
+		break;
+	}
+}
+void get_CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier(struct CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier *s, CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_list l, int i) {
+	CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier(s, p);
+}
+void set_CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier(const struct CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier *s, CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_list l, int i) {
+	CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier(s, p);
+}
+
+uint32_t CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_get_startByte(CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_ptr p)
+{
+	capn_resolve(&p.p);
+	uint32_t startByte;
+	startByte = capn_read32(p.p, 0);
+	return startByte;
+}
+
+uint32_t CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_get_endByte(CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_ptr p)
+{
+	capn_resolve(&p.p);
+	uint32_t endByte;
+	endByte = capn_read32(p.p, 4);
+	return endByte;
+}
+
+void CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_set_startByte(CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_ptr p, uint32_t startByte)
+{
+	capn_resolve(&p.p);
+	capn_write32(p.p, 0, startByte);
+}
+
+void CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_set_endByte(CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_ptr p, uint32_t endByte)
+{
+	capn_resolve(&p.p);
+	capn_write32(p.p, 4, endByte);
 }

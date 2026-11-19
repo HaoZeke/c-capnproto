@@ -232,3 +232,65 @@ TEST(Schema, ReadSimple) {
 
   capn_free(&ctx);
 }
+
+TEST(Schema, VersionAndPointerKindsRoundTrip) {
+  struct capn ctx;
+  capn_init_malloc(&ctx);
+  struct capn_segment *seg = capn_root(&ctx).seg;
+
+  CodeGeneratorRequest_ptr reqp = new_CodeGeneratorRequest(seg);
+  ASSERT_EQ(0, capn_setp(capn_root(&ctx), 0, reqp.p));
+
+  struct CapnpVersion ver;
+  memset(&ver, 0, sizeof ver);
+  ver.major = 1;
+  ver.minor = 4;
+  ver.micro = 0;
+  CapnpVersion_ptr vp = new_CapnpVersion(seg);
+  write_CapnpVersion(&ver, vp);
+  CodeGeneratorRequest_set_capnpVersion(reqp, vp);
+
+  Node_list nodes = new_Node_list(seg, 1);
+  struct Node node;
+  memset(&node, 0, sizeof node);
+  node.id = 7;
+  node.which = Node_file;
+  node.startByte = 12;
+  node.endByte = 40;
+  set_Node(&node, nodes, 0);
+  CodeGeneratorRequest_set_nodes(reqp, nodes);
+
+  struct Type ty;
+  memset(&ty, 0, sizeof ty);
+  ty.which = Type_anyPointer;
+  ty.anyPointer.which = Type_anyPointer_unconstrained;
+  ty.anyPointer.unconstrained.which = Type_anyPointer_unconstrained__list;
+  Type_ptr tp = new_Type(seg);
+  write_Type(&ty, tp);
+
+  struct CodeGeneratorRequest got;
+  memset(&got, 0, sizeof got);
+  read_CodeGeneratorRequest(&got, reqp);
+  struct CapnpVersion gver;
+  memset(&gver, 0, sizeof gver);
+  read_CapnpVersion(&gver, got.capnpVersion);
+  EXPECT_EQ(1, gver.major);
+  EXPECT_EQ(4, gver.minor);
+  EXPECT_EQ(0, gver.micro);
+
+  struct Node gnode;
+  memset(&gnode, 0, sizeof gnode);
+  get_Node(&gnode, got.nodes, 0);
+  EXPECT_EQ(7ull, gnode.id);
+  EXPECT_EQ(12u, gnode.startByte);
+  EXPECT_EQ(40u, gnode.endByte);
+
+  struct Type gty;
+  memset(&gty, 0, sizeof gty);
+  read_Type(&gty, tp);
+  EXPECT_EQ(Type_anyPointer, gty.which);
+  EXPECT_EQ(Type_anyPointer_unconstrained, gty.anyPointer.which);
+  EXPECT_EQ(Type_anyPointer_unconstrained__list, gty.anyPointer.unconstrained.which);
+
+  capn_free(&ctx);
+}
