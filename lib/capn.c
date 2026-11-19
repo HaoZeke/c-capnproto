@@ -1658,9 +1658,10 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 
 	copy_ptr:
 		/* An unresolved far word is not a value. Follow it and
-		 * deep-copy the object. Copying the word aliases the landing
-		 * pad, and (val & 3) == FAR_PTR is also true of a double far
-		 * (DOUBLE_PTR == 6). A follow that fails stores null. */
+		 * deep-copy the object, as C++ copyPointer does. Copying the
+		 * word aliases the landing pad, and (val & 3) == FAR_PTR is
+		 * also true of a double far (DOUBLE_PTR == 6). A follow that
+		 * fails (missing segment, out of range) stores null. */
 		if (far_tgt.type == CAPN_FAR_POINTER && p.seg != NULL) {
 			int follow = 0;
 			if (far_tgt.seg != NULL && far_tgt.data != NULL &&
