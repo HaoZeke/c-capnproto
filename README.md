@@ -52,8 +52,10 @@ cmake --install build-cmake   # optional: libcapnp_c, capnpc-c, header, c.capnp,
 ctest --test-dir build-cmake  # only if CMake found an installed GTest
 ```
 
-Tests are skipped when GTest is not installed. Use meson (or autotools
-with the existing `gtest/` submodule) for the full suite.
+Tests are skipped when GTest is not installed. CMake and autotools run
+only `capn-test`, the one binary that needs no schema compiled at build
+time; use meson for the full suite (the RPC, codec and `capnp` CLI interop
+programs).
 
 ## Building (autotools)
 
@@ -63,7 +65,7 @@ cd c-capnproto
 autoreconf -f -i -s
 ./configure
 make
-make check
+make check          # runs capn-test only; meson runs the whole suite
 ```
 
 ## Usage
