@@ -189,6 +189,9 @@ static const struct Adder_method Adder_add_method = {0, 16, 0, 8, 0};
 static const struct Adder_method Adder_tag_method = {1, 8, 1, 8, 1};
 static const struct Adder_method Adder_defer_method = {2, 0, 0, 0, 1};
 static const struct Adder_method Adder_fulfill_method = {3, 0, 0, 0, 0};
+static const struct Adder_method Adder_watch_method = {4, 0, 1, 0, 0};
+static const struct Adder_method Adder_echo_method = {5, 0, 1, 0, 1};
+static const struct Adder_method Adder_seq_method = {6, 8, 0, 8, 0};
 
 /* RPC stubs for Adder. */
 struct Adder_server {
