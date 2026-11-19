@@ -171,6 +171,8 @@ EXTRA_DIST += \
 	tests/capnp-cli.h \
 	tests/reflect-test.cpp \
 	tests/reflect.capnp \
+	tests/jsonann.capnp \
+	tests/json-ann-test.cpp \
 	tests/rpcstubs.capnp \
 	tests/rpcstubs-test.cpp \
 	tests/reflect-other.capnp \
