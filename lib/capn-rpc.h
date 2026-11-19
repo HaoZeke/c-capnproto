@@ -361,6 +361,24 @@ int capn_rpc_embargoed_accepts(struct capn_rpc_conn *c);
 int capn_rpc_pending_provisions(struct capn_rpc_conn *c, uint64_t *out,
                                 int cap);
 
+/* --- blocking file descriptor transport -----------------------------------
+ *
+ * The vat owns no transport, but a stream socket or pipe needs only these:
+ * pass capn_rpc_fd_send with `send_ctx` pointing at an int holding the
+ * descriptor, and call capn_rpc_fd_pump whenever it is readable. They
+ * block, and exist only on Unix-like systems. */
+
+/* A capn_rpc_send_fn that writes the frame to the descriptor *ctx. */
+int capn_rpc_fd_send(void *ctx, const uint8_t *data, size_t len);
+
+/* Read one stream-framed message into a malloc'd buffer. Returns 0, 1 on
+ * a clean end of stream before any byte, or -1 on error or a message
+ * over 64 MiB. */
+int capn_rpc_fd_read_frame(int fd, uint8_t **frame, size_t *len);
+
+/* Read one frame and handle it. Returns 0, 1 at end of stream, or -1. */
+int capn_rpc_fd_pump(struct capn_rpc_conn *c, int fd);
+
 /* --- stream flow control ------------------------------------------- */
 
 void capn_rpc_stream_init(struct capn_rpc_stream *s, int window);
