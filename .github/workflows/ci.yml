@@ -84,6 +84,11 @@ jobs:
       - name: level 3 frames still match the capnp CLI
         if: matrix.run_tests
         run: bash scripts/gen-rpc-frames.sh --check
+      # The generated sources are checked in, so they have to be what the
+      # current plugin emits.
+      - name: Checked-in generated sources are current
+        if: runner.os == 'Linux'
+        run: bash scripts/regen-generated.sh --check build/capnpc-c
       - name: Fuzz harness smoke
         if: matrix.fuzz_smoke
         run: |
