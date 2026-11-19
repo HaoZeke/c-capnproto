@@ -116,6 +116,7 @@ EXTRA_DIST += \
 	compiler/capnp/stream.capnp \
 	compiler/c++.capnp \
 	scripts/check-stream-schema.sh \
+	scripts/check-rpc-listen-wait.sh \
 	compiler/schema.capnp \
 	compiler/test.capnp \
 	tests/addressbook.capnp \
