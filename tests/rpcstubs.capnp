@@ -30,3 +30,29 @@ interface Noted {
   post @0 Note -> Note;
   mix @1 (n :Int32, label :Text) -> (echo :Text, n :Int32);
 }
+
+# The leaf's own results are one byte. The grandparent's are three words.
+interface WideRoot {
+  span @0 () -> (a :UInt64, b :UInt64, c :UInt64);
+}
+
+interface WideMid extends(WideRoot) {
+  mid @0 () -> (x :UInt8);
+}
+
+interface WideLeaf extends(WideMid) {
+  leaf @0 () -> (x :UInt8);
+}
+
+# The pointer lives only on the grandparent.
+interface TextRoot {
+  name @0 () -> (t :Text);
+}
+
+interface TextMid extends(TextRoot) {
+  n @0 () -> (n :Int32);
+}
+
+interface TextLeaf extends(TextMid) {
+  n2 @0 () -> (n :Int32);
+}

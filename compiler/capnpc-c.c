@@ -1717,6 +1717,38 @@ static void define_interface_methods(struct node *n)
 	}
 }
 
+/* Largest result a method of `iface` or any interface it extends will
+ * write. A subclass connection sizes its results from the subclass
+ * macros, and an inherited method writes into that same struct. */
+static void consider_result_bounds(struct node *iface, int *maxd, int *maxp, int depth)
+{
+	int i;
+
+	if (iface == NULL || iface->n.which != Node__interface || depth > 64)
+		return;
+	for (i = 0; i < capn_len(iface->n._interface.methods); i++) {
+		struct Method m;
+		struct node *rn;
+
+		get_Method(&m, iface->n._interface.methods, i);
+		rn = find_node_mayfail(m.resultStructType);
+		if (rn == NULL || !rn->rpc_struct)
+			continue;
+		if ((int) rn->n._struct.dataWordCount * 8 > *maxd)
+			*maxd = (int) rn->n._struct.dataWordCount * 8;
+		if ((int) rn->n._struct.pointerCount > *maxp)
+			*maxp = (int) rn->n._struct.pointerCount;
+	}
+	for (i = 0; i < capn_len(iface->n._interface.superclasses); i++) {
+		struct Superclass superclass;
+		struct node *parent;
+
+		get_Superclass(&superclass, iface->n._interface.superclasses, i);
+		parent = find_node_mayfail(superclass.id);
+		consider_result_bounds(parent, maxd, maxp, depth + 1);
+	}
+}
+
 /* Typed RPC stubs ($C.rpcstubs): for each method a client call helper, a
  * reader for its results, and a slot in a server vtable that
  * <Interface>_dispatch routes to. */
@@ -1728,6 +1760,7 @@ static void define_rpcstubs(struct node *n)
 
 	if (count == 0)
 		return;
+	consider_result_bounds(n, &maxd, &maxp, 0);
 
 	/* A `-> stream` method answers with the library's StreamResult, which
 	 * has no struct here: its handler takes no results and its stub has no
@@ -1755,10 +1788,6 @@ static void define_rpcstubs(struct node *n)
 		if (rn && rn->rpc_struct) {
 			str_addf(&HDR, "\tint (*on_%.*s)(void *self, const struct %s *in, struct %s *out, struct capn_segment *seg);\n",
 					m.name.len, m.name.str, pn->name.str, rn->name.str);
-			if ((int) rn->n._struct.dataWordCount * 8 > maxd)
-				maxd = (int) rn->n._struct.dataWordCount * 8;
-			if ((int) rn->n._struct.pointerCount > maxp)
-				maxp = (int) rn->n._struct.pointerCount;
 		} else {
 			str_addf(&HDR, "\tint (*on_%.*s)(void *self, const struct %s *in, struct capn_segment *seg);\n",
 					m.name.len, m.name.str, pn->name.str);
