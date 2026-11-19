@@ -575,6 +575,19 @@ TEST_F(RpcClient, RpcTablesGrowPastTheirInitialCapacity)
 	EXPECT_GT(vat.answers_cap, 64);
 }
 
+TEST_F(RpcClient, RpcTablesStopAtTheDocumentedLimit)
+{
+	std::vector<int> objects(CAPN_RPC_MAX_TABLE_CAPACITY + 1);
+	int i;
+
+	for (i = 0; i < CAPN_RPC_MAX_TABLE_CAPACITY; i++)
+		ASSERT_EQ(i, capn_rpc_export(&vat, &objects[i], doubler_dispatch)) << i;
+	EXPECT_LT(capn_rpc_export(&vat, &objects[CAPN_RPC_MAX_TABLE_CAPACITY],
+	                          doubler_dispatch),
+	          0);
+	EXPECT_EQ(CAPN_RPC_MAX_TABLE_CAPACITY, vat.exports_cap);
+}
+
 TEST_F(RpcClient, ServerReturnsACapabilityTheClientThenCalls)
 {
 	g_vat = &vat;

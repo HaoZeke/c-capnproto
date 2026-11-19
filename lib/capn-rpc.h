@@ -24,6 +24,9 @@ extern "C" {
 #endif
 
 #define CAPN_RPC_INITIAL_TABLE_CAPACITY 8
+/* Export, answer and question tables double until this many slots.
+ * The next insert fails and leaves the table as it was. */
+#define CAPN_RPC_MAX_TABLE_CAPACITY 1024
 #define CAPN_RPC_MAX_PROVISIONS 32
 #define CAPN_RPC_MAX_INTRODUCTIONS 8
 /* Long enough for a hostname; a longer one is refused, not truncated. */
