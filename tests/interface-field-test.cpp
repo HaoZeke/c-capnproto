@@ -100,3 +100,8 @@ TEST(InterfaceField, ListOfInterfaces) {
 
   capn_free(&c);
 }
+
+TEST(InterfaceField, StreamMethodHeaderIsSelfContained) {
+  EXPECT_EQ(0, Sink_write_method.ordinal);
+  EXPECT_EQ(1, Sink_done_method.ordinal);
+}

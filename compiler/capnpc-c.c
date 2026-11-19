@@ -39,6 +39,9 @@ static struct capn_segment g_valseg;
 static int g_valc;
 static int g_val0used, g_nullused, g_textnullused;
 
+/* capnp/stream.capnp */
+#define CAPNP_STREAM_FILE_ID 0x86c366a91393f3f8ULL
+
 static int g_fieldgetset = 0;
 static int g_codecgen = 0;
 static capnp_ctx_t g_ctx;
@@ -2012,6 +2015,12 @@ int main() {
 
 			// Check if this import is used at all.
 			if (!contains_id(used_import_ids, im.id)) {
+				continue;
+			}
+
+			// capnp adds this import itself for `-> stream` methods, and
+			// no generated header for it ships with the runtime.
+			if (im.id == CAPNP_STREAM_FILE_ID) {
 				continue;
 			}
 
