@@ -63,3 +63,4 @@ modules.order
 .tmp_versions
 examples/kernel/modules.order
 examples/kernel/Module.symvers
+subprojects/.wraplock
