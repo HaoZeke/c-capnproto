@@ -1149,7 +1149,9 @@ TEST_F(RpcClient, ReusedLiveQuestionIdAbortsTheConnection)
 	client2.next_question_id = b;
 	capn_rpc_send_bootstrap(&client2);
 	pump(&vat2, wire.to_vat);
-	EXPECT_TRUE(wire_has_abort_reason(wire.to_client, kLiveQuestionReason));
+	std::string bootstrap_reason = std::string(kLiveQuestionReason) +
+		"; answerId = " + std::to_string(b);
+	EXPECT_TRUE(wire_has_abort_reason(wire.to_client, bootstrap_reason.c_str()));
 	EXPECT_TRUE(capn_rpc_is_aborted(&vat2));
 	capn_rpc_free(&client2);
 	capn_rpc_free(&vat2);
