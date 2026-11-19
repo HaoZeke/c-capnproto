@@ -211,3 +211,47 @@ TEST_F(RpcStubs, SubclassRoutesSuperclassMethods) {
   EXPECT_EQ(1, calc.adds);
   capn_free(&msg);
 }
+
+static int root_incs;
+
+static int on_inc(void *, const struct RootCalc_inc_params *in,
+                  struct RootCalc_inc_results *out, struct capn_segment *)
+{
+  root_incs++;
+  out->n = in->n + 1;
+  return 0;
+}
+
+TEST_F(RpcStubs, GrandchildReachesAnAncestorThroughAnEmptyMiddle) {
+  struct RootCalc_server root;
+  struct MidCalc_server mid;
+  struct LeafCalc_server leaf;
+  struct RootCalc_inc_params in;
+  RootCalc_inc_params_ptr ip;
+  struct RootCalc_inc_results out;
+  RootCalc_inc_results_ptr op;
+  struct capn msg;
+
+  memset(&root, 0, sizeof root);
+  memset(&mid, 0, sizeof mid);
+  memset(&leaf, 0, sizeof leaf);
+  root.on_inc = on_inc;
+  mid.super_RootCalc = &root;
+  leaf.super_MidCalc = &mid;
+  root_incs = 0;
+
+  capn_init_malloc(&msg);
+  memset(&in, 0, sizeof in);
+  in.n = 7;
+  ip = new_RootCalc_inc_params(capn_root(&msg).seg);
+  write_RootCalc_inc_params(&in, ip);
+  op = new_RootCalc_inc_results(capn_root(&msg).seg);
+
+  ASSERT_EQ(0, LeafCalc_dispatch(&leaf, RootCalc_INTERFACE_ID, 0, ip.p, op.p));
+  memset(&out, 0, sizeof out);
+  read_RootCalc_inc_results(&out, op);
+  EXPECT_EQ(8, out.n);
+  EXPECT_EQ(1, root_incs);
+  EXPECT_EQ(-1, LeafCalc_dispatch(&leaf, 0x1111, 0, ip.p, op.p));
+  capn_free(&msg);
+}

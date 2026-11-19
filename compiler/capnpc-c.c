@@ -1709,6 +1709,44 @@ static void define_interface_methods(struct node *n)
 	}
 }
 
+/* Append `interface_id == X_INTERFACE_ID` for `parent` and every
+ * interface it extends. A call on a grandchild carries the
+ * grandparent's id, which the middle dispatcher must still accept. */
+static void emit_lineage_id_tests(struct node *parent, int *first)
+{
+	int i;
+
+	if (!*first)
+		str_addf(&SRC, " || ");
+	*first = 0;
+	str_addf(&SRC, "interface_id == %s_INTERFACE_ID", parent->name.str);
+	for (i = 0; i < capn_len(parent->n._interface.superclasses); i++) {
+		struct Superclass superclass;
+		struct node *older;
+
+		get_Superclass(&superclass, parent->n._interface.superclasses, i);
+		older = find_node_mayfail(superclass.id);
+		if (older && older->n.which == Node__interface)
+			emit_lineage_id_tests(older, first);
+	}
+}
+
+static int interface_has_superclass(struct node *n)
+{
+	int i;
+
+	for (i = 0; i < capn_len(n->n._interface.superclasses); i++) {
+		struct Superclass superclass;
+		struct node *parent;
+
+		get_Superclass(&superclass, n->n._interface.superclasses, i);
+		parent = find_node_mayfail(superclass.id);
+		if (parent && parent->n.which == Node__interface)
+			return 1;
+	}
+	return 0;
+}
+
 /* Typed RPC stubs ($C.rpcstubs): for each method a client call helper, a
  * reader for its results, and a slot in a server vtable that
  * <Interface>_dispatch routes to. */
@@ -1718,7 +1756,9 @@ static void define_rpcstubs(struct node *n)
 	const char *I = n->name.str;
 	int maxd = 0, maxp = 0;
 
-	if (count == 0)
+	/* An interface that only inherits still needs a dispatcher, or a
+	 * further subclass has nothing to forward a grandparent id to. */
+	if (count == 0 && !interface_has_superclass(n))
 		return;
 
 	/* A `-> stream` method answers with the library's StreamResult, which
@@ -1768,16 +1808,17 @@ static void define_rpcstubs(struct node *n)
 	for (i = 0; i < capn_len(n->n._interface.superclasses); i++) {
 		struct Superclass superclass;
 		struct node *parent;
+		int first = 1;
 
 		get_Superclass(&superclass, n->n._interface.superclasses, i);
 		parent = find_node_mayfail(superclass.id);
-		if (parent && parent->n.which == Node__interface) {
-			str_addf(&SRC,
-				 "\t\tif (interface_id == %s_INTERFACE_ID && srv->super_%s != NULL)\n"
-				 "\t\t\treturn %s_dispatch((void *) srv->super_%s, interface_id, method_id, params, results);\n",
-				 parent->name.str, parent->name.str, parent->name.str,
-				 parent->name.str);
-		}
+		if (!parent || parent->n.which != Node__interface)
+			continue;
+		str_addf(&SRC, "\t\tif (srv->super_%s != NULL && (", parent->name.str);
+		emit_lineage_id_tests(parent, &first);
+		str_addf(&SRC,
+			 "))\n\t\t\treturn %s_dispatch((void *) srv->super_%s, interface_id, method_id, params, results);\n",
+			 parent->name.str, parent->name.str);
 	}
 	str_addf(&SRC, "\t\treturn -1;\n\t}\n\tswitch (method_id) {\n");
 

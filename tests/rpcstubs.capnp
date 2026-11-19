@@ -20,3 +20,15 @@ interface Echo {
 interface SubCalc extends(Calc) {
   multiply @0 (a :Int32, b :Int32) -> (product :Int32);
 }
+
+interface RootCalc {
+  inc @0 (n :Int32) -> (n :Int32);
+}
+
+# No methods of its own: dispatch exists only to forward RootCalc.
+interface MidCalc extends(RootCalc) {
+}
+
+interface LeafCalc extends(MidCalc) {
+  dec @0 (n :Int32) -> (n :Int32);
+}
