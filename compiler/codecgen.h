@@ -36,6 +36,8 @@ struct node {
 	struct Node n;
 	struct node *next;
 	struct node *file_nodes, *next_file_node;
+	/* A method's own parameter or result struct, named for $C.rpcstubs. */
+	int rpc_struct;
 	struct str name;
 	struct field *fields;
 };
