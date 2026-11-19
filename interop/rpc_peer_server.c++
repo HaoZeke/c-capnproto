@@ -14,6 +14,14 @@ public:
 		ctx.getResults().setSum(p.getA() + p.getB());
 		return kj::READY_NOW;
 	}
+
+	kj::Promise<void> tag(TagContext ctx) override {
+		auto p = ctx.getParams();
+		auto r = ctx.getResults();
+		r.setN(p.getN());
+		r.setLabel(p.getLabel());
+		return kj::READY_NOW;
+	}
 };
 
 int main(int argc, char **argv) {

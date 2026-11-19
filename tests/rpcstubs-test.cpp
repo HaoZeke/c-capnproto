@@ -9,6 +9,7 @@
 
 #include <cstring>
 #include <deque>
+#include <string>
 #include <vector>
 
 extern "C" {
@@ -210,4 +211,113 @@ TEST_F(RpcStubs, SubclassRoutesSuperclassMethods) {
   EXPECT_EQ(42, out.sum);
   EXPECT_EQ(1, calc.adds);
   capn_free(&msg);
+}
+
+static int content_shape(const std::vector<uint8_t> &frame, int *datasz, int *ptrs) {
+  struct capn c;
+  Message_ptr mp;
+  struct Message m;
+  struct Call call;
+  struct Payload pl;
+  if (capn_init_mem(&c, frame.data(), frame.size(), 0) != 0)
+    return -1;
+  mp.p = capn_getp(capn_root(&c), 0, 1);
+  read_Message(&m, mp);
+  if (m.which != Message_call) {
+    capn_free(&c);
+    return -1;
+  }
+  read_Call(&call, m.call);
+  read_Payload(&pl, call.params);
+  capn_resolve(&pl.content);
+  *datasz = (int) pl.content.datasz;
+  *ptrs = (int) pl.content.ptrs;
+  capn_free(&c);
+  return pl.content.type == CAPN_STRUCT ? 0 : -1;
+}
+
+static std::string g_keep;
+
+static int on_post(void *, const struct Note *in, struct Note *out, struct capn_segment *) {
+  g_keep.assign(in->label.str ? in->label.str : "",
+                in->label.str ? (size_t) in->label.len : 0);
+  out->n = in->n;
+  out->label.str = g_keep.c_str();
+  out->label.len = (int) g_keep.size();
+  out->label.seg = NULL;
+  return 0;
+}
+
+static int on_mix(void *, const struct Noted_mix_params *in,
+                  struct Noted_mix_results *out, struct capn_segment *) {
+  g_keep.assign(in->label.str ? in->label.str : "",
+                in->label.str ? (size_t) in->label.len : 0);
+  out->n = in->n;
+  out->echo.str = g_keep.c_str();
+  out->echo.len = (int) g_keep.size();
+  out->echo.seg = NULL;
+  return 0;
+}
+
+TEST(RpcStubShapes, NamedParamsAndMixedSizes) {
+  Wire wire;
+  struct capn_rpc_conn client, vat;
+  struct Noted_server server;
+  struct Note note;
+  struct Noted_mix_params mix;
+  int datasz = 0, ptrs = 0;
+
+  g_wire = &wire;
+  capn_rpc_init(&client, to_vat, NULL);
+  capn_rpc_init(&vat, to_client, NULL);
+  memset(&server, 0, sizeof server);
+  server.on_post = on_post;
+  server.on_mix = on_mix;
+  capn_rpc_set_bootstrap(&vat, &server, Noted_dispatch);
+  capn_rpc_set_result_size(&vat, Noted_RESULT_DATASZ, Noted_RESULT_PTRS);
+  capn_rpc_send_bootstrap(&client);
+  pump(&vat, wire.to_vat);
+  pump(&client, wire.to_client);
+
+  memset(&note, 0, sizeof note);
+  note.n = 4;
+  note.label.str = "note";
+  note.label.len = 4;
+  uint32_t qp = Noted_call_post(&client, 0, &note);
+  ASSERT_FALSE(wire.to_vat.empty());
+  ASSERT_EQ(0, content_shape(wire.to_vat.back(), &datasz, &ptrs));
+  EXPECT_EQ(8, datasz);
+  EXPECT_EQ(1, ptrs);
+  pump(&vat, wire.to_vat);
+  pump(&client, wire.to_client);
+  struct capn msg;
+  struct Note got;
+  memset(&got, 0, sizeof got);
+  ASSERT_EQ(0, Noted_results_post(&client, qp, &got, &msg));
+  EXPECT_EQ(4, got.n);
+  ASSERT_EQ(4, got.label.len);
+  EXPECT_EQ(0, memcmp(got.label.str, "note", 4));
+  capn_free(&msg);
+
+  memset(&mix, 0, sizeof mix);
+  mix.n = 7;
+  mix.label.str = "hi";
+  mix.label.len = 2;
+  uint32_t qm = Noted_call_mix(&client, 0, &mix);
+  ASSERT_FALSE(wire.to_vat.empty());
+  ASSERT_EQ(0, content_shape(wire.to_vat.back(), &datasz, &ptrs));
+  EXPECT_EQ(8, datasz);
+  EXPECT_EQ(1, ptrs);
+  pump(&vat, wire.to_vat);
+  pump(&client, wire.to_client);
+  struct Noted_mix_results echoed;
+  memset(&echoed, 0, sizeof echoed);
+  ASSERT_EQ(0, Noted_results_mix(&client, qm, &echoed, &msg));
+  EXPECT_EQ(7, echoed.n);
+  ASSERT_EQ(2, echoed.echo.len);
+  EXPECT_EQ(0, memcmp(echoed.echo.str, "hi", 2));
+  capn_free(&msg);
+
+  capn_rpc_free(&client);
+  capn_rpc_free(&vat);
 }
