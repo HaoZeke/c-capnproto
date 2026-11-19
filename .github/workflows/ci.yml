@@ -119,8 +119,16 @@ jobs:
           find destdir -name 'c.capnp' | grep .
 
   sanitizers:
-    name: ASan+UBSan
+    name: ASan+UBSan (${{ matrix.cc }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cc: gcc
+            cxx: g++
+          - cc: clang
+            cxx: clang++
     steps:
       - uses: actions/checkout@v4
         with:
@@ -130,10 +138,14 @@ jobs:
           python-version: "3.12"
       - name: Install meson ninja
         run: pip install meson ninja
-      # Same stream schema import as the meson job.
+      # Same stream schema import as the meson job. The matrix compiler
+      # is installed here so clang is present on that leg.
       - name: Install capnproto
-        run: sudo apt-get update && sudo apt-get install -y capnproto libcapnp-dev
+        run: sudo apt-get update && sudo apt-get install -y capnproto libcapnp-dev g++ ${{ matrix.cc }}
       - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
         run: meson setup build -Dbuildtype=debugoptimized -Db_sanitize=address,undefined -Denable_tests=true
       - name: Build
         run: meson compile -C build
