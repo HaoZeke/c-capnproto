@@ -350,18 +350,25 @@ struct Adder_server {
 int Adder_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn_ptr params, capn_ptr results);
 uint32_t Adder_call_add(struct capn_rpc_conn *c, uint32_t cap, const struct Adder_add_params *in);
 int Adder_results_add(struct capn_rpc_conn *c, uint32_t question, struct Adder_add_results *out, struct capn *msg);
+int Adder_return_add(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_add_results *out);
 uint32_t Adder_call_tag(struct capn_rpc_conn *c, uint32_t cap, const struct Adder_tag_params *in);
 int Adder_results_tag(struct capn_rpc_conn *c, uint32_t question, struct Adder_tag_results *out, struct capn *msg);
+int Adder_return_tag(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_tag_results *out);
 uint32_t Adder_call_defer(struct capn_rpc_conn *c, uint32_t cap, const struct Adder_defer_params *in);
 int Adder_results_defer(struct capn_rpc_conn *c, uint32_t question, struct Adder_defer_results *out, struct capn *msg);
+int Adder_return_defer(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_defer_results *out);
 uint32_t Adder_call_fulfill(struct capn_rpc_conn *c, uint32_t cap, const struct Adder_fulfill_params *in);
 int Adder_results_fulfill(struct capn_rpc_conn *c, uint32_t question, struct Adder_fulfill_results *out, struct capn *msg);
+int Adder_return_fulfill(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_fulfill_results *out);
 uint32_t Adder_call_watch(struct capn_rpc_conn *c, uint32_t cap, const struct Adder_watch_params *in);
 int Adder_results_watch(struct capn_rpc_conn *c, uint32_t question, struct Adder_watch_results *out, struct capn *msg);
+int Adder_return_watch(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_watch_results *out);
 uint32_t Adder_call_echo(struct capn_rpc_conn *c, uint32_t cap, const struct Adder_echo_params *in);
 int Adder_results_echo(struct capn_rpc_conn *c, uint32_t question, struct Adder_echo_results *out, struct capn *msg);
+int Adder_return_echo(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_echo_results *out);
 uint32_t Adder_call_seq(struct capn_rpc_conn *c, uint32_t cap, const struct Adder_seq_params *in);
 int Adder_results_seq(struct capn_rpc_conn *c, uint32_t question, struct Adder_seq_results *out, struct capn *msg);
+int Adder_return_seq(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_seq_results *out);
 
 /* Interface CountBase: id and method descriptors. */
 #define CountBase_INTERFACE_ID 0xdbbc11dde380ab36ULL
@@ -385,6 +392,7 @@ struct CountBase_server {
 int CountBase_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn_ptr params, capn_ptr results);
 uint32_t CountBase_call_inc(struct capn_rpc_conn *c, uint32_t cap, const struct CountBase_inc_params *in);
 int CountBase_results_inc(struct capn_rpc_conn *c, uint32_t question, struct CountBase_inc_results *out, struct capn *msg);
+int CountBase_return_inc(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct CountBase_inc_results *out);
 
 /* Interface CountMid: id and method descriptors. */
 #define CountMid_INTERFACE_ID 0xf6154401a1ef6c03ULL
@@ -409,6 +417,7 @@ struct CountMid_server {
 int CountMid_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn_ptr params, capn_ptr results);
 uint32_t CountMid_call_twice(struct capn_rpc_conn *c, uint32_t cap, const struct CountMid_twice_params *in);
 int CountMid_results_twice(struct capn_rpc_conn *c, uint32_t question, struct CountMid_twice_results *out, struct capn *msg);
+int CountMid_return_twice(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct CountMid_twice_results *out);
 
 /* Interface CountLeaf: id and method descriptors. */
 #define CountLeaf_INTERFACE_ID 0xc308e96fb95171f9ULL
@@ -434,6 +443,7 @@ struct CountLeaf_server {
 int CountLeaf_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn_ptr params, capn_ptr results);
 uint32_t CountLeaf_call_dec(struct capn_rpc_conn *c, uint32_t cap, const struct CountLeaf_dec_params *in);
 int CountLeaf_results_dec(struct capn_rpc_conn *c, uint32_t question, struct CountLeaf_dec_results *out, struct capn *msg);
+int CountLeaf_return_dec(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct CountLeaf_dec_results *out);
 
 Adder_seq_results_ptr new_Adder_seq_results(struct capn_segment*);
 Adder_seq_params_ptr new_Adder_seq_params(struct capn_segment*);

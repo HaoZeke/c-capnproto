@@ -2191,9 +2191,15 @@ static void define_rpcstubs(struct node *n)
 
 		str_addf(&HDR, "uint32_t %s_call_%.*s(struct capn_rpc_conn *c, uint32_t cap, const struct %s *in);\n",
 				I, m.name.len, m.name.str, pn->name.str);
-		if (has_results)
+		if (has_results) {
 			str_addf(&HDR, "int %s_results_%.*s(struct capn_rpc_conn *c, uint32_t question, struct %s *out, struct capn *msg);\n",
 					I, m.name.len, m.name.str, rn->name.str);
+			str_addf(&HDR, "int %s_return_%.*s(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct %s *out);\n",
+					I, m.name.len, m.name.str, rn->name.str);
+		} else {
+			str_addf(&HDR, "int %s_return_%.*s(struct capn_rpc_conn *c, uint32_t question, uint32_t generation);\n",
+					I, m.name.len, m.name.str);
+		}
 
 		str_addf(&SRC, "\tcase %d: {\n\t\tstruct %s in;\n\t\t%s_ptr pp;\n\t\tint rc;\n", i, pn->name.str, pn->name.str);
 		if (has_results)
@@ -2236,6 +2242,21 @@ static void define_rpcstubs(struct node *n)
 			str_addf(&SRC, "\tcapn_ptr content;\n\t%s_ptr rp;\n\tif (capn_rpc_answer_content(c, question, msg, &content) != 0)\n\t\treturn -1;\n",
 					rn->name.str);
 			str_addf(&SRC, "\trp.p = content;\n\tread_%s(out, rp);\n\treturn 0;\n}\n", rn->name.str);
+			/* The handler can return CAPN_RPC_PENDING and fill the
+			 * results later. The struct was allocated at dispatch. */
+			str_addf(&SRC, "int %s_return_%.*s(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct %s *out) {\n",
+					I, m.name.len, m.name.str, rn->name.str);
+			str_addf(&SRC, "\tcapn_ptr results;\n\t%s_ptr rp;\n\tif (out == NULL)\n\t\treturn -1;\n",
+					rn->name.str);
+			str_addf(&SRC, "\tresults = capn_rpc_pending_results(c, question, generation);\n"
+					"\tif (results.type == CAPN_NULL)\n\t\treturn -1;\n"
+					"\trp.p = results;\n\twrite_%s(out, rp);\n"
+					"\treturn capn_rpc_return(c, question, generation);\n}\n",
+					rn->name.str);
+		} else {
+			str_addf(&SRC, "int %s_return_%.*s(struct capn_rpc_conn *c, uint32_t question, uint32_t generation) {\n"
+					"\treturn capn_rpc_return(c, question, generation);\n}\n",
+					I, m.name.len, m.name.str);
 		}
 	}
 }
