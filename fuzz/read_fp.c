@@ -11,6 +11,13 @@
 #include <string.h>
 #include "addressbook.capnp.h"
 
+static int str_is(const char *want, const char *got)
+{
+	if (want == NULL || got == NULL)
+		return want == got;
+	return strcmp(want, got) == 0;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -39,14 +46,14 @@ main(int argc, char **argv)
 	// Assert deserialized values in `rp`
 	if (rp.id != 17)
 		++rv;
-	if (strcmp(name, rp.name.str) != 0)
+	if (!str_is(name, rp.name.str))
 		++rv;
-	if (strcmp(email, rp.email.str) != 0)
+	if (!str_is(email, rp.email.str))
 		++rv;
 
 	if (rp.employment_which != Person_employment_school)
 		++rv;
-	if (strcmp(school, rp.employment.school.str) != 0)
+	if (!str_is(school, rp.employment.school.str))
 		++rv;
 
 	if (capn_len(rp.phones) != 2)
@@ -57,13 +64,13 @@ main(int argc, char **argv)
 		struct Person_PhoneNumber rpn;
 		get_Person_PhoneNumber(&rpn, rp.phones, i);
 		if (i == 0) {
-			if (strcmp("123", rpn.number.str) != 0)
+			if (!str_is("123", rpn.number.str))
 				++rv;
 			if (rpn.type != Person_PhoneNumber_Type_work)
 				++rv;
 		}
 		if (i == 1) {
-			if (strcmp("234", rpn.number.str) != 0)
+			if (!str_is("234", rpn.number.str))
 				++rv;
 			if (rpn.type != Person_PhoneNumber_Type_home)
 				++rv;
@@ -72,7 +79,6 @@ main(int argc, char **argv)
 
 	--rv;
 
-err_free:
 	capn_free(&rc);
 err_close:
 	fclose(fp);
