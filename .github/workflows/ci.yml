@@ -54,9 +54,11 @@ jobs:
         run: pip install meson ninja
       # capnp must be on PATH before `meson setup`: find_program bakes the
       # path into CAPNP_CLI, and the 19 CapnpCli tests GTEST_SKIP without it.
+      # `-> stream` imports /capnp/stream.capnp, which ships in libcapnp-dev
+      # (and is vendored under compiler/capnp for the same layout).
       - name: Install capnproto
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y capnproto
+        run: sudo apt-get update && sudo apt-get install -y capnproto libcapnp-dev
       - name: Install capnproto (macOS)
         if: runner.os == 'macOS'
         run: brew install capnp
@@ -152,6 +154,7 @@ jobs:
           python-version: "3.12"
       - name: Install meson ninja
         run: pip install meson ninja
+      # Same stream schema import as the meson job.
       - name: Install capnproto
         run: |
           sudo apt-get update

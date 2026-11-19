@@ -301,6 +301,12 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
   if capnp.found()
     codec_c_args = common_c_args + ['-D_POSIX_C_SOURCE=200809L']
 
+    test(
+      'stream-schema',
+      find_program('sh'),
+      args: [meson.project_source_root() / 'scripts' / 'check-stream-schema.sh'],
+    )
+
     # Official `capnp` CLI interop. Skip these tests only when the
     # binary is missing (this branch is not taken). Do not GTEST_SKIP
     # when meson found capnp.

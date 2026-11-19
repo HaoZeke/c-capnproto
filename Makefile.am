@@ -23,7 +23,7 @@ EXTRA_DIST += c-capnproto.pc.in
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = c-capnproto.pc
 
-EXTRA_DIST += compiler/c.capnp
+EXTRA_DIST += compiler/c.capnp compiler/capnp/stream.capnp
 capnp_DATA = compiler/c.capnp
 AM_CPPFLAGS = \
 	-I${srcdir}/compiler \
@@ -141,11 +141,14 @@ endif
 # outside WITH_GTEST.
 EXTRA_DIST += \
 	tests/null-ptr-write-test.c \
-	tests/packed-header-write-test.c
+	tests/packed-header-write-test.c \
+	.github/workflows/ci.yml
 
 EXTRA_DIST += \
 	compiler/c.capnp \
+	compiler/capnp/stream.capnp \
 	compiler/c++.capnp \
+	scripts/check-stream-schema.sh \
 	compiler/schema.capnp \
 	compiler/test.capnp \
 	tests/addressbook.capnp \
