@@ -62,3 +62,24 @@ must contain =lib/=. Public API: =lib/capnp_c.h=.
 
 Make's built-in rule may try to compile =${x}.capnp= from =${x}.capnp.c=.
 Disable that with the no-op rule: =%.capnp: ;=.
+
+* Reflection, text and JSON
+
+Add =$C.reflect;= to a schema file and =capnpc-c= also emits a const
+descriptor per struct, group and enum, =<Name>_dyn=. =lib/capn-dyn.h=
+then reads, prints and builds messages without the generated per-type
+code:
+
+#+begin_src c
+char *text = capn_dyn_to_text(&Person_dyn, root);       /* capnp decode --short */
+char *json = capn_dyn_to_json(&Person_dyn, root, CAPN_DYN_COMPACT);
+capn_dyn_from_json(&Person_dyn, json, strlen(json), seg, &st, &err);
+capn_dyn_from_text(&Person_dyn, text, strlen(text), seg, &st, &err);
+#+end_src
+
+The output matches =capnp decode --short= and =capnp convert
+binary:json --short= byte for byte, and the decoders build the same
+canonical message =capnp encode= does. Interface and AnyPointer fields
+are opaque, and defaults of Struct, List and Data fields are not
+recorded. Compile =lib/capn-dyn.c= in addition to the runtime files
+below.
