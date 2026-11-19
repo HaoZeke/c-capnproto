@@ -40,6 +40,86 @@ int reflect_file_enabled(struct node *file) {
 	return 0;
 }
 
+#define JSON_NAME_ID 0xfa5b1fd61c2e7c3dull
+#define JSON_FLATTEN_ID 0x82d3e852af0336bfull
+#define JSON_DISC_ID 0xcfa794e8d19a0162ull
+#define JSON_BASE64_ID 0xd7d879450a253e4bull
+#define JSON_HEX_ID 0xf061e22f0ae5c7b5ull
+
+static int find_anno(Annotation_list list, uint64_t id, struct Annotation *a)
+{
+	int i, n = capn_len(list);
+	for (i = 0; i < n; i++) {
+		get_Annotation(a, list, i);
+		if (a->id == id)
+			return 1;
+	}
+	return 0;
+}
+
+/* 1 when the annotation value is Text and not empty. */
+static int anno_text(struct Annotation *a, capn_text *out)
+{
+	struct Value v;
+	memset(&v, 0, sizeof v);
+	read_Value(&v, a->value);
+	if (v.which != Value_text || v.text.str == NULL || v.text.len <= 0)
+		return 0;
+	*out = v.text;
+	return 1;
+}
+
+/* Annotation value is a struct. *set is 1 when pointer `idx` is present. */
+static int anno_field_text(struct Annotation *a, int idx, capn_text *out, int *set)
+{
+	struct Value v;
+	capn_ptr p;
+	capn_text def = {0, "", NULL};
+	memset(&v, 0, sizeof v);
+	read_Value(&v, a->value);
+	*set = 0;
+	if (v.which != Value__struct)
+		return 0;
+	p = capn_getp(v._struct, idx, 1);
+	if (p.type == CAPN_NULL)
+		return 1;
+	*out = capn_get_text(v._struct, idx, def);
+	*set = out->str != NULL;
+	return 1;
+}
+
+static struct field *group_field_in(struct node *scope, uint64_t gid)
+{
+	int i, nf;
+	if (scope == NULL || scope->n.which != Node__struct)
+		return NULL;
+	nf = capn_len(scope->n._struct.fields);
+	for (i = 0; i < nf; i++) {
+		struct field *f = &scope->fields[i];
+		struct field *inner;
+		if (f->f.which == Field_group && f->f.group.typeId == gid)
+			return f;
+		inner = group_field_in(f->group, gid);
+		if (inner)
+			return inner;
+	}
+	return NULL;
+}
+
+static struct field *find_group_field(struct node *g)
+{
+	struct node *file = file_of(g);
+	struct node *n;
+	if (file == NULL)
+		return NULL;
+	for (n = file->file_nodes; n != NULL; n = n->next_file_node) {
+		struct field *f = group_field_in(n, g->n.id);
+		if (f)
+			return f;
+	}
+	return NULL;
+}
+
 static void add_cstr(struct str *s, const char *p, int len) {
 	int i;
 	str_addf(s, "\"");
@@ -237,10 +317,16 @@ static void emit_struct(struct str *src, struct node *n, int group) {
 		struct str tb = STR_INIT;
 		const char *dtext = "NULL";
 		struct str dtbuf = STR_INIT;
+		struct str jnbuf = STR_INIT, jpbuf = STR_INIT;
+		const char *jname = "NULL";
+		const char *jprefix = "NULL";
+		int jflatten = 0, jdata = 0;
 		uint64_t bits = 0;
 		int dlen = 0;
 		unsigned is_group = 0;
 		uint32_t offset = 0;
+		struct Annotation ann;
+		capn_text jt;
 
 		if (f->f.which == Field_group) {
 			is_group = 1;
@@ -261,19 +347,39 @@ static void emit_struct(struct str *src, struct node *n, int group) {
 			}
 		}
 
+		if (find_anno(f->f.annotations, JSON_NAME_ID, &ann) && anno_text(&ann, &jt)) {
+			add_cstr(&jnbuf, jt.str, jt.len);
+			jname = jnbuf.str;
+		}
+		if (find_anno(f->f.annotations, JSON_FLATTEN_ID, &ann)) {
+			int set = 0;
+			jflatten = 1;
+			if (anno_field_text(&ann, 0, &jt, &set) && set && jt.len > 0) {
+				add_cstr(&jpbuf, jt.str, jt.len);
+				jprefix = jpbuf.str;
+			}
+		}
+		if (find_anno(f->f.annotations, JSON_BASE64_ID, &ann))
+			jdata = 1;
+		else if (find_anno(f->f.annotations, JSON_HEX_ID, &ann))
+			jdata = 2;
+
 		str_addf(&fields, "\t{");
 		add_cstr(&fields, f->f.name.str, f->f.name.len);
-		str_addf(&fields, ", %s, %" PRIu32 "u, %uu, %u, 0x%" PRIx64 "ull, %s, %d},\n",
-				lit.str, offset, (unsigned) f->f.discriminantValue, is_group, bits, dtext, dlen);
+		str_addf(&fields, ", %s, %" PRIu32 "u, %uu, %u, 0x%" PRIx64 "ull, %s, %d, %s, %d, %s, %d},\n",
+				lit.str, offset, (unsigned) f->f.discriminantValue, is_group, bits, dtext, dlen,
+				jname, jflatten, jprefix, jdata);
 		str_release(&lit);
 		str_release(&tb);
 		str_release(&dtbuf);
+		str_release(&jnbuf);
+		str_release(&jpbuf);
 	}
 
 	if (nf == 0) {
 		/* ISO C has no empty initialiser list; keep one inert entry that
 		 * nfields excludes. */
-		str_addf(&fields, "\t{\"\", {CAPN_DYN_VOID, NULL, NULL, NULL, NULL, 0ull, 0u}, 0u, 0xffffu, 0, 0ull, NULL, 0}\n");
+		str_addf(&fields, "\t{\"\", {CAPN_DYN_VOID, NULL, NULL, NULL, NULL, 0ull, 0u}, 0u, 0xffffu, 0, 0ull, NULL, 0, NULL, 0, NULL, 0}\n");
 	}
 
 	str_addf(src, "%s", pre.str);
@@ -284,32 +390,88 @@ static void emit_struct(struct str *src, struct node *n, int group) {
 		str_addf(src, "const struct capn_dyn_struct %s_dyn = {", n->name.str);
 	}
 	add_cstr(src, name, (int) strlen(name));
-	str_addf(src, ", 0x%" PRIx64 "ull, %u, %u, %u, %" PRIu32 "u, %d, capn_dyn_f%" PRIx64 "};\n\n",
-			n->n.id, (unsigned) n->n._struct.dataWordCount, (unsigned) n->n._struct.pointerCount,
-			(unsigned) n->n._struct.discriminantCount, (uint32_t) n->n._struct.discriminantOffset,
-			nf, n->n.id);
+	{
+		struct field *gf = group ? find_group_field(n) : NULL;
+		struct Annotation ann;
+		struct str dname = STR_INIT, dval = STR_INIT;
+		const char *dn = "NULL", *dv = "NULL";
+		int has_disc = 0;
+		capn_text jt;
+		int set = 0;
+
+		if (gf && find_anno(gf->f.annotations, JSON_DISC_ID, &ann))
+			has_disc = 1;
+		else if (find_anno(n->n.annotations, JSON_DISC_ID, &ann))
+			has_disc = 1;
+		if (has_disc) {
+			if (anno_field_text(&ann, 0, &jt, &set) && set && jt.len > 0) {
+				add_cstr(&dname, jt.str, jt.len);
+				dn = dname.str;
+			} else if (gf && find_anno(gf->f.annotations, JSON_FLATTEN_ID, &ann)) {
+				add_cstr(&dname, gf->f.name.str, gf->f.name.len);
+				dn = dname.str;
+			}
+			if (gf)
+				find_anno(gf->f.annotations, JSON_DISC_ID, &ann);
+			else
+				find_anno(n->n.annotations, JSON_DISC_ID, &ann);
+			set = 0;
+			if (anno_field_text(&ann, 1, &jt, &set) && set && jt.len > 0) {
+				add_cstr(&dval, jt.str, jt.len);
+				dv = dval.str;
+			}
+		}
+		str_addf(src, ", 0x%" PRIx64 "ull, %u, %u, %u, %" PRIu32 "u, %d, capn_dyn_f%" PRIx64 ", %s, %s, %d};\n\n",
+				n->n.id, (unsigned) n->n._struct.dataWordCount, (unsigned) n->n._struct.pointerCount,
+				(unsigned) n->n._struct.discriminantCount, (uint32_t) n->n._struct.discriminantOffset,
+				nf, n->n.id, dn, dv, has_disc);
+		str_release(&dname);
+		str_release(&dval);
+	}
 	str_release(&pre);
 	str_release(&fields);
 }
 
 static void emit_enum(struct str *src, struct node *n) {
 	int i, ne = capn_len(n->n._enum.enumerants);
+	int any_json = 0;
 	const char *name = n->n.displayName.str + n->n.displayNamePrefixLength;
+	struct str jnames = STR_INIT;
 
 	str_addf(src, "static const char *const capn_dyn_e%" PRIx64 "[] = {\n", n->n.id);
 	for (i = 0; i < ne; i++) {
 		struct Enumerant e;
+		struct Annotation ann;
+		capn_text jt;
 		get_Enumerant(&e, n->n._enum.enumerants, i);
 		str_addf(src, "\t");
 		add_cstr(src, e.name.str, e.name.len);
 		str_addf(src, ",\n");
+		str_addf(&jnames, "\t");
+		if (find_anno(e.annotations, JSON_NAME_ID, &ann) && anno_text(&ann, &jt)) {
+			add_cstr(&jnames, jt.str, jt.len);
+			any_json = 1;
+		} else {
+			str_addf(&jnames, "NULL");
+		}
+		str_addf(&jnames, ",\n");
 	}
 	if (ne == 0)
 		str_addf(src, "\tNULL\n");
 	str_addf(src, "};\n");
+	if (any_json) {
+		str_addf(src, "static const char *const capn_dyn_ej%" PRIx64 "[] = {\n%s};\n",
+		         n->n.id, jnames.str);
+	}
 	str_addf(src, "const struct capn_dyn_enum %s_dyn = {", n->name.str);
 	add_cstr(src, name, (int) strlen(name));
-	str_addf(src, ", 0x%" PRIx64 "ull, %d, capn_dyn_e%" PRIx64 "};\n\n", n->n.id, ne, n->n.id);
+	if (any_json)
+		str_addf(src, ", 0x%" PRIx64 "ull, %d, capn_dyn_e%" PRIx64 ", capn_dyn_ej%" PRIx64 "};\n\n",
+		         n->n.id, ne, n->n.id, n->n.id);
+	else
+		str_addf(src, ", 0x%" PRIx64 "ull, %d, capn_dyn_e%" PRIx64 ", NULL};\n\n",
+		         n->n.id, ne, n->n.id);
+	str_release(&jnames);
 }
 
 static void collect_groups(struct node *n, struct node ***list, int *count, int *cap) {

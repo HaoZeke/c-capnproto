@@ -102,6 +102,13 @@ struct capn_dyn_field {
 	uint64_t default_bits;
 	const char *default_text;
 	int default_text_len;
+	/* $Json.name. NULL means the schema name. */
+	const char *json_name;
+	/* $Json.flatten. json_prefix is NULL when there is no prefix. */
+	uint8_t json_flatten;
+	const char *json_prefix;
+	/* $Json.base64 is 1, $Json.hex is 2, a JSON number array is 0. */
+	uint8_t json_data;
 };
 
 struct capn_dyn_struct {
@@ -115,6 +122,12 @@ struct capn_dyn_struct {
 	uint32_t union_offset;
 	int nfields;
 	const struct capn_dyn_field *fields; /* in declaration order */
+	/* $Json.discriminator. json_has_disc is 0 when the struct has none.
+	 * json_disc_name is the tag field (NULL when the annotation names
+	 * none). json_disc_value is valueName, or NULL. */
+	const char *json_disc_name;
+	const char *json_disc_value;
+	uint8_t json_has_disc;
 };
 
 struct capn_dyn_enum {
@@ -122,6 +135,9 @@ struct capn_dyn_enum {
 	uint64_t id;
 	int n;
 	const char *const *names; /* indexed by value */
+	/* $Json.name per enumerant. NULL, or a parallel list whose NULL
+	 * entries keep `names`. */
+	const char *const *json_names;
 };
 
 /* --- reflection ---------------------------------------------------- */
