@@ -248,11 +248,23 @@ static int init_fp(struct capn *c, FILE *f,
 	if (total > CAPN_MAX_MESSAGE_BYTES)
 		goto err;
 	/* A buffer cannot hold more than it was given, or than the longest
-	 * run a packed stream can inflate to (255 zero words per two bytes). */
-	if (!f && !read_fd && total > (packed ? z->avail_in * 1024u + 8u : z->avail_in))
-		goto err;
+	 * run a packed stream can inflate to (255 zero words per two bytes).
+	 * The inflate product is capped so a large avail_in cannot wrap. */
+	if (!f && !read_fd) {
+		size_t bound = z->avail_in;
+		if (packed) {
+			if (z->avail_in > (SIZE_MAX - 8u) / 1024u)
+				bound = SIZE_MAX;
+			else
+				bound = z->avail_in * 1024u + 8u;
+		}
+		if (total > bound)
+			goto err;
+	}
 
-	/* Allocate space for the data and the capn_segment structs */
+	/* Allocate space for the data and the capn_segment structs.
+	 * total is at most CAPN_MAX_MESSAGE_BYTES and segnum at most
+	 * CAPN_MAX_SEGS, so the sum fits in size_t. */
 	s = (struct capn_segment*) calloc(1, (size_t) total + (sizeof(*s) * segnum));
 	if (!s)
 		goto err;
