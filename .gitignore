@@ -40,6 +40,8 @@ subprojects/packagecache
 # AFL I/O; keep the checked-in Person.bin seed
 fuzz/in/*
 !fuzz/in/Person.bin
+!fuzz/in/cap-index-frame.bin
+!fuzz/in/dyn-cap-16.bin
 fuzz/out
 fuzz/read-mem*
 fuzz/read-fp*
