@@ -187,6 +187,43 @@ class RpcJoin : public ::testing::Test {
 	}
 };
 
+TEST_F(RpcJoin, SenderLoopbackRequiresALocalTarget)
+{
+	struct capn msg;
+	struct MessageTarget target;
+	struct Disembargo embargo;
+	struct Message message;
+	MessageTarget_ptr tp;
+	Disembargo_ptr dp;
+	Message_ptr mp;
+	uint8_t buf[4096];
+	ssize_t len;
+
+	capn_init_malloc(&msg);
+	memset(&target, 0, sizeof target);
+	target.which = MessageTarget_importedCap;
+	target.importedCap = live + 1;
+	tp = new_MessageTarget(capn_root(&msg).seg);
+	write_MessageTarget(&target, tp);
+	memset(&embargo, 0, sizeof embargo);
+	embargo.target = tp;
+	embargo.context_which = Disembargo_context_senderLoopback;
+	embargo.context.senderLoopback = 7;
+	dp = new_Disembargo(capn_root(&msg).seg);
+	write_Disembargo(&embargo, dp);
+	memset(&message, 0, sizeof message);
+	message.which = Message_disembargo;
+	message.disembargo = dp;
+	mp = new_Message(capn_root(&msg).seg);
+	write_Message(&message, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	len = capn_write_mem(&msg, buf, sizeof buf, 0);
+	capn_free(&msg);
+	ASSERT_GT(len, 0);
+	ASSERT_EQ(0, capn_rpc_handle(&conn, buf, static_cast<size_t>(len)));
+	EXPECT_TRUE(out.frames.empty());
+}
+
 TEST_F(RpcJoin, SameCapabilityJoinsAndOneResultCarriesTheCap)
 {
 	send_join_part(&conn, 700, live, 9, 2, 0);
