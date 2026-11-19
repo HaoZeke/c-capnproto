@@ -512,6 +512,15 @@ endif
 
 if get_option('fuzz')
   fuzz_inc = include_directories(['lib', 'tests', 'compiler'])
+  fuzz_reader = executable(
+    'fuzz-reader',
+    'fuzz' / 'read_message.c',
+    include_directories: fuzz_inc,
+    dependencies: [libcapnp_dep],
+    c_args: common_c_args,
+    install: false,
+    implicit_include_directories: false,
+  )
   # read_mem.c uses lstat; strict c99 hides POSIX declarations.
   fuzz_mem = executable(
     'fuzz-mem',
@@ -569,11 +578,13 @@ if get_option('fuzz')
     )
     test('fuzz-mem-smoke', fuzz_mem, args: [fuzz_person_bin])
     test('fuzz-fp-smoke', fuzz_fp, args: [fuzz_person_bin])
+    test('fuzz-reader-smoke', fuzz_reader, args: [fuzz_person_bin])
     test('fuzz-rpc-frame-smoke', fuzz_rpc,
          args: [meson.project_source_root() / 'tests' / 'fixtures' / 'rpc-accept.bin'])
   elif fs.exists(fuzz_seed)
     test('fuzz-mem-smoke', fuzz_mem, args: [fuzz_seed])
     test('fuzz-fp-smoke', fuzz_fp, args: [fuzz_seed])
+    test('fuzz-reader-smoke', fuzz_reader, args: [fuzz_seed])
     test('fuzz-rpc-frame-smoke', fuzz_rpc,
          args: [meson.project_source_root() / 'tests' / 'fixtures' / 'rpc-accept.bin'])
   endif
