@@ -192,6 +192,49 @@ int main(int argc, char **argv)
 		}
 	}
 
+	/* tag() has a data word and a pointer. The stub must pass the data
+	 * size only; counting the pointer section shifts the text. */
+	{
+		struct Adder_tag_params in;
+		struct Adder_tag_results out;
+		struct capn m;
+		memset(&in, 0, sizeof in);
+		in.n = 9;
+		in.label.str = "wire";
+		in.label.len = 4;
+		qcall = Adder_call_tag(&conn, 0, &in);
+		if (qcall == (uint32_t)-1) {
+			fprintf(stderr, "tag call not sent\n");
+			return 1;
+		}
+		{
+			ssize_t n = read_frame(g_fd, buf, sizeof buf);
+			if (n <= 0 || capn_rpc_handle(&conn, buf, (size_t)n) != 0) {
+				fprintf(stderr, "tag reply not handled\n");
+				return 1;
+			}
+		}
+		if (!capn_rpc_is_answered(&conn, qcall) ||
+		    capn_rpc_is_failed(&conn, qcall)) {
+			fprintf(stderr, "capnp-C++ did not answer tag()\n");
+			return 1;
+		}
+		memset(&out, 0, sizeof out);
+		if (Adder_results_tag(&conn, qcall, &out, &m) != 0) {
+			fprintf(stderr, "no results in the tag() answer\n");
+			return 1;
+		}
+		if (out.n != 9 || out.label.len != 4 || out.label.str == NULL ||
+		    memcmp(out.label.str, "wire", 4) != 0) {
+			fprintf(stderr, "tag(9, \"wire\") came back as n=%d label=%.*s\n",
+			        out.n, out.label.len,
+			        out.label.str ? out.label.str : "");
+			capn_free(&m);
+			return 1;
+		}
+		capn_free(&m);
+	}
+
 	capn_rpc_free(&conn);
 	close(g_fd);
 	printf("All rpc interop assertions passed.\n");

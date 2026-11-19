@@ -193,10 +193,12 @@ static int file_has_annotation(struct node *file, uint64_t id) {
 	return 0;
 }
 
-/* The parameter and result structs of a method written as a parameter
- * list have no name of their own. Give them <Interface>_<method>_params
- * and _results and list them with the file's nodes, so the usual struct
- * code is generated for them. */
+/* Mark every method's parameter and result struct so rpc stubs are
+ * generated for it. A parameter list is a detached struct (scopeId 0)
+ * with no name of its own: give it <Interface>_<method>_params or
+ * _results and list it with the file's nodes. A named struct already
+ * belongs to the file (scopeId != 0, or resolve_names has named it)
+ * and only needs the flag. */
 static void name_method_structs(struct node *n, struct node *file) {
 	int i, k, count = capn_len(n->n._interface.methods);
 	for (i = 0; i < count; i++) {
@@ -204,12 +206,18 @@ static void name_method_structs(struct node *n, struct node *file) {
 		get_Method(&m, n->n._interface.methods, i);
 		for (k = 0; k < 2; k++) {
 			struct node *sn = find_node_mayfail(k ? m.resultStructType : m.paramStructType);
-			if (sn == NULL || sn->n.which != Node__struct || sn->name.len != 0 ||
-			    sn->n._struct.isGroup)
+			if (sn == NULL || sn->n.which != Node__struct || sn->n._struct.isGroup)
+				continue;
+			/* `-> stream` names capnp/stream.capnp:StreamResult. That
+			 * file has no generated header, and the handler takes no
+			 * results struct. */
+			if (sn->n.scopeId == CAPNP_STREAM_FILE_ID)
+				continue;
+			sn->rpc_struct = 1;
+			if (sn->name.len != 0 || sn->n.scopeId != 0)
 				continue;
 			str_addf(&sn->name, "%s_%.*s_%s", n->name.str, m.name.len, m.name.str,
 					k ? "results" : "params");
-			sn->rpc_struct = 1;
 			sn->next_file_node = file->file_nodes;
 			file->file_nodes = sn;
 		}
@@ -1829,7 +1837,9 @@ static void define_rpcstubs(struct node *n)
 				I, m.name.len, m.name.str, pn->name.str, pn->name.str, pn->name.str);
 		str_addf(&SRC, "uint32_t %s_call_%.*s(struct capn_rpc_conn *c, uint32_t cap, const struct %s *in) {\n",
 				I, m.name.len, m.name.str, pn->name.str);
-		str_addf(&SRC, "\treturn capn_rpc_send_call(c, cap, %s_INTERFACE_ID, %d, (int) %s_struct_bytes_count, (int) %s_pointer_count, %s_%.*s_fill, (void *) in);\n}\n",
+		/* params_datasz is the data section only. struct_bytes_count
+		 * also counts the pointer section and would shift it. */
+		str_addf(&SRC, "\treturn capn_rpc_send_call(c, cap, %s_INTERFACE_ID, %d, (int) (%s_word_count * 8), (int) %s_pointer_count, %s_%.*s_fill, (void *) in);\n}\n",
 				I, i, pn->name.str, pn->name.str, I, m.name.len, m.name.str);
 		if (rn && rn->rpc_struct) {
 			str_addf(&SRC, "int %s_results_%.*s(struct capn_rpc_conn *c, uint32_t question, struct %s *out, struct capn *msg) {\n",
