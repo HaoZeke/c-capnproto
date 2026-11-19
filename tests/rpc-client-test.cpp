@@ -557,6 +557,22 @@ TEST_F(RpcClient, OneServerExportedWithTwoDispatchersGetsTwoIds)
 	EXPECT_EQ(2, vat.exports[a].refcount);
 }
 
+TEST_F(RpcClient, RpcTablesGrowPastTheirInitialCapacity)
+{
+	std::vector<int> objects(129);
+	int i;
+
+	for (i = 0; i < static_cast<int>(objects.size()); i++)
+		ASSERT_EQ(i, capn_rpc_export(&vat, &objects[i], doubler_dispatch));
+	EXPECT_GT(vat.exports_cap, 64);
+
+	for (i = 0; i < 129; i++)
+		ASSERT_NE((uint32_t)-1, capn_rpc_send_bootstrap(&client));
+	pump(&vat, wire.to_vat);
+	EXPECT_GT(client.questions_cap, 64);
+	EXPECT_GT(vat.answers_cap, 64);
+}
+
 TEST_F(RpcClient, ServerReturnsACapabilityTheClientThenCalls)
 {
 	g_vat = &vat;
