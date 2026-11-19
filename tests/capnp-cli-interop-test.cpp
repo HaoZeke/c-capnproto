@@ -1127,3 +1127,119 @@ TEST_F(CapnpCli, EmptyPeopleListMatchesEncode) {
   expect_bytes_eq(buf, (size_t) sz, want.out.data(), want.out.size(),
                   "empty-people");
 }
+
+/* A read of a message with unset fields followed by a write must leave the
+ * message meaning the same thing: canonical forms are equal only if every
+ * default was written back as the null the reader saw. */
+static std::string canonical_via_cli(const std::string &framed) {
+  CmdResult r = capnp_convert("binary:canonical", framed.data(), framed.size());
+  EXPECT_EQ(0, r.status) << r.err;
+  return r.out;
+}
+
+static std::string round_trip_test_defaults(const std::string &framed) {
+  struct capn in;
+  EXPECT_EQ(0, capn_init_mem(&in, (const uint8_t *) framed.data(),
+                             framed.size(), 0));
+  TestDefaults_ptr rp;
+  rp.p = capn_getp(capn_root(&in), 0, 1);
+  struct TestDefaults d;
+  memset(&d, 0, sizeof(d));
+  read_TestDefaults(&d, rp);
+
+  struct capn out;
+  capn_init_malloc(&out);
+  TestDefaults_ptr np = new_TestDefaults(capn_root(&out).seg);
+  write_TestDefaults(&d, np);
+  EXPECT_EQ(0, capn_set_root(&out, np.p));
+  uint8_t buf[8192];
+  ssize_t sz = capn_write_mem(&out, buf, sizeof(buf), 0);
+  capn_free(&out);
+  capn_free(&in);
+  return sz > 0 ? std::string((const char *) buf, (size_t) sz) : std::string();
+}
+
+TEST_F(CapnpCli, ReadWriteOfAnEmptyDefaultsStructKeepsItsMeaning) {
+  CmdResult enc = capnp_encode_text(testalltypes_schema(), "TestDefaults", "()");
+  ASSERT_EQ(0, enc.status) << enc.err;
+  std::string out = round_trip_test_defaults(enc.out);
+  ASSERT_FALSE(out.empty());
+  std::string a = canonical_via_cli(enc.out);
+  std::string b = canonical_via_cli(out);
+  expect_bytes_eq(b.data(), b.size(), a.data(), a.size(),
+                  "empty TestDefaults after read/write");
+}
+
+TEST_F(CapnpCli, ReadWriteOfAPartlySetDefaultsStructKeepsItsMeaning) {
+  CmdResult enc = capnp_encode_text(
+      testalltypes_schema(), "TestDefaults",
+      "(int32Field = 7, float64Field = 2.5, dataField = \"zz\","
+      " int32List = [4, 5], textList = [\"a\", \"b\"],"
+      " structField = (textField = \"inner\"))");
+  ASSERT_EQ(0, enc.status) << enc.err;
+  std::string out = round_trip_test_defaults(enc.out);
+  ASSERT_FALSE(out.empty());
+  std::string a = canonical_via_cli(enc.out);
+  std::string b = canonical_via_cli(out);
+  expect_bytes_eq(b.data(), b.size(), a.data(), a.size(),
+                  "partly set TestDefaults after read/write");
+}
+
+static struct capn_segment *one_segment_per_object(void *, uint32_t, int sz) {
+  sz += (int) sizeof(struct capn_segment);
+  struct capn_segment *s = (struct capn_segment *) calloc(1, (size_t) sz);
+  s->data = (char *) (s + 1);
+  s->cap = (size_t) sz - sizeof(*s);
+  s->user = s;
+  return s;
+}
+
+TEST_F(CapnpCli, FarPointerMessageDecodesAndCanonicalizesLikeTheOfficialTool) {
+  struct capn c;
+  capn_init_malloc(&c);
+  c.create = one_segment_per_object;
+
+  struct capn_segment *cs = capn_root(&c).seg;
+  struct TestAllTypes t;
+  memset(&t, 0, sizeof(t));
+  t.int32Field = -5;
+  t.textField = chars_to_text("far text");
+  t.int32List = capn_new_list32(cs, 3);
+  capn_set32(t.int32List, 0, 10);
+  capn_set32(t.int32List, 1, 20);
+  capn_set32(t.int32List, 2, 30);
+  t.textList = (capn_ptr_list) {capn_new_ptr_list(cs, 2)};
+  capn_set_text(t.textList.p, 0, chars_to_text("x"));
+  capn_set_text(t.textList.p, 1, chars_to_text("yy"));
+  t.structList = new_TestAllTypes_list(cs, 2);
+  struct TestAllTypes e;
+  memset(&e, 0, sizeof(e));
+  e.textField = chars_to_text("e0");
+  set_TestAllTypes(&e, t.structList, 0);
+  e.textField = chars_to_text("e1");
+  set_TestAllTypes(&e, t.structList, 1);
+  TestAllTypes_ptr tp = new_TestAllTypes(cs);
+  write_TestAllTypes(&t, tp);
+  ASSERT_EQ(0, capn_set_root(&c, tp.p));
+  ASSERT_GT(c.segnum, 4u) << "no far pointers were produced";
+
+  uint8_t buf[16384];
+  ssize_t sz = capn_write_mem(&c, buf, sizeof(buf), 0);
+  ASSERT_GT(sz, 0);
+
+  CmdResult dec = run_argv(
+      capnp_cmd("decode", testalltypes_schema(), "TestAllTypes"), buf,
+      (size_t) sz);
+  ASSERT_EQ(0, dec.status) << dec.err;
+  expect_contains(dec.out, "far text");
+  expect_contains(dec.out, "int32Field = -5");
+  expect_contains(dec.out, "\"e1\"");
+
+  CmdResult want = capnp_convert("binary:canonical", buf, (size_t) sz);
+  ASSERT_EQ(0, want.status) << want.err;
+  std::string got = canonicalize_unframed(&c);
+  ASSERT_FALSE(got.empty());
+  expect_bytes_eq(got.data(), got.size(), want.out.data(), want.out.size(),
+                  "far-pointer message canonical form");
+  capn_free(&c);
+}
