@@ -1021,3 +1021,26 @@ int main(int argc, char *argv[]) {
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
+
+TEST(WireFormat, SetpCopiesSameSessionFarPointerIntoTheNamedSlot) {
+  Session ctx;
+  ctx.capn.create = &CreateSmallSegment;
+
+  capn_ptr root = capn_new_struct(capn_root(&ctx.capn).seg, 8, 2);
+  ASSERT_EQ(CAPN_STRUCT, root.type);
+  ASSERT_EQ(0, capn_set_root(&ctx.capn, root));
+  ASSERT_EQ(0, capn_write64(root, 0, 0x1122334455667788ULL));
+
+  capn_text word = {3, "far", NULL};
+  ASSERT_EQ(0, capn_set_text(root, 0, word));
+
+  capn_ptr slot = capn_getp(root, 0, 0);
+  ASSERT_EQ(CAPN_FAR_POINTER, slot.type);
+  ASSERT_EQ(0, capn_setp(root, 1, slot));
+
+  EXPECT_EQ(0x1122334455667788ULL, capn_read64(root, 0));
+  capn_text def = {0, NULL, NULL};
+  capn_text got = capn_get_text(root, 1, def);
+  ASSERT_EQ(3, got.len);
+  EXPECT_EQ(0, memcmp(got.str, "far", 3));
+}

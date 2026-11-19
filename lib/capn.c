@@ -1438,17 +1438,13 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 	struct capn_ptr to[MAX_COPY_DEPTH], from[MAX_COPY_DEPTH];
 	char *data;
 	int err, dep = 0;
+	capn_ptr far_tgt;
 
 	capn_resolve(&p);
+	if (off < 0)
+		return -1;
 
-	if (tgt.type == CAPN_FAR_POINTER && tgt.seg->capn == p.seg->capn) {
-		uint64_t val = capn_flip64(*(uint64_t*) tgt.data);
-		if ((val & 3) == FAR_PTR) {
-			*(uint64_t*) p.data = *(uint64_t*) tgt.data;
-			return 0;
-		}
-	}
-
+	far_tgt = tgt;
 	capn_resolve(&tgt);
 
 	switch (p.type) {
@@ -1495,6 +1491,15 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 		goto copy_ptr;
 
 	copy_ptr:
+		/* A far pointer word means the same thing anywhere in the
+		 * session, so it can be copied into the slot as it is. */
+		if (far_tgt.type == CAPN_FAR_POINTER && far_tgt.seg->capn == p.seg->capn) {
+			uint64_t val = capn_flip64(*(uint64_t*) far_tgt.data);
+			if ((val & 3) == FAR_PTR) {
+				*(uint64_t*) data = *(uint64_t*) far_tgt.data;
+				return 0;
+			}
+		}
 		err = write_ptr(p.seg, data, tgt);
 		if (err != NEED_TO_COPY)
 			return err;
