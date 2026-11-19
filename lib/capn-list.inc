@@ -51,11 +51,25 @@ int CAT(capn_getv,SZ) (LIST_T l, int off, UINT_T *to, int sz) {
 	if (sz > p.len - off) {
 		sz = p.len - off;
 	}
+	{
+		size_t stride = p.type == CAPN_PTR_LIST ? 8u
+			: (size_t) p.datasz + 8u * (size_t) p.ptrs;
+		if (p.type == CAPN_LIST || p.type == CAPN_PTR_LIST) {
+			if (clamp_span(&p, off, sz, stride, &sz))
+				return -1;
+		}
+	}
 
 	switch (p.type) {
 	case CAPN_LIST:
 		if (p.datasz == SZ/8 && !p.ptrs && (SZ == 8 || CAPN_LITTLE)) {
-			memcpy(to, p.data + (size_t) off * (SZ/8), (size_t) sz * (SZ/8));
+			size_t start, bytes;
+			if (sz == 0)
+				return 0;
+			if (!mul_size((size_t) off, (size_t) (SZ/8), &start) ||
+			    !mul_size((size_t) sz, (size_t) (SZ/8), &bytes))
+				return -1;
+			memcpy(to, p.data + start, bytes);
 			return sz;
 		} else if (p.datasz < SZ/8) {
 			return -1;
@@ -122,11 +136,25 @@ int CAT(capn_setv,SZ) (LIST_T l, int off, const UINT_T *from, int sz) {
 	if (sz > p.len - off) {
 		sz = p.len - off;
 	}
+	{
+		size_t stride = p.type == CAPN_PTR_LIST ? 8u
+			: (size_t) p.datasz + 8u * (size_t) p.ptrs;
+		if (p.type == CAPN_LIST || p.type == CAPN_PTR_LIST) {
+			if (clamp_span(&p, off, sz, stride, &sz))
+				return -1;
+		}
+	}
 
 	switch (p.type) {
 	case CAPN_LIST:
 		if (p.datasz == SZ/8 && !p.ptrs && (SZ == 8 || CAPN_LITTLE)) {
-			memcpy(p.data + (size_t) off * (SZ/8), from, (size_t) sz * (SZ/8));
+			size_t start, bytes;
+			if (sz == 0)
+				return 0;
+			if (!mul_size((size_t) off, (size_t) (SZ/8), &start) ||
+			    !mul_size((size_t) sz, (size_t) (SZ/8), &bytes))
+				return -1;
+			memcpy(p.data + start, from, bytes);
 			return sz;
 		} else if (p.datasz < SZ/8) {
 			return -1;
