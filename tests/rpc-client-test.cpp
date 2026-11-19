@@ -111,6 +111,19 @@ void fill_blob(void *ctx, capn_ptr params)
 	capn_setp(params, 0, l.p);
 }
 
+/* persistent.capnp's Persistent.save (interface 0xc8cb212fcd9f5691, method
+ * 0): the application answers with a SturdyRef of its own choosing. */
+const uint64_t kPersistentId = 0xc8cb212fcd9f5691ULL;
+
+int persistent_dispatch(void *, uint64_t iface, uint16_t method, capn_ptr,
+                        capn_ptr results)
+{
+	if (iface != kPersistentId || method != 0)
+		return -1;
+	capn_text ref = {static_cast<int>(strlen("sturdy:vault/42")), "sturdy:vault/42", NULL};
+	return capn_set_text(results, 0, ref);
+}
+
 class RpcClient : public ::testing::Test {
  protected:
 	void SetUp() override
@@ -435,6 +448,30 @@ TEST_F(RpcClient, UnimplementedEchoesTheOriginalMessageNotAWrapper)
 	read_Resolve(&back, echoed.resolve);
 	EXPECT_EQ(5u, back.promiseId);
 	capn_free(&reply);
+}
+
+TEST_F(RpcClient, PersistenceIsOrdinaryDispatchOfPersistentSave)
+{
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, persistent_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	uint32_t q = capn_rpc_send_call(&client, 0, kPersistentId, 0, 0, 1, NULL, NULL);
+	settle();
+	ASSERT_TRUE(capn_rpc_is_answered(&client, q));
+	ASSERT_FALSE(capn_rpc_is_failed(&client, q));
+	struct capn m;
+	capn_ptr content;
+	ASSERT_EQ(0, capn_rpc_answer_content(&client, q, &m, &content));
+	capn_text def = {0, "", NULL};
+	capn_text ref = capn_get_text(content, 0, def);
+	EXPECT_STREQ("sturdy:vault/42", ref.str);
+	capn_free(&m);
+
+	/* A method the application does not implement fails, not hangs. */
+	uint32_t q2 = capn_rpc_send_call(&client, 0, kPersistentId, 1, 0, 1, NULL, NULL);
+	settle();
+	EXPECT_TRUE(capn_rpc_is_failed(&client, q2));
 }
 
 } // namespace

@@ -238,8 +238,8 @@ make fuzz-fp     # FILE* reader
 
 | Level | What | Here |
 |-------|------|------|
-| 1 | Calls, cap tables, promise pipelining, embargoes | yes |
-| 2 | Persistence hooks (application-defined SturdyRefs) | yes |
+| 1 | Calls, cap tables, promise pipelining, Disembargo echo | yes; `Resolve` is answered `Unimplemented`, so this vat never raises an embargo |
+| 2 | Persistence: `Persistent.save` as ordinary dispatch, SturdyRefs left to the application | no vat code needed |
 | 3 | Three-party handoff (`Provide` / `Accept`, vines) | yes |
 | 4 | `Join`, reference equality | yes |
 
