@@ -62,6 +62,11 @@ annotation extendedattribute @0xd187bca5c6844c24 (file): Text;
 annotation codecgen @0xcccaac86283e2609 (file): Void;
 # generate codec (encode/decode/free) for each type
 
+annotation rpcstubs @0xe5f6071829304a5b (file): Void;
+# for each interface method, emit its parameter and result structs, a
+# client call helper, a result reader, and a server vtable with a dispatch
+# function for capn-rpc.h
+
 annotation reflect @0xd0e1c2a3b4f50617 (file): Void;
 # emit a descriptor table per struct and enum, <Name>_dyn, for the
 # reflection API, text and JSON codecs in capn-dyn.h

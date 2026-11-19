@@ -43,9 +43,12 @@ static int g_val0used, g_nullused, g_textnullused;
 /* capnp/stream.capnp */
 #define CAPNP_STREAM_FILE_ID 0x86c366a91393f3f8ULL
 
+#define ANNOTATION_RPCSTUBS	0xe5f6071829304a5bUL
+
 static int g_fieldgetset = 0;
 static int g_codecgen = 0;
 static int g_reflect = 0;
+static int g_rpcstubs = 0;
 static capnp_ctx_t g_ctx;
 
 static void bind_codec_ctx(void) {
@@ -179,6 +182,40 @@ static void free_string_list(struct string_list * list)
 }
 
 
+static int file_has_annotation(struct node *file, uint64_t id) {
+	int i;
+	for (i = 0; file && i < capn_len(file->n.annotations); i++) {
+		struct Annotation a;
+		get_Annotation(&a, file->n.annotations, i);
+		if (a.id == id)
+			return 1;
+	}
+	return 0;
+}
+
+/* The parameter and result structs of a method written as a parameter
+ * list have no name of their own. Give them <Interface>_<method>_params
+ * and _results and list them with the file's nodes, so the usual struct
+ * code is generated for them. */
+static void name_method_structs(struct node *n, struct node *file) {
+	int i, k, count = capn_len(n->n._interface.methods);
+	for (i = 0; i < count; i++) {
+		struct Method m;
+		get_Method(&m, n->n._interface.methods, i);
+		for (k = 0; k < 2; k++) {
+			struct node *sn = find_node_mayfail(k ? m.resultStructType : m.paramStructType);
+			if (sn == NULL || sn->n.which != Node__struct || sn->name.len != 0 ||
+			    sn->n._struct.isGroup)
+				continue;
+			str_addf(&sn->name, "%s_%.*s_%s", n->name.str, m.name.len, m.name.str,
+					k ? "results" : "params");
+			sn->rpc_struct = 1;
+			sn->next_file_node = file->file_nodes;
+			file->file_nodes = sn;
+		}
+	}
+}
+
 /* resolve_names recursively follows the nestedNodes tree in order to
  * set node->name.
  * It also builds up the list of nodes within a file (file_nodes and
@@ -211,6 +248,9 @@ static void resolve_names(struct str *b, struct node *n, capn_text name, struct 
 		n->next_file_node = file->file_nodes;
 		file->file_nodes = n;
 	}
+
+	if (n->n.which == Node__interface && file_has_annotation(file, ANNOTATION_RPCSTUBS))
+		name_method_structs(n, file);
 
 	str_setlen(b, sz);
 }
@@ -1669,6 +1709,113 @@ static void define_interface_methods(struct node *n)
 	}
 }
 
+/* Typed RPC stubs ($C.rpcstubs): for each method a client call helper, a
+ * reader for its results, and a slot in a server vtable that
+ * <Interface>_dispatch routes to. Superclass methods are not routed:
+ * serve them with their own interface's dispatch. */
+static void define_rpcstubs(struct node *n)
+{
+	int i, count = capn_len(n->n._interface.methods);
+	const char *I = n->name.str;
+	int maxd = 0, maxp = 0;
+
+	if (count == 0)
+		return;
+
+	/* A `-> stream` method answers with the library's StreamResult, which
+	 * has no struct here: its handler takes no results and its stub has no
+	 * result reader. */
+	str_addf(&HDR, "\n/* RPC stubs for %s. */\n", I);
+	str_addf(&HDR, "struct %s_server {\n\tvoid *self;\n", I);
+	for (i = 0; i < count; i++) {
+		struct Method m;
+		struct node *pn, *rn;
+		get_Method(&m, n->n._interface.methods, i);
+		pn = find_node_mayfail(m.paramStructType);
+		rn = find_node_mayfail(m.resultStructType);
+		if (!pn || !pn->rpc_struct)
+			continue;
+		if (rn && rn->rpc_struct) {
+			str_addf(&HDR, "\tint (*on_%.*s)(void *self, const struct %s *in, struct %s *out, struct capn_segment *seg);\n",
+					m.name.len, m.name.str, pn->name.str, rn->name.str);
+			if ((int) rn->n._struct.dataWordCount * 8 > maxd)
+				maxd = (int) rn->n._struct.dataWordCount * 8;
+			if ((int) rn->n._struct.pointerCount > maxp)
+				maxp = (int) rn->n._struct.pointerCount;
+		} else {
+			str_addf(&HDR, "\tint (*on_%.*s)(void *self, const struct %s *in, struct capn_segment *seg);\n",
+					m.name.len, m.name.str, pn->name.str);
+		}
+	}
+	str_addf(&HDR, "};\n");
+	str_addf(&HDR, "/* Pass these to capn_rpc_set_result_size so results fit. */\n"
+			"#define %s_RESULT_DATASZ %d\n#define %s_RESULT_PTRS %d\n", I, maxd, I, maxp);
+	str_addf(&HDR, "int %s_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn_ptr params, capn_ptr results);\n", I);
+
+	str_addf(&SRC, "\nint %s_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn_ptr params, capn_ptr results) {\n", I);
+	str_addf(&SRC, "\tconst struct %s_server *srv = (const struct %s_server *) server;\n", I, I);
+	str_addf(&SRC, "\tcapnp_use(srv);\n\tcapnp_use(results);\n\tif (interface_id != %s_INTERFACE_ID)\n\t\treturn -1;\n\tswitch (method_id) {\n", I);
+
+	for (i = 0; i < count; i++) {
+		struct Method m;
+		struct node *pn, *rn;
+		int has_results;
+		get_Method(&m, n->n._interface.methods, i);
+		pn = find_node_mayfail(m.paramStructType);
+		rn = find_node_mayfail(m.resultStructType);
+		if (!pn || !pn->rpc_struct)
+			continue;
+		has_results = rn && rn->rpc_struct;
+
+		str_addf(&HDR, "uint32_t %s_call_%.*s(struct capn_rpc_conn *c, uint32_t cap, const struct %s *in);\n",
+				I, m.name.len, m.name.str, pn->name.str);
+		if (has_results)
+			str_addf(&HDR, "int %s_results_%.*s(struct capn_rpc_conn *c, uint32_t question, struct %s *out, struct capn *msg);\n",
+					I, m.name.len, m.name.str, rn->name.str);
+
+		str_addf(&SRC, "\tcase %d: {\n\t\tstruct %s in;\n\t\t%s_ptr pp;\n\t\tint rc;\n", i, pn->name.str, pn->name.str);
+		if (has_results)
+			str_addf(&SRC, "\t\tstruct %s out;\n\t\t%s_ptr rp;\n", rn->name.str, rn->name.str);
+		str_addf(&SRC, "\t\tif (srv->on_%.*s == NULL)\n\t\t\treturn -1;\n", m.name.len, m.name.str);
+		str_addf(&SRC, "\t\tmemset(&in, 0, sizeof in);\n");
+		if (has_results)
+			str_addf(&SRC, "\t\tmemset(&out, 0, sizeof out);\n");
+		str_addf(&SRC, "\t\tpp.p = params;\n\t\tread_%s(&in, pp);\n", pn->name.str);
+		if (has_results) {
+			str_addf(&SRC, "\t\trc = srv->on_%.*s(srv->self, &in, &out, results.seg);\n\t\tif (rc != 0)\n\t\t\treturn rc;\n",
+					m.name.len, m.name.str);
+			str_addf(&SRC, "\t\trp.p = results;\n\t\twrite_%s(&out, rp);\n\t\treturn 0;\n\t}\n", rn->name.str);
+		} else {
+			str_addf(&SRC, "\t\trc = srv->on_%.*s(srv->self, &in, results.seg);\n\t\treturn rc;\n\t}\n",
+					m.name.len, m.name.str);
+		}
+	}
+	str_addf(&SRC, "\tdefault:\n\t\treturn -1;\n\t}\n}\n");
+
+	for (i = 0; i < count; i++) {
+		struct Method m;
+		struct node *pn, *rn;
+		get_Method(&m, n->n._interface.methods, i);
+		pn = find_node_mayfail(m.paramStructType);
+		rn = find_node_mayfail(m.resultStructType);
+		if (!pn || !pn->rpc_struct)
+			continue;
+		str_addf(&SRC, "\nstatic void %s_%.*s_fill(void *ctx, capn_ptr params) {\n\t%s_ptr pp;\n\tpp.p = params;\n\twrite_%s((const struct %s *) ctx, pp);\n}\n",
+				I, m.name.len, m.name.str, pn->name.str, pn->name.str, pn->name.str);
+		str_addf(&SRC, "uint32_t %s_call_%.*s(struct capn_rpc_conn *c, uint32_t cap, const struct %s *in) {\n",
+				I, m.name.len, m.name.str, pn->name.str);
+		str_addf(&SRC, "\treturn capn_rpc_send_call(c, cap, %s_INTERFACE_ID, %d, (int) %s_struct_bytes_count, (int) %s_pointer_count, %s_%.*s_fill, (void *) in);\n}\n",
+				I, i, pn->name.str, pn->name.str, I, m.name.len, m.name.str);
+		if (rn && rn->rpc_struct) {
+			str_addf(&SRC, "int %s_results_%.*s(struct capn_rpc_conn *c, uint32_t question, struct %s *out, struct capn *msg) {\n",
+					I, m.name.len, m.name.str, rn->name.str);
+			str_addf(&SRC, "\tcapn_ptr content;\n\t%s_ptr rp;\n\tif (capn_rpc_answer_content(c, question, msg, &content) != 0)\n\t\treturn -1;\n",
+					rn->name.str);
+			str_addf(&SRC, "\trp.p = content;\n\tread_%s(out, rp);\n\treturn 0;\n}\n", rn->name.str);
+		}
+	}
+}
+
 static void define_interface(struct node *n, const char *extattr, const char *extattr_space) {
 	/* Capability pointer: no struct body. List(Interface) is a pointer list. */
 	str_addf(&SRC, "\n%s%s%s_ptr new_%s(struct capn_segment *s) {\n",
@@ -1686,6 +1833,8 @@ static void define_interface(struct node *n, const char *extattr, const char *ex
 	str_addf(&SRC, "}\n");
 
 	define_interface_methods(n);
+	if (g_rpcstubs)
+		define_rpcstubs(n);
 }
 
 static void declare_interface_news(struct node *file_node,
@@ -1907,6 +2056,7 @@ int main() {
 		g_textnullused = 0;
 		g_codecgen = 0;
 		g_reflect = 0;
+		g_rpcstubs = 0;
 		capn_init_malloc(&g_valcapn);
 		capn_append_segment(&g_valcapn, &g_valseg);
 
@@ -1943,6 +2093,9 @@ int main() {
 				break;
 			case ANNOTATION_REFLECT:	/* $C::reflect */
 				g_reflect = 1;
+				break;
+			case ANNOTATION_RPCSTUBS:	/* $C::rpcstubs */
+				g_rpcstubs = 1;
 				break;
 			case 0x8c99797357b357e9UL:	/* $C::donotinclude */
 				if (v.which != Value_uint64)
@@ -1991,6 +2144,8 @@ int main() {
 		str_addf(&HDR, "#include <capnp_c.h>\n");
 		if (g_reflect)
 			str_addf(&HDR, "#include <capn-dyn.h>\n");
+		if (g_rpcstubs)
+			str_addf(&HDR, "#include <capn-rpc.h>\n");
 		/* Do [extraheader] in declaration order. */
 		{
 			struct string_list ** current = &extraheader_strings;
@@ -2140,6 +2295,8 @@ int main() {
 		if (g_codecgen) {
 			fprintf(srcf, "#include <stdlib.h>\n"
 					"#include <string.h>\n");
+		} else if (g_rpcstubs) {
+			fprintf(srcf, "#include <string.h>\n");
 		}
 
 		if (g_val0used)
