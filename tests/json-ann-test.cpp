@@ -76,6 +76,18 @@ TEST(JsonAnn, RenamesFlattensAndEncodesData) {
   capn_free(&c);
 }
 
+TEST(JsonAnn, RejectsPaddingThatIsNotAtTheEnd) {
+  struct capn_dyn_error err;
+  const char *bad[] = {"{\"b64\":\"AA==AAAA\"}", "{\"b64\":\"AA=A\"}"};
+  int i;
+  for (i = 0; i < 2; i++) {
+    memset(&err, 0, sizeof err);
+    std::string got = to_json(bad[i], &err);
+    EXPECT_TRUE(got.empty());
+    EXPECT_NE(nullptr, strstr(err.message, "invalid base64"));
+  }
+}
+
 TEST(JsonAnn, DiscriminatorSelectsVoidAndRenamedArm) {
   const char *void_arm =
       "{\"full_name\":\"\",\"age\":0,\"foo\":0,\"bar\":\"\",\"qux\":\"\","
@@ -87,4 +99,27 @@ TEST(JsonAnn, DiscriminatorSelectsVoidAndRenamedArm) {
   std::string got = to_json(void_arm, &err);
   ASSERT_FALSE(got.empty()) << err.message << " at " << err.offset;
   EXPECT_EQ(void_arm, got);
+}
+
+TEST(JsonAnn, FlattenedDefaultStructStaysImmutable) {
+  const char *in = "{\"value\":\"changed\"}";
+  struct capn_dyn_error err;
+  struct capn c;
+  capn_ptr st;
+  memset(&err, 0, sizeof err);
+  capn_init_malloc(&c);
+  ASSERT_EQ(0, capn_dyn_from_json(&Doc_dyn, in, strlen(in), capn_root(&c).seg, &st, &err))
+      << err.message;
+
+  const struct capn_dyn_field *nest = field_of(&Doc_dyn, "defaultNest");
+  ASSERT_NE(nullptr, nest);
+  const struct capn_dyn_field *value = field_of(nest->type.st, "value");
+  ASSERT_NE(nullptr, value);
+  capn_text decoded = capn_dyn_get_text(capn_dyn_get_ptr(st, nest), value);
+  EXPECT_EQ("changed", std::string(decoded.str, decoded.len));
+
+  capn_ptr empty = capn_new_struct(capn_root(&c).seg, 0, 1);
+  capn_text def = capn_dyn_get_text(capn_dyn_get_ptr(empty, nest), value);
+  EXPECT_EQ("default", std::string(def.str, def.len));
+  capn_free(&c);
 }
