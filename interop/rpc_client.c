@@ -228,6 +228,8 @@ int main(int argc, char **argv)
 		ssize_t n = read_frame(g_fd, buf, sizeof buf);
 		if (n <= 0 || capn_rpc_handle(&conn, buf, (size_t)n) != 0) {
 			fprintf(stderr, "bootstrap reply not handled\n");
+			capn_rpc_free(&conn);
+			close(g_fd);
 			return 1;
 		}
 	}
