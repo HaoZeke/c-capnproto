@@ -2267,6 +2267,120 @@ TEST_F(RpcClient, UnknownPipelineOpAborts)
 	EXPECT_TRUE(wire_has_abort_reason(wire.to_vat, kBadPipelineOp));
 }
 
+std::vector<uint8_t> resolve_to_export(uint32_t promise, uint32_t export_id)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+	struct CapDescriptor cd;
+	struct Resolve r;
+	struct Message m;
+	memset(&cd, 0, sizeof cd);
+	memset(&r, 0, sizeof r);
+	memset(&m, 0, sizeof m);
+	cd.which = CapDescriptor_receiverHosted;
+	cd.receiverHosted = export_id;
+	CapDescriptor_ptr cdp = new_CapDescriptor(cs);
+	write_CapDescriptor(&cd, cdp);
+	r.promiseId = promise;
+	r.which = Resolve_cap;
+	r.cap = cdp;
+	Resolve_ptr rp = new_Resolve(cs);
+	write_Resolve(&r, rp);
+	m.which = Message_resolve;
+	m.resolve = rp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	int64_t need = capn_size(&msg);
+	std::vector<uint8_t> buf(static_cast<size_t>(need > 0 ? need : 0));
+	if (need > 0)
+		capn_write_mem(&msg, buf.data(), buf.size(), 0);
+	capn_free(&msg);
+	return buf;
+}
+
+int frame_disembargo_target(const std::vector<uint8_t> &f)
+{
+	struct capn m;
+	if (capn_init_mem(&m, f.data(), f.size(), 0) != 0)
+		return -1;
+	Message_ptr mp;
+	mp.p = capn_getp(capn_root(&m), 0, 1);
+	struct Message msg;
+	read_Message(&msg, mp);
+	if (msg.which != Message_disembargo) {
+		capn_free(&m);
+		return -1;
+	}
+	struct Disembargo d;
+	read_Disembargo(&d, msg.disembargo);
+	struct MessageTarget t;
+	read_MessageTarget(&t, d.target);
+	int id = t.which == MessageTarget_importedCap ? static_cast<int>(t.importedCap) : -1;
+	capn_free(&m);
+	return id;
+}
+
+/* A1, B1, A2, lift B (frees B1's slot), A3, lift A. A3 must not jump
+ * ahead of A2. */
+TEST_F(RpcClient, HeldCallsReplayInArrivalOrder)
+{
+	int obj_a = 1;
+	int obj_b = 2;
+	uint32_t prime = 0, a1 = 1, b1 = 10, a2 = 2, a3 = 3;
+	int embargo_a = -1, embargo_b = -1;
+
+	g_arrival_n = 0;
+	ASSERT_EQ(0, capn_rpc_export(&client, &obj_a, arrival_dispatch));
+	ASSERT_EQ(1, capn_rpc_export(&client, &obj_b, arrival_dispatch));
+	ASSERT_NE(static_cast<uint32_t>(-1),
+	          capn_rpc_send_call(&client, 0, 0, 0, 8, 0, fill_u32, &prime));
+	ASSERT_NE(static_cast<uint32_t>(-1),
+	          capn_rpc_send_call(&client, 1, 0, 0, 8, 0, fill_u32, &prime));
+
+	std::vector<uint8_t> ra = resolve_to_export(0, 0);
+	std::vector<uint8_t> rb = resolve_to_export(1, 1);
+	ASSERT_EQ(0, capn_rpc_handle(&client, ra.data(), ra.size()));
+	ASSERT_EQ(0, capn_rpc_handle(&client, rb.data(), rb.size()));
+	for (size_t i = 0; i < wire.to_vat.size(); i++) {
+		if (frame_which(wire.to_vat[i]) != Message_disembargo)
+			continue;
+		int target = frame_disembargo_target(wire.to_vat[i]);
+		int id = frame_embargo_id(wire.to_vat[i]);
+		if (target == 0)
+			embargo_a = id;
+		else if (target == 1)
+			embargo_b = id;
+	}
+	ASSERT_GE(embargo_a, 0);
+	ASSERT_GE(embargo_b, 0);
+
+	ASSERT_NE(static_cast<uint32_t>(-1),
+	          capn_rpc_send_call(&client, 0, 0, 0, 8, 0, fill_u32, &a1));
+	ASSERT_NE(static_cast<uint32_t>(-1),
+	          capn_rpc_send_call(&client, 1, 0, 0, 8, 0, fill_u32, &b1));
+	ASSERT_NE(static_cast<uint32_t>(-1),
+	          capn_rpc_send_call(&client, 0, 0, 0, 8, 0, fill_u32, &a2));
+	EXPECT_EQ(0, g_arrival_n);
+
+	std::vector<uint8_t> lift_b = receiver_loopback(static_cast<uint32_t>(embargo_b));
+	ASSERT_EQ(0, capn_rpc_handle(&client, lift_b.data(), lift_b.size()));
+	ASSERT_EQ(1, g_arrival_n);
+	EXPECT_EQ(10u, g_arrival[0]);
+
+	ASSERT_NE(static_cast<uint32_t>(-1),
+	          capn_rpc_send_call(&client, 0, 0, 0, 8, 0, fill_u32, &a3));
+	EXPECT_EQ(1, g_arrival_n);
+
+	std::vector<uint8_t> lift_a = receiver_loopback(static_cast<uint32_t>(embargo_a));
+	ASSERT_EQ(0, capn_rpc_handle(&client, lift_a.data(), lift_a.size()));
+	ASSERT_EQ(4, g_arrival_n);
+	EXPECT_EQ(1u, g_arrival[1]);
+	EXPECT_EQ(2u, g_arrival[2]);
+	EXPECT_EQ(3u, g_arrival[3]);
+}
+
 TEST_F(RpcClient, SenderLoopbackFollowsALocalResolution)
 {
 	int promise_obj = 1;
