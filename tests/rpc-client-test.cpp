@@ -2018,6 +2018,255 @@ TEST_F(RpcClient, SenderLoopbackOnLocalExportAborts)
 	EXPECT_TRUE(no_disembargo(wire.to_client));
 }
 
+/* Resolve `promise` to a senderPromise or senderHosted capability. */
+std::vector<uint8_t> resolve_to_sender(uint32_t promise, uint32_t other, int is_promise)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+	struct CapDescriptor cd;
+	struct Resolve r;
+	struct Message m;
+	memset(&cd, 0, sizeof cd);
+	memset(&r, 0, sizeof r);
+	memset(&m, 0, sizeof m);
+	cd.which = is_promise ? CapDescriptor_senderPromise : CapDescriptor_senderHosted;
+	if (is_promise)
+		cd.senderPromise = other;
+	else
+		cd.senderHosted = other;
+	CapDescriptor_ptr cdp = new_CapDescriptor(cs);
+	write_CapDescriptor(&cd, cdp);
+	r.promiseId = promise;
+	r.which = Resolve_cap;
+	r.cap = cdp;
+	Resolve_ptr rp = new_Resolve(cs);
+	write_Resolve(&r, rp);
+	m.which = Message_resolve;
+	m.resolve = rp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	int64_t need = capn_size(&msg);
+	std::vector<uint8_t> buf(static_cast<size_t>(need > 0 ? need : 0));
+	if (need > 0)
+		capn_write_mem(&msg, buf.data(), buf.size(), 0);
+	capn_free(&msg);
+	return buf;
+}
+
+/* Resolve `promise` to a pipeline on `question` of `nops` steps.
+ * `bad` writes an op this implementation does not support. */
+std::vector<uint8_t> resolve_to_pipeline(uint32_t promise, uint32_t question,
+                                         int nops, int bad)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+	struct PromisedAnswer pa;
+	struct CapDescriptor cd;
+	struct Resolve r;
+	struct Message m;
+	memset(&pa, 0, sizeof pa);
+	memset(&cd, 0, sizeof cd);
+	memset(&r, 0, sizeof r);
+	memset(&m, 0, sizeof m);
+	pa.questionId = question;
+	if (nops > 0) {
+		pa.transform = new_PromisedAnswer_Op_list(cs, nops);
+		for (int i = 0; i < nops; i++) {
+			struct PromisedAnswer_Op op;
+			memset(&op, 0, sizeof op);
+			if (bad && i == nops - 1)
+				op.which = static_cast<enum PromisedAnswer_Op_which>(7);
+			else {
+				op.which = PromisedAnswer_Op_getPointerField;
+				op.getPointerField = 0;
+			}
+			set_PromisedAnswer_Op(&op, pa.transform, i);
+		}
+	}
+	PromisedAnswer_ptr pap = new_PromisedAnswer(cs);
+	write_PromisedAnswer(&pa, pap);
+	cd.which = CapDescriptor_receiverAnswer;
+	cd.receiverAnswer = pap;
+	CapDescriptor_ptr cdp = new_CapDescriptor(cs);
+	write_CapDescriptor(&cd, cdp);
+	r.promiseId = promise;
+	r.which = Resolve_cap;
+	r.cap = cdp;
+	Resolve_ptr rp = new_Resolve(cs);
+	write_Resolve(&r, rp);
+	m.which = Message_resolve;
+	m.resolve = rp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	int64_t need = capn_size(&msg);
+	std::vector<uint8_t> buf(static_cast<size_t>(need > 0 ? need : 0));
+	if (need > 0)
+		capn_write_mem(&msg, buf.data(), buf.size(), 0);
+	capn_free(&msg);
+	return buf;
+}
+
+std::vector<uint8_t> receiver_loopback(uint32_t embargo)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+	struct MessageTarget t;
+	struct Disembargo d;
+	struct Message m;
+	memset(&t, 0, sizeof t);
+	memset(&d, 0, sizeof d);
+	memset(&m, 0, sizeof m);
+	t.which = MessageTarget_importedCap;
+	t.importedCap = 0;
+	MessageTarget_ptr tp = new_MessageTarget(cs);
+	write_MessageTarget(&t, tp);
+	d.target = tp;
+	d.context_which = Disembargo_context_receiverLoopback;
+	d.context.receiverLoopback = embargo;
+	Disembargo_ptr dp = new_Disembargo(cs);
+	write_Disembargo(&d, dp);
+	m.which = Message_disembargo;
+	m.disembargo = dp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	int64_t need = capn_size(&msg);
+	std::vector<uint8_t> buf(static_cast<size_t>(need > 0 ? need : 0));
+	if (need > 0)
+		capn_write_mem(&msg, buf.data(), buf.size(), 0);
+	capn_free(&msg);
+	return buf;
+}
+
+int frame_embargo_id(const std::vector<uint8_t> &f)
+{
+	struct capn m;
+	if (capn_init_mem(&m, f.data(), f.size(), 0) != 0)
+		return -1;
+	Message_ptr mp;
+	mp.p = capn_getp(capn_root(&m), 0, 1);
+	struct Message msg;
+	read_Message(&msg, mp);
+	if (msg.which != Message_disembargo) {
+		capn_free(&m);
+		return -1;
+	}
+	struct Disembargo d;
+	read_Disembargo(&d, msg.disembargo);
+	int id = -1;
+	if (d.context_which == Disembargo_context_senderLoopback)
+		id = static_cast<int>(d.context.senderLoopback);
+	else if (d.context_which == Disembargo_context_receiverLoopback)
+		id = static_cast<int>(d.context.receiverLoopback);
+	capn_free(&m);
+	return id;
+}
+
+int frame_transform_len(const std::vector<uint8_t> &f)
+{
+	struct capn m;
+	if (capn_init_mem(&m, f.data(), f.size(), 0) != 0)
+		return -1;
+	Message_ptr mp;
+	mp.p = capn_getp(capn_root(&m), 0, 1);
+	struct Message msg;
+	read_Message(&msg, mp);
+	if (msg.which != Message_call) {
+		capn_free(&m);
+		return -1;
+	}
+	struct Call call;
+	read_Call(&call, msg.call);
+	struct MessageTarget t;
+	read_MessageTarget(&t, call.target);
+	int n = -1;
+	if (t.which == MessageTarget_promisedAnswer &&
+	    t.promisedAnswer.p.type != CAPN_NULL) {
+		struct PromisedAnswer pa;
+		read_PromisedAnswer(&pa, t.promisedAnswer);
+		n = capn_len(pa.transform);
+	}
+	capn_free(&m);
+	return n;
+}
+
+const char kBadPipelineOp[] = "Unsupported pipeline op.";
+
+/* import_slot grows the table while handle_resolve still needs the
+ * promise's slot. Id 8 is past the first block of eight. */
+TEST_F(RpcClient, ResolveGrowsTheImportTable)
+{
+	uint32_t arg = 1;
+	ASSERT_NE(static_cast<uint32_t>(-1),
+	          capn_rpc_send_call(&client, 0, 0, 0, 8, 0, fill_u32, &arg));
+	std::vector<uint8_t> frame = resolve_to_sender(0, 8, 1);
+	ASSERT_EQ(0, capn_rpc_handle(&client, frame.data(), frame.size()));
+	int broken = 1, to_export = 1;
+	uint32_t target = 0;
+	EXPECT_EQ(1, capn_rpc_promise_state(&client, 0, &broken, &to_export, &target));
+	EXPECT_EQ(0, broken);
+	EXPECT_EQ(0, to_export);
+	EXPECT_EQ(8u, target);
+	EXPECT_EQ(0, client.aborted);
+}
+
+/* The advertised import cap is 4096. 1024 used to stop the grow. */
+TEST_F(RpcClient, ImportPastTheOldTableCap)
+{
+	std::vector<uint8_t> ok = resolve_to_sender(2000, 1, 0);
+	ASSERT_EQ(0, capn_rpc_handle(&client, ok.data(), ok.size()));
+	int broken = 1, to_export = 1;
+	uint32_t target = 0;
+	EXPECT_EQ(1, capn_rpc_promise_state(&client, 2000, &broken, &to_export, &target));
+	EXPECT_EQ(0, to_export);
+	EXPECT_EQ(1u, target);
+	std::vector<uint8_t> over = resolve_to_sender(4096, 1, 0);
+	EXPECT_NE(0, capn_rpc_handle(&client, over.data(), over.size()));
+}
+
+/* A pipeline longer than eight steps is kept, and an unknown op is a
+ * protocol error rather than a shorter path. */
+TEST_F(RpcClient, PipelineLongerThanEightOps)
+{
+	uint32_t arg = 4;
+	ASSERT_NE(static_cast<uint32_t>(-1),
+	          capn_rpc_send_call(&client, 0, 0, 0, 8, 0, fill_u32, &arg));
+	std::vector<uint8_t> resolved = resolve_to_pipeline(0, 5, 9, 0);
+	ASSERT_EQ(0, capn_rpc_handle(&client, resolved.data(), resolved.size()));
+	int embargo = -1;
+	for (size_t i = 0; i < wire.to_vat.size(); i++) {
+		if (frame_which(wire.to_vat[i]) == Message_disembargo)
+			embargo = frame_embargo_id(wire.to_vat[i]);
+	}
+	ASSERT_GE(embargo, 0);
+	wire.to_vat.clear();
+	ASSERT_NE(static_cast<uint32_t>(-1),
+	          capn_rpc_send_call(&client, 0, 0, 0, 8, 0, fill_u32, &arg));
+	EXPECT_TRUE(wire.to_vat.empty());
+	std::vector<uint8_t> echo = receiver_loopback(static_cast<uint32_t>(embargo));
+	ASSERT_EQ(0, capn_rpc_handle(&client, echo.data(), echo.size()));
+	ASSERT_FALSE(wire.to_vat.empty());
+	int n = -1;
+	for (size_t i = 0; i < wire.to_vat.size(); i++) {
+		if (frame_which(wire.to_vat[i]) == Message_call)
+			n = frame_transform_len(wire.to_vat[i]);
+	}
+	EXPECT_EQ(9, n);
+}
+
+TEST_F(RpcClient, UnknownPipelineOpAborts)
+{
+	std::vector<uint8_t> frame = resolve_to_pipeline(0, 1, 1, 1);
+	EXPECT_NE(0, capn_rpc_handle(&client, frame.data(), frame.size()));
+	EXPECT_NE(0, client.aborted);
+	EXPECT_TRUE(wire_has_abort_reason(wire.to_vat, kBadPipelineOp));
+}
+
 TEST_F(RpcClient, SenderLoopbackFollowsALocalResolution)
 {
 	int promise_obj = 1;
