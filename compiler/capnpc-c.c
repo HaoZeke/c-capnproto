@@ -2043,7 +2043,6 @@ int main() {
 			str_addf(&HDR, "#include \"%s%s.h\"\n", base_path, nameinfix);
 		}
 
-		free_id_bst(used_import_ids);
 		free_id_bst(donotinclude_ids);
 		free_string_list(extraheader_strings);
 
@@ -2164,5 +2163,7 @@ int main() {
 		capn_free(&g_valcapn);
 	}
 
+	/* One set serves every requested file, so it outlives the loop. */
+	free_id_bst(used_import_ids);
 	return 0;
 }
