@@ -540,3 +540,105 @@ TEST(RpcStubShapes, GrandchildDispatchesAncestorInterface) {
   capn_rpc_free(&client);
   capn_rpc_free(&vat);
 }
+
+static_assert(BareMid_RESULT_PTRS >= 1,
+              "empty subclass must fit the inherited text");
+
+static int on_bare_inc(void *, const struct BareRoot_inc_params *in,
+                       struct BareRoot_inc_results *out, struct capn_segment *) {
+  out->n = in->n + 1;
+  return 0;
+}
+
+static int on_bare_label(void *, const struct BareRoot_label_params *in,
+                         struct BareRoot_label_results *out, struct capn_segment *) {
+  g_keep.assign(in->t.str ? in->t.str : "", in->t.str ? (size_t) in->t.len : 0);
+  out->t.str = g_keep.c_str();
+  out->t.len = (int) g_keep.size();
+  out->t.seg = NULL;
+  return 0;
+}
+
+static int on_side_ping(void *, const struct SideRoot_ping_params *in,
+                        struct SideRoot_ping_results *out, struct capn_segment *) {
+  out->n = in->n + 5;
+  return 0;
+}
+
+TEST(RpcStubShapes, EmptyMiddleForwardsBothLineages) {
+  struct BareRoot_server root;
+  struct BareMid_server mid;
+  struct SideRoot_server side_root;
+  struct SideMid_server side_mid;
+  struct BareLeaf_server leaf;
+  struct BareRoot_inc_params in;
+  struct BareRoot_inc_results out;
+  BareRoot_inc_params_ptr ip;
+  BareRoot_inc_results_ptr op;
+  struct SideRoot_ping_params pin;
+  struct SideRoot_ping_results pout;
+  SideRoot_ping_params_ptr pip;
+  SideRoot_ping_results_ptr pop;
+  struct capn msg;
+
+  memset(&root, 0, sizeof root);
+  memset(&mid, 0, sizeof mid);
+  memset(&side_root, 0, sizeof side_root);
+  memset(&side_mid, 0, sizeof side_mid);
+  memset(&leaf, 0, sizeof leaf);
+  root.on_inc = on_bare_inc;
+  root.on_label = on_bare_label;
+  mid.super_BareRoot = &root;
+  side_root.on_ping = on_side_ping;
+  side_mid.super_SideRoot = &side_root;
+  leaf.super_BareMid = &mid;
+  leaf.super_SideMid = &side_mid;
+
+  capn_init_malloc(&msg);
+  memset(&in, 0, sizeof in);
+  in.n = 4;
+  ip = new_BareRoot_inc_params(capn_root(&msg).seg);
+  write_BareRoot_inc_params(&in, ip);
+  op = new_BareRoot_inc_results(capn_root(&msg).seg);
+  ASSERT_EQ(0, BareLeaf_dispatch(&leaf, BareRoot_INTERFACE_ID, 0, ip.p, op.p));
+  memset(&out, 0, sizeof out);
+  read_BareRoot_inc_results(&out, op);
+  EXPECT_EQ(5, out.n);
+
+  memset(&pin, 0, sizeof pin);
+  pin.n = 4;
+  pip = new_SideRoot_ping_params(capn_root(&msg).seg);
+  write_SideRoot_ping_params(&pin, pip);
+  pop = new_SideRoot_ping_results(capn_root(&msg).seg);
+  ASSERT_EQ(0, BareLeaf_dispatch(&leaf, SideRoot_INTERFACE_ID, 0, pip.p, pop.p));
+  memset(&pout, 0, sizeof pout);
+  read_SideRoot_ping_results(&pout, pop);
+  EXPECT_EQ(9, pout.n);
+  capn_free(&msg);
+
+  Wire wire;
+  struct capn_rpc_conn client, vat;
+  struct BareRoot_label_params lin;
+  struct BareRoot_label_results lout;
+  g_wire = &wire;
+  capn_rpc_init(&client, to_vat, NULL);
+  capn_rpc_init(&vat, to_client, NULL);
+  capn_rpc_set_bootstrap(&vat, &mid, BareMid_dispatch);
+  capn_rpc_set_result_size(&vat, BareMid_RESULT_DATASZ, BareMid_RESULT_PTRS);
+  capn_rpc_send_bootstrap(&client);
+  pump(&vat, wire.to_vat);
+  pump(&client, wire.to_client);
+  memset(&lin, 0, sizeof lin);
+  lin.t.str = "mid";
+  lin.t.len = 3;
+  uint32_t q = BareRoot_call_label(&client, 0, &lin);
+  pump(&vat, wire.to_vat);
+  pump(&client, wire.to_client);
+  memset(&lout, 0, sizeof lout);
+  ASSERT_EQ(0, BareRoot_results_label(&client, q, &lout, &msg));
+  ASSERT_EQ(3, lout.t.len);
+  EXPECT_EQ(0, memcmp(lout.t.str, "mid", 3));
+  capn_free(&msg);
+  capn_rpc_free(&client);
+  capn_rpc_free(&vat);
+}

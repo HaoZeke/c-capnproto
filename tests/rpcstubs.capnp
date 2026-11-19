@@ -68,3 +68,24 @@ interface ChainMid extends(ChainRoot) {
 interface ChainLeaf extends(ChainMid) {
   dec @0 (n :Int32) -> (n :Int32);
 }
+
+# BareMid and SideMid declare no methods. They exist so a leaf can
+# forward a grandparent id, including through a second superclass.
+interface BareRoot {
+  inc @0 (n :Int32) -> (n :Int32);
+  label @1 (t :Text) -> (t :Text);
+}
+
+interface BareMid extends(BareRoot) {
+}
+
+interface SideRoot {
+  ping @0 (n :Int32) -> (n :Int32);
+}
+
+interface SideMid extends(SideRoot) {
+}
+
+interface BareLeaf extends(BareMid, SideMid) {
+  dec @0 (n :Int32) -> (n :Int32);
+}
