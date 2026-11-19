@@ -278,6 +278,8 @@ struct capn_rpc_held {
 	 * swaps hosted fields so param_cap reads them. */
 	int ncaps;
 	struct capn_rpc_pending_cap caps[CAPN_RPC_MAX_PENDING_CAPS];
+	/* Arrival order. A later call may reuse a lower slot. */
+	uint64_t seq;
 };
 
 /* A senderLoopback Disembargo that arrived while its target was still
@@ -287,6 +289,8 @@ struct capn_rpc_echo {
 	uint32_t export_id;
 	uint8_t *frame;
 	size_t len;
+	/* Arrival order. A later disembargo may reuse a lower slot. */
+	uint64_t seq;
 };
 
 /* A call forwarded to a resolved import, so its Return can be rewritten
