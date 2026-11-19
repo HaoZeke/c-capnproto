@@ -308,7 +308,7 @@ static void gen_call_list_encoder(capnp_ctx_t *ctx, struct str *func,
     struct node *n = find_node(type->_struct.typeId);
 
     if (n != NULL) {
-      char *dtypename = n->name.str;
+      const char *dtypename = node_brand_name(n, type->_struct.brand);
 
       str_addf(func, "encode_%s_list(cs, &(d->%s), s->%s, s->%s);\n",
                dtypename, var, countvar, var2);
@@ -334,7 +334,7 @@ static void gen_call_list_decoder(capnp_ctx_t *ctx, struct str *func,
   } else if (type->which == Type__struct) {
     struct node *n = find_node(type->_struct.typeId);
     if (n != NULL) {
-      char *dtypename = n->name.str;
+      const char *dtypename = node_brand_name(n, type->_struct.brand);
 
       /* decode_X_list(&(d->count), &(d->dest), s->src). decode_member
        * calls this as (dest_mapname, count, schema_field). A var/var2
@@ -359,7 +359,7 @@ static void gen_call_list_free(capnp_ctx_t *ctx, struct str *func,
   } else if (type->which == Type__struct) {
     struct node *n = find_node(type->_struct.typeId);
     if (n != NULL) {
-      char *dtypename = n->name.str;
+      const char *dtypename = node_brand_name(n, type->_struct.brand);
 
       str_addf(func, "free_%s_list(d->%s, d->%s);\n", dtypename, countvar,
                var);
@@ -451,8 +451,8 @@ void encode_member(capnp_ctx_t *ctx, struct str *func, struct field *f,
 
     if (n != NULL) {
       str_add(func, tab, -1);
-      str_addf(func, "encode_%s_ptr(cs, &(d->%s), s->%s);\n", n->name.str, var,
-               var2);
+      str_addf(func, "encode_%s_ptr(cs, &(d->%s), s->%s);\n",
+               node_brand_name(n, f->v.t._struct.brand), var, var2);
     }
     break;
   case Type__list:
@@ -560,8 +560,8 @@ void decode_member(capnp_ctx_t *ctx, struct str *func, struct field *f,
     n = find_node(f->v.t._struct.typeId);
     if (n != NULL) {
       str_add(func, tab, -1);
-      str_addf(func, "decode_%s_ptr(&(d->%s), s->%s);\n", n->name.str, var2,
-               var);
+      str_addf(func, "decode_%s_ptr(&(d->%s), s->%s);\n",
+               node_brand_name(n, f->v.t._struct.brand), var2, var);
     }
     break;
   case Type__list:
@@ -657,7 +657,8 @@ void free_member(capnp_ctx_t *ctx, struct str *func, struct field *f,
     n = find_node(f->v.t._struct.typeId);
     if (n != NULL) {
       str_add(func, tab, -1);
-      str_addf(func, "free_%s_ptr(&(d->%s));\n", n->name.str, var2);
+      str_addf(func, "free_%s_ptr(&(d->%s));\n",
+               node_brand_name(n, f->v.t._struct.brand), var2);
     }
     break;
   case Type__list:
