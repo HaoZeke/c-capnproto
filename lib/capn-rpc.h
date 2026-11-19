@@ -38,6 +38,15 @@ extern "C" {
 /* Capabilities one params or results payload can carry. */
 #define CAPN_RPC_MAX_PENDING_CAPS 16
 #define CAPN_RPC_MAX_PENDING_CALLS 64
+#define CAPN_RPC_MAX_QUEUED 32
+#define CAPN_RPC_MAX_HELD 16
+#define CAPN_RPC_MAX_RELAYS 32
+#define CAPN_RPC_MAX_IMPORTS 4096
+#define CAPN_RPC_PATH_MAX 8
+/* What a pending capability becomes in the cap table. */
+#define CAPN_RPC_CAP_HOSTED 0
+#define CAPN_RPC_CAP_PROMISE 1
+#define CAPN_RPC_CAP_ANSWER 2
 /* Return this from dispatch to answer later with capn_rpc_return. */
 #define CAPN_RPC_PENDING 1
 
@@ -61,6 +70,14 @@ struct capn_rpc_export {
 	int refcount;
 	void *server;
 	capn_rpc_dispatch_fn dispatch;
+	/* Calls stay queued until Resolve. A settled promise keeps the id
+	 * and forwards, because the peer may still address the old id. */
+	int promise;
+	int broken;
+	int has_forward;
+	int forward_export;
+	int has_forward_import;
+	uint32_t forward_import;
 };
 
 /* A Return already sent, kept until the peer sends `Finish`.
@@ -179,7 +196,63 @@ struct capn_rpc_vat {
  * payload's capTable is written. */
 struct capn_rpc_pending_cap {
 	int is_import;
+	int kind;
 	uint32_t id;
+	uint32_t question_id;
+	uint16_t path[CAPN_RPC_PATH_MAX];
+	int npath;
+};
+
+/* An import id the peer handed us, including a promise not yet resolved. */
+struct capn_rpc_import {
+	int used;
+	int resolved;
+	int broken;
+	int calls;
+	int embargoed;
+	uint32_t embargo_id;
+	int has_import;
+	uint32_t to_import;
+	int has_export;
+	uint32_t to_export;
+	int has_question;
+	uint32_t to_question;
+	uint16_t to_path[CAPN_RPC_PATH_MAX];
+	int to_npath;
+};
+
+/* A call that arrived for a promise (or an embargoed export) and cannot
+ * be answered until the resolution is on the wire. */
+struct capn_rpc_queued {
+	int used;
+	int export_id;
+	uint8_t *frame;
+	size_t len;
+};
+
+/* A call this vat made after Resolve but before the embargo echo. */
+struct capn_rpc_held {
+	int used;
+	int mode;
+	uint32_t import_id;
+	uint32_t target;
+	uint32_t question_id;
+	uint64_t interface_id;
+	uint16_t method_id;
+	int datasz;
+	int ptrs;
+	uint16_t path[CAPN_RPC_PATH_MAX];
+	int npath;
+	struct capn *msg;
+	capn_ptr params;
+};
+
+/* A call forwarded to a resolved import, so its Return can be rewritten
+ * onto the question the original caller is waiting on. */
+struct capn_rpc_relay {
+	int used;
+	uint32_t local_qid;
+	uint32_t remote_qid;
 };
 
 /* A call dispatch has not answered yet, with the message its results are
@@ -236,6 +309,12 @@ struct capn_rpc_conn {
 	/* Generation of the call being dispatched. 0 outside dispatch. */
 	uint32_t current_generation;
 	uint32_t answer_clock;
+	struct capn_rpc_import *imports;
+	int imports_cap;
+	struct capn_rpc_queued queued[CAPN_RPC_MAX_QUEUED];
+	struct capn_rpc_held held[CAPN_RPC_MAX_HELD];
+	struct capn_rpc_relay relays[CAPN_RPC_MAX_RELAYS];
+	uint32_t next_embargo;
 };
 
 /* Zero the tables and install the transmit callback. */
@@ -306,6 +385,33 @@ CAPN_EXPORT void capn_rpc_set_bootstrap(struct capn_rpc_conn *c, void *server,
 CAPN_EXPORT int capn_rpc_export(struct capn_rpc_conn *c, void *server,
                     capn_rpc_dispatch_fn dispatch);
 
+/* Export a promise. Calls are held until capn_rpc_resolve,
+ * capn_rpc_resolve_import, or capn_rpc_resolve_exception. The id is what
+ * a senderPromise descriptor names. -1 when the table cannot grow. */
+int capn_rpc_export_promise(struct capn_rpc_conn *c, void *server,
+                            capn_rpc_dispatch_fn dispatch);
+
+/* Resolve `promise_id` to a capability this vat hosts. Queued calls are
+ * delivered before the Resolve message, so their Returns precede it. */
+int capn_rpc_resolve(struct capn_rpc_conn *c, int promise_id, void *server,
+                     capn_rpc_dispatch_fn dispatch);
+
+/* Resolve `promise_id` to a capability the peer hosts. Queued calls are
+ * forwarded to `import_id` before Resolve, which carries receiverHosted. */
+int capn_rpc_resolve_import(struct capn_rpc_conn *c, int promise_id,
+                            uint32_t import_id);
+
+/* Reject `promise_id`. Queued calls are answered with `reason`, then a
+ * Resolve carrying that exception is sent. */
+int capn_rpc_resolve_exception(struct capn_rpc_conn *c, int promise_id,
+                               const char *reason);
+
+/* 1 when a Resolve has been applied to `import_id`. `*broken` is set when
+ * the promise rejected. `*to_export` is 1 when `*target` is a local export,
+ * 0 when it is an import id, and -1 when the target is a pipeline or absent. */
+int capn_rpc_promise_state(const struct capn_rpc_conn *c, uint32_t import_id,
+                           int *broken, int *to_export, uint32_t *target);
+
 /* Handle one framed message. Returns 0 when handled, non-zero on a
  * malformed frame. Replies go out through the send callback. */
 CAPN_EXPORT int capn_rpc_handle(struct capn_rpc_conn *c, const uint8_t *data, size_t len);
@@ -349,6 +455,14 @@ CAPN_EXPORT capn_ptr capn_rpc_new_export_cap(struct capn_rpc_conn *c, struct cap
                                  void *server, capn_rpc_dispatch_fn dispatch);
 CAPN_EXPORT capn_ptr capn_rpc_new_import_cap(struct capn_rpc_conn *c, struct capn_segment *seg,
                                  uint32_t import_id);
+/* senderPromise: the peer must call this id before it resolves. */
+CAPN_EXPORT capn_ptr capn_rpc_new_promise_cap(struct capn_rpc_conn *c, struct capn_segment *seg,
+                                  void *server, capn_rpc_dispatch_fn dispatch);
+/* receiverAnswer: the capability is the result of a question this vat
+ * asked the peer. `path` is the PromisedAnswer transform. */
+CAPN_EXPORT capn_ptr capn_rpc_new_answer_cap(struct capn_rpc_conn *c, struct capn_segment *seg,
+                                 uint32_t question_id, const uint16_t *path,
+                                 int npath);
 
 /* What a capability pointer received in params (during dispatch) or in an
  * answer names. Returns the wire id, which is a uint32, or -1. A value
