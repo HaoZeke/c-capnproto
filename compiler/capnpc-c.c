@@ -1434,7 +1434,7 @@ static void define_struct(struct node *n, const char *extattr, const char *extat
 		else
 			str_add(&buf, mapname, -1);
 
-		str_addf(&SRC, "\nvoid encode_%s(struct capn_segment *cs,struct %s *d, %s *s) {\n",
+		str_addf(&SRC, "\nvoid encode_%s(struct capn_segment *cs capnp_unused,struct %s *d, %s *s) {\n",
 			 n->name.str, n->name.str, buf.str);
 		str_addf(&SRC, "%s\n", s.encoder.str ? s.encoder.str : "");
 		str_addf(&SRC, "}\n");

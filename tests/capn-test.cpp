@@ -595,7 +595,7 @@ TEST(WireFormat, WritePtrTagNegativeOffsetRoundTrip) {
 }
 
 TEST(WireFormat, BoundsOkRange) {
-  char pad[18];
+  char pad[18] = {0};
   char *buf = pad + 1;
   struct capn_segment s;
   memset(&s, 0, sizeof(s));
