@@ -69,11 +69,17 @@ noinst_HEADERS += \
 # from *.capnp.c and fails.
 %.capnp: ;
 
-# googletest
+# googletest. A release tarball has no submodule, so use the system
+# library there. An in-tree checkout keeps building the bundled copy.
+if BUNDLED_GTEST
 GTEST_LDADD = gtest/googletest/lib/libgtest.la
 gtest/googletest/lib/libgtest.la:
 	make -C gtest/googletest lib/libgtest.la
 GTEST_CPPFLAGS = -I${srcdir}/gtest/googletest/include
+else
+GTEST_LDADD = -lgtest
+GTEST_CPPFLAGS =
+endif
 
 # Tests
 check_PROGRAMS += \
@@ -186,8 +192,9 @@ capn_test_CPPFLAGS = $(AM_CPPFLAGS) $(GTEST_CPPFLAGS) \
 	-DEXTRAHEADER_GENERATED_H=\"$(abs_srcdir)/tests/extraheader.capnp.h\" \
 	-DCODEGEN_DEFAULTS_GENERATED_C=\"$(abs_srcdir)/tests/codegen-defaults.capnp.c\" \
 	-DCODEGEN_DEFAULTS_GENERATED_H=\"$(abs_srcdir)/tests/codegen-defaults.capnp.h\" \
+	-DTEST_CAPNP_GENERATED_C=\"$(abs_srcdir)/compiler/test.capnp.c\" \
 	-DFORTRAN_GOLDEN_DIR=\"$(abs_srcdir)/tests/fixtures\"
-capn_test_CXXFLAGS = -std=gnu++11 -pthread
+capn_test_CXXFLAGS = -std=gnu++14 -pthread
 capn_test_LDADD = libcapnp_c.la $(GTEST_LDADD)
 capn_test_LDFLAGS = -pthread
 TESTS = capn-test
