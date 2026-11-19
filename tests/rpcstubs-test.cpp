@@ -455,3 +455,88 @@ TEST(RpcStubShapes, GrandchildResultFitsAncestorMethods) {
   capn_rpc_free(&client);
   capn_rpc_free(&vat);
 }
+
+static int on_chain_inc(void *, const struct ChainRoot_inc_params *in,
+                        struct ChainRoot_inc_results *out, struct capn_segment *) {
+  out->n = in->n + 1;
+  return 0;
+}
+
+static int on_chain_twice(void *, const struct ChainMid_twice_params *in,
+                          struct ChainMid_twice_results *out, struct capn_segment *) {
+  out->n = in->n * 2;
+  return 0;
+}
+
+static int on_chain_dec(void *, const struct ChainLeaf_dec_params *in,
+                        struct ChainLeaf_dec_results *out, struct capn_segment *) {
+  out->n = in->n - 1;
+  return 0;
+}
+
+TEST(RpcStubShapes, GrandchildDispatchesAncestorInterface) {
+  Wire wire;
+  struct capn_rpc_conn client, vat;
+  struct ChainRoot_server root;
+  struct ChainMid_server mid;
+  struct ChainLeaf_server leaf;
+  struct ChainRoot_inc_params in;
+  struct ChainRoot_inc_results out;
+  ChainRoot_inc_params_ptr ip;
+  ChainRoot_inc_results_ptr op;
+  struct capn msg;
+
+  memset(&root, 0, sizeof root);
+  memset(&mid, 0, sizeof mid);
+  memset(&leaf, 0, sizeof leaf);
+  root.on_inc = on_chain_inc;
+  mid.on_twice = on_chain_twice;
+  mid.super_ChainRoot = &root;
+  leaf.on_dec = on_chain_dec;
+  leaf.super_ChainMid = &mid;
+
+  capn_init_malloc(&msg);
+  memset(&in, 0, sizeof in);
+  in.n = 7;
+  ip = new_ChainRoot_inc_params(capn_root(&msg).seg);
+  write_ChainRoot_inc_params(&in, ip);
+  op = new_ChainRoot_inc_results(capn_root(&msg).seg);
+  ASSERT_EQ(0, ChainLeaf_dispatch(&leaf, ChainRoot_INTERFACE_ID, 0, ip.p, op.p));
+  memset(&out, 0, sizeof out);
+  read_ChainRoot_inc_results(&out, op);
+  EXPECT_EQ(8, out.n);
+  EXPECT_EQ(-1, ChainLeaf_dispatch(&leaf, 0x1111, 0, ip.p, op.p));
+  capn_free(&msg);
+
+  g_wire = &wire;
+  capn_rpc_init(&client, to_vat, NULL);
+  capn_rpc_init(&vat, to_client, NULL);
+  capn_rpc_set_bootstrap(&vat, &leaf, ChainLeaf_dispatch);
+  capn_rpc_set_result_size(&vat, ChainLeaf_RESULT_DATASZ, ChainLeaf_RESULT_PTRS);
+  capn_rpc_send_bootstrap(&client);
+  pump(&vat, wire.to_vat);
+  pump(&client, wire.to_client);
+  memset(&in, 0, sizeof in);
+  in.n = 7;
+  uint32_t q = ChainRoot_call_inc(&client, 0, &in);
+  pump(&vat, wire.to_vat);
+  pump(&client, wire.to_client);
+  memset(&out, 0, sizeof out);
+  ASSERT_EQ(0, ChainRoot_results_inc(&client, q, &out, &msg));
+  EXPECT_EQ(8, out.n);
+  capn_free(&msg);
+
+  struct ChainMid_twice_params tin;
+  struct ChainMid_twice_results tout;
+  memset(&tin, 0, sizeof tin);
+  tin.n = 3;
+  q = ChainMid_call_twice(&client, 0, &tin);
+  pump(&vat, wire.to_vat);
+  pump(&client, wire.to_client);
+  memset(&tout, 0, sizeof tout);
+  ASSERT_EQ(0, ChainMid_results_twice(&client, q, &tout, &msg));
+  EXPECT_EQ(6, tout.n);
+  capn_free(&msg);
+  capn_rpc_free(&client);
+  capn_rpc_free(&vat);
+}

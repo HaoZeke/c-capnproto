@@ -385,8 +385,9 @@ helper `<Interface>_call_<method>` and result reader
 `on_<method>` handlers that `<Interface>_dispatch` routes to (set the
 connection's result size from `<Interface>_RESULT_DATASZ` and
 `_RESULT_PTRS`). `-> stream` methods get a call helper and a handler
-without results. Methods of superclasses are not routed by a subclass's
-dispatch.
+without results. A subclass dispatch forwards a call whose interface
+id is a superclass, including a grandparent, to the server stored in
+`super_<Superclass>`.
 
 A handoff is arranged on one connection and claimed on another, so the
 arrangement belongs to the vat rather than the connection:
