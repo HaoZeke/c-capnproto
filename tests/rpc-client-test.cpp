@@ -1989,6 +1989,48 @@ TEST_F(RpcClient, QueuedCallsReplayInArrivalOrder)
 	EXPECT_EQ(3u, g_arrival[3]);
 }
 
+/* rpc.c++ handleDisembargo, the getBrand requirement. The bracketed
+ * pointer comparison is omitted: those addresses are not this vat's. */
+const char kDisembargoForeign[] =
+	"expected target->getBrand() == this; "
+	"'Disembargo' of type 'senderLoopback' sent to an object that does not point "
+	"back to the sender.";
+
+bool no_disembargo(const std::deque<std::vector<uint8_t> > &q)
+{
+	for (size_t i = 0; i < q.size(); i++) {
+		if (frame_which(q[i]) == Message_disembargo)
+			return false;
+	}
+	return true;
+}
+
+TEST_F(RpcClient, SenderLoopbackOnLocalExportAborts)
+{
+	int obj = 0;
+	ASSERT_EQ(0, capn_rpc_export(&vat, &obj, doubler_dispatch));
+	std::vector<uint8_t> frame = disembargo_frame(0, 9);
+	EXPECT_EQ(-1, capn_rpc_handle(&vat, frame.data(), frame.size()));
+	EXPECT_NE(0, vat.aborted);
+	EXPECT_TRUE(wire_has_abort_reason(wire.to_client, kDisembargoForeign));
+	EXPECT_TRUE(no_disembargo(wire.to_client));
+}
+
+TEST_F(RpcClient, SenderLoopbackFollowsALocalResolution)
+{
+	int promise_obj = 1;
+	int local = 2;
+	ASSERT_EQ(0, capn_rpc_export_promise(&vat, &promise_obj, doubler_dispatch));
+	std::vector<uint8_t> frame = disembargo_frame(0, 9);
+	ASSERT_EQ(0, capn_rpc_handle(&vat, frame.data(), frame.size()));
+	EXPECT_TRUE(wire.to_client.empty());
+
+	ASSERT_EQ(0, capn_rpc_resolve(&vat, 0, &local, doubler_dispatch));
+	EXPECT_NE(0, vat.aborted);
+	EXPECT_TRUE(wire_has_abort_reason(wire.to_client, kDisembargoForeign));
+	EXPECT_TRUE(no_disembargo(wire.to_client));
+}
+
 /* Once a promise is resolved to import R, a call that was waiting on it
  * is forwarded to R even when R has already resolved to something else.
  * rpc.capnp Disembargo, "The Tribble 4-way Race Condition". */
