@@ -1892,3 +1892,112 @@ int capn_rpc_handle(struct capn_rpc_conn *c, const uint8_t *data, size_t len)
 	capn_free(&msg);
 	return rc;
 }
+
+/* --- blocking file descriptor transport ------------------------------------ */
+
+#if defined(__unix__) || defined(__unix) || defined(__APPLE__)
+#include <errno.h>
+#include <unistd.h>
+
+static int fd_write_all(int fd, const uint8_t *p, size_t n)
+{
+	while (n > 0) {
+		ssize_t w = write(fd, p, n);
+		if (w < 0) {
+			if (errno == EINTR)
+				continue;
+			return -1;
+		}
+		p += w;
+		n -= (size_t) w;
+	}
+	return 0;
+}
+
+/* Read exactly n bytes; 1 on end of stream before the first byte. */
+static int fd_read_all(int fd, uint8_t *p, size_t n, int allow_eof)
+{
+	size_t got = 0;
+	while (got < n) {
+		ssize_t r = read(fd, p + got, n - got);
+		if (r < 0) {
+			if (errno == EINTR)
+				continue;
+			return -1;
+		}
+		if (r == 0)
+			return (got == 0 && allow_eof) ? 1 : -1;
+		got += (size_t) r;
+	}
+	return 0;
+}
+
+int capn_rpc_fd_send(void *ctx, const uint8_t *data, size_t len)
+{
+	return fd_write_all(*(const int *) ctx, data, len);
+}
+
+int capn_rpc_fd_read_frame(int fd, uint8_t **frame, size_t *len)
+{
+	uint8_t head[4];
+	uint8_t *buf;
+	uint32_t nsegs, i;
+	size_t table, total = 0, off;
+	int rc;
+
+	*frame = NULL;
+	*len = 0;
+	rc = fd_read_all(fd, head, 4, 1);
+	if (rc != 0)
+		return rc;
+	nsegs = ((uint32_t) head[0] | (uint32_t) head[1] << 8 | (uint32_t) head[2] << 16 |
+	         (uint32_t) head[3] << 24) + 1u;
+	if (nsegs > 1024u)
+		return -1;
+	/* [count-1][size x count][padding to a word] */
+	table = 4 + 4 * (size_t) nsegs;
+	table = (table + 7) & ~(size_t) 7;
+	buf = (uint8_t *) malloc(table);
+	if (buf == NULL)
+		return -1;
+	memcpy(buf, head, 4);
+	if (fd_read_all(fd, buf + 4, table - 4, 0) != 0)
+		goto fail;
+	for (i = 0; i < nsegs; i++) {
+		const uint8_t *e = buf + 4 + 4 * (size_t) i;
+		uint32_t words = (uint32_t) e[0] | (uint32_t) e[1] << 8 | (uint32_t) e[2] << 16 |
+		                 (uint32_t) e[3] << 24;
+		total += (size_t) words * 8;
+		if (total > 64u * 1024u * 1024u)
+			goto fail;
+	}
+	{
+		uint8_t *grown = (uint8_t *) realloc(buf, table + total);
+		if (grown == NULL)
+			goto fail;
+		buf = grown;
+	}
+	off = table;
+	if (fd_read_all(fd, buf + off, total, 0) != 0)
+		goto fail;
+	*frame = buf;
+	*len = table + total;
+	return 0;
+fail:
+	free(buf);
+	return -1;
+}
+
+int capn_rpc_fd_pump(struct capn_rpc_conn *c, int fd)
+{
+	uint8_t *frame;
+	size_t len;
+	int rc = capn_rpc_fd_read_frame(fd, &frame, &len);
+
+	if (rc != 0)
+		return rc;
+	rc = capn_rpc_handle(c, frame, len);
+	free(frame);
+	return rc == 0 ? 0 : -1;
+}
+#endif /* unix */
