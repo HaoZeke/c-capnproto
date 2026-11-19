@@ -65,7 +65,8 @@ int capn_rpc_export(struct capn_rpc_conn *c, void *server,
 	/* Reuse the export already naming this server: the peer must see one
 	 * id per object, or reference equality could not be answered. */
 	for (i = 0; i < CAPN_RPC_MAX_EXPORTS; i++) {
-		if (c->exports[i].used && c->exports[i].server == server) {
+		if (c->exports[i].used && c->exports[i].server == server &&
+		    c->exports[i].dispatch == dispatch) {
 			c->exports[i].refcount++;
 			return i;
 		}
