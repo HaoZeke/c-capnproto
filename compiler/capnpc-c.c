@@ -296,10 +296,241 @@ static void define_enum(struct node *n) {
 	}
 }
 
+/* Bindings in scope while a branded struct is being emitted. */
+struct brand_subst {
+	uint64_t scope;
+	uint16_t index;
+	Type_ptr type;
+};
+
+#define BRAND_SUBST_MAX 32
+static struct brand_subst g_subst[BRAND_SUBST_MAX];
+static int g_nsubst;
+
+struct brand_done {
+	char *name;
+	struct brand_done *next;
+};
+static struct brand_done *g_brand_done;
+
+static void brand_done_clear(void) {
+	while (g_brand_done) {
+		struct brand_done *n = g_brand_done->next;
+		free(g_brand_done->name);
+		free(g_brand_done);
+		g_brand_done = n;
+	}
+	g_nsubst = 0;
+}
+
+static int brand_emitted(const char *name) {
+	struct brand_done *d;
+	for (d = g_brand_done; d != NULL; d = d->next) {
+		if (!strcmp(d->name, name))
+			return 1;
+	}
+	return 0;
+}
+
+static void brand_mark(const char *name) {
+	struct brand_done *d = calloc(1, sizeof *d);
+	d->name = strdup(name);
+	d->next = g_brand_done;
+	g_brand_done = d;
+}
+
+static int push_brand(Brand_ptr brand) {
+	struct Brand b;
+	int i, j, saved = g_nsubst;
+	memset(&b, 0, sizeof b);
+	read_Brand(&b, brand);
+	for (i = 0; i < capn_len(b.scopes); i++) {
+		struct Brand_Scope sc;
+		memset(&sc, 0, sizeof sc);
+		get_Brand_Scope(&sc, b.scopes, i);
+		if (sc.which != Brand_Scope_bind)
+			continue;
+		for (j = 0; j < capn_len(sc.bind); j++) {
+			struct Brand_Binding bd;
+			memset(&bd, 0, sizeof bd);
+			get_Brand_Binding(&bd, sc.bind, j);
+			if (bd.which != Brand_Binding_type)
+				continue;
+			if (g_nsubst >= BRAND_SUBST_MAX) {
+				fprintf(stderr, "too many brand bindings\n");
+				exit(2);
+			}
+			g_subst[g_nsubst].scope = sc.scopeId;
+			g_subst[g_nsubst].index = (uint16_t) j;
+			g_subst[g_nsubst].type = bd.type;
+			g_nsubst++;
+		}
+	}
+	return saved;
+}
+
+static void append_type_token(struct str *o, Type_ptr tp, int depth);
+
+/* Append _Binding tokens. Returns 1 when at least one binding is a type. */
+static int append_brand_binds(struct str *o, Brand_ptr brand) {
+	struct Brand b;
+	int i, j, any = 0;
+	if (brand.p.type == CAPN_NULL)
+		return 0;
+	memset(&b, 0, sizeof b);
+	read_Brand(&b, brand);
+	for (i = 0; i < capn_len(b.scopes); i++) {
+		struct Brand_Scope sc;
+		memset(&sc, 0, sizeof sc);
+		get_Brand_Scope(&sc, b.scopes, i);
+		if (sc.which != Brand_Scope_bind)
+			continue;
+		for (j = 0; j < capn_len(sc.bind); j++) {
+			struct Brand_Binding bd;
+			memset(&bd, 0, sizeof bd);
+			get_Brand_Binding(&bd, sc.bind, j);
+			str_add(o, "_", 1);
+			if (bd.which == Brand_Binding_type) {
+				append_type_token(o, bd.type, 0);
+				any = 1;
+			} else {
+				str_add(o, "AnyPointer", -1);
+			}
+		}
+	}
+	return any;
+}
+
+static void append_type_token(struct str *o, Type_ptr tp, int depth) {
+	struct Type t;
+	static const char *prim[] = {
+		"Void", "Bool", "Int8", "Int16", "Int32", "Int64",
+		"UInt8", "UInt16", "UInt32", "UInt64", "Float32", "Float64",
+		"Text", "Data"
+	};
+	int i;
+	if (depth > 8) {
+		str_add(o, "Type", -1);
+		return;
+	}
+	memset(&t, 0, sizeof t);
+	read_Type(&t, tp);
+	if (t.which == Type_anyPointer &&
+	    t.anyPointer.which == Type_anyPointer_parameter) {
+		for (i = g_nsubst - 1; i >= 0; i--) {
+			if (g_subst[i].scope == t.anyPointer.parameter.scopeId &&
+			    g_subst[i].index == t.anyPointer.parameter.parameterIndex) {
+				append_type_token(o, g_subst[i].type, depth + 1);
+				return;
+			}
+		}
+		str_add(o, "Param", -1);
+		return;
+	}
+	if (t.which >= Type__void && t.which <= Type_data) {
+		str_add(o, prim[t.which], -1);
+		return;
+	}
+	switch (t.which) {
+	case Type__list:
+		str_add(o, "List_", -1);
+		append_type_token(o, t._list.elementType, depth + 1);
+		break;
+	case Type__enum:
+		str_add(o, find_node(t._enum.typeId)->name.str, -1);
+		break;
+	case Type__struct:
+	case Type__interface: {
+		struct node *sn = find_node(t.which == Type__struct ? t._struct.typeId : t._interface.typeId);
+		Brand_ptr br = t.which == Type__struct ? t._struct.brand : t._interface.brand;
+		str_add(o, (sn->name.str && sn->name.len) ? sn->name.str : "Anon", -1);
+		append_brand_binds(o, br);
+		break;
+	}
+	case Type_anyPointer:
+		if (t.anyPointer.which == Type_anyPointer_unconstrained &&
+		    t.anyPointer.unconstrained.which == Type_anyPointer_unconstrained__struct)
+			str_add(o, "AnyStruct", -1);
+		else if (t.anyPointer.which == Type_anyPointer_unconstrained &&
+		         t.anyPointer.unconstrained.which == Type_anyPointer_unconstrained__list)
+			str_add(o, "AnyList", -1);
+		else if (t.anyPointer.which == Type_anyPointer_unconstrained &&
+		         t.anyPointer.unconstrained.which == Type_anyPointer_unconstrained_capability)
+			str_add(o, "Capability", -1);
+		else
+			str_add(o, "AnyPointer", -1);
+		break;
+	default:
+		str_add(o, "Type", -1);
+		break;
+	}
+}
+
+const char *node_brand_name(struct node *n, Brand_ptr brand) {
+	static struct str buf = STR_INIT;
+	int base;
+	if (n == NULL || n->name.str == NULL || n->name.len == 0)
+		return "";
+	str_reset(&buf);
+	str_add(&buf, n->name.str, -1);
+	base = buf.len;
+	if (!append_brand_binds(&buf, brand) || buf.len == base)
+		return n->name.str;
+	return buf.str;
+}
+
+static void emit_branded(struct node *n, Brand_ptr brand, const char *name);
+
+static void apply_subst(struct value *v) {
+	int depth;
+	for (depth = 0; depth < 8; depth++) {
+		Type_ptr repl;
+		int i, found = 0;
+		if (v->t.which != Type_anyPointer ||
+		    v->t.anyPointer.which != Type_anyPointer_parameter)
+			return;
+		for (i = g_nsubst - 1; i >= 0; i--) {
+			if (g_subst[i].scope == v->t.anyPointer.parameter.scopeId &&
+			    g_subst[i].index == v->t.anyPointer.parameter.parameterIndex) {
+				repl = g_subst[i].type;
+				found = 1;
+				break;
+			}
+		}
+		if (!found)
+			return;
+		read_Type(&v->t, repl);
+	}
+}
+
+/* Use a branded name when the type carries bindings, and emit that
+ * instantiation before the field that names it. The returned pointer
+ * is sn->name.str or v->tname_buf. */
+static const char *branded_struct_name(struct value *v, struct node *sn, Brand_ptr brand) {
+	const char *nm = node_brand_name(sn, brand);
+	struct str owned = STR_INIT;
+	if (sn->name.str == NULL || nm == sn->name.str)
+		return sn->name.str ? sn->name.str : "";
+	str_add(&owned, nm, -1);
+	emit_branded(sn, brand, owned.str);
+	strf(&v->tname_buf, "%s", owned.str);
+	str_release(&owned);
+	return v->tname_buf.str;
+}
+
+static const char *with_suffix(struct value *v, const char *base, const char *suffix) {
+	struct str tmp = STR_INIT;
+	str_add(&tmp, base, -1);
+	v->tname = strf(&v->tname_buf, "%s%s", tmp.str, suffix);
+	str_release(&tmp);
+	return v->tname;
+}
+
 static void decode_value(struct value* v, Type_ptr type, Value_ptr value, const char *symbol) {
 	struct Type list_type;
 	memset(v, 0, sizeof(*v));
 	read_Type(&v->t, type);
+	apply_subst(v);
 	read_Value(&v->v, value);
 
 	switch (v->t.which) {
@@ -348,12 +579,16 @@ static void decode_value(struct value* v, Type_ptr type, Value_ptr value, const 
 	case Type__enum:
 		v->tname = strf(&v->tname_buf, "enum %s", find_node(v->t._enum.typeId)->name.str);
 		break;
-	case Type__struct:
-		v->tname = strf(&v->tname_buf, "%s_ptr", find_node(v->t._struct.typeId)->name.str);
+	case Type__struct: {
+		struct node *sn = find_node(v->t._struct.typeId);
+		with_suffix(v, branded_struct_name(v, sn, v->t._struct.brand), "_ptr");
 		break;
-	case Type__interface:
-		v->tname = strf(&v->tname_buf, "%s_ptr", find_node(v->t._interface.typeId)->name.str);
+	}
+	case Type__interface: {
+		struct node *sn = find_node(v->t._interface.typeId);
+		with_suffix(v, branded_struct_name(v, sn, v->t._interface.brand), "_ptr");
 		break;
+	}
 	case Type_anyPointer:
 		v->tname = "capn_ptr";
 		break;
@@ -392,12 +627,16 @@ static void decode_value(struct value* v, Type_ptr type, Value_ptr value, const 
 		case Type__list:
 			v->tname = "capn_ptr_list";
 			break;
-		case Type__struct:
-			v->tname = strf(&v->tname_buf, "%s_list", find_node(list_type._struct.typeId)->name.str);
+		case Type__struct: {
+			struct node *sn = find_node(list_type._struct.typeId);
+			with_suffix(v, branded_struct_name(v, sn, list_type._struct.brand), "_list");
 			break;
-		case Type__interface:
-			v->tname = strf(&v->tname_buf, "%s_list", find_node(list_type._interface.typeId)->name.str);
+		}
+		case Type__interface: {
+			struct node *sn = find_node(list_type._interface.typeId);
+			with_suffix(v, branded_struct_name(v, sn, list_type._interface.brand), "_list");
 			break;
+		}
 		}
 	}
 
@@ -1364,24 +1603,46 @@ static void define_group(struct strings *s, struct node *n, const char *group_na
 	}
 }
 
+static void strings_init(struct strings *s) {
+	memset(s, 0, sizeof *s);
+	s->ftab = (struct str)STR_INIT;
+	s->dtab = (struct str)STR_INIT;
+	s->get = (struct str)STR_INIT;
+	s->set = (struct str)STR_INIT;
+	s->encoder = (struct str)STR_INIT;
+	s->decoder = (struct str)STR_INIT;
+	s->freeup = (struct str)STR_INIT;
+	s->enums = (struct str)STR_INIT;
+	s->decl = (struct str)STR_INIT;
+	s->var = (struct str)STR_INIT;
+	s->pub_get = (struct str)STR_INIT;
+	s->pub_get_header = (struct str)STR_INIT;
+	s->pub_set = (struct str)STR_INIT;
+	s->pub_set_header = (struct str)STR_INIT;
+}
+
+static void strings_release(struct strings *s) {
+	str_release(&s->ftab);
+	str_release(&s->dtab);
+	str_release(&s->get);
+	str_release(&s->set);
+	str_release(&s->encoder);
+	str_release(&s->decoder);
+	str_release(&s->freeup);
+	str_release(&s->enums);
+	str_release(&s->decl);
+	str_release(&s->var);
+	str_release(&s->pub_get);
+	str_release(&s->pub_get_header);
+	str_release(&s->pub_set);
+	str_release(&s->pub_set_header);
+}
+
 static void define_struct(struct node *n, const char *extattr, const char *extattr_space) {
-	static struct strings s;
+	struct strings s;
 	int i;
 
-	str_reset(&s.dtab);
-	str_reset(&s.ftab);
-	str_reset(&s.get);
-	str_reset(&s.set);
-	str_reset(&s.encoder);
-	str_reset(&s.decoder);
-	str_reset(&s.freeup);
-	str_reset(&s.enums);
-	str_reset(&s.decl);
-	str_reset(&s.var);
-	str_reset(&s.pub_get);
-	str_reset(&s.pub_set);
-	str_reset(&s.pub_get_header);
-	str_reset(&s.pub_set_header);
+	strings_init(&s);
 
 	str_add(&s.dtab, "\t", -1);
 	str_add(&s.ftab, "\t", -1);
@@ -1506,6 +1767,58 @@ static void define_struct(struct node *n, const char *extattr, const char *extat
 
 	str_add(&HDR, s.pub_get_header.str, s.pub_get_header.len);
 	str_add(&HDR, s.pub_set_header.str, s.pub_set_header.len);
+	strings_release(&s);
+}
+
+static void emit_branded(struct node *n, Brand_ptr brand, const char *name) {
+	int saved, flen, j;
+	struct node inst;
+	struct str nm = STR_INIT;
+
+	if (n == NULL || name == NULL || name[0] == 0)
+		return;
+	if (brand_emitted(name))
+		return;
+	brand_mark(name);
+
+	if (n->n.which == Node__interface) {
+		str_addf(&HDR, "\ntypedef struct {capn_ptr p;} %s_ptr;\n", name);
+		str_addf(&HDR, "typedef struct {capn_ptr p;} %s_list;\n", name);
+		return;
+	}
+	if (n->n.which != Node__struct || n->n._struct.isGroup)
+		return;
+
+	str_addf(&HDR, "\nstruct %s;\n", name);
+	str_addf(&HDR, "typedef struct {capn_ptr p;} %s_ptr;\n", name);
+	str_addf(&HDR, "typedef struct {capn_ptr p;} %s_list;\n", name);
+
+	saved = push_brand(brand);
+	inst = *n;
+	str_add(&nm, name, -1);
+	inst.name = nm;
+	flen = capn_len(n->n._struct.fields);
+	inst.fields = calloc(flen > 0 ? (size_t) flen : 1, sizeof(inst.fields[0]));
+	for (j = 0; j < flen; j++)
+		decode_field(inst.fields, n->n._struct.fields, j);
+	define_struct(&inst, "", "");
+	str_addf(&HDR, "%s_ptr new_%s(struct capn_segment*);\n", name, name);
+	str_addf(&HDR, "%s_list new_%s_list(struct capn_segment*, int len);\n", name, name);
+	str_addf(&HDR, "void read_%s(struct %s*, %s_ptr);\n", name, name, name);
+	str_addf(&HDR, "void write_%s(const struct %s*, %s_ptr);\n", name, name, name);
+	str_addf(&HDR, "void get_%s(struct %s*, %s_list, int i);\n", name, name, name);
+	str_addf(&HDR, "void set_%s(const struct %s*, %s_list, int i);\n", name, name, name);
+	if (g_codecgen) {
+		mk_struct_list_encoder(&g_ctx, &inst);
+		mk_struct_ptr_encoder(&g_ctx, &inst);
+		mk_struct_list_decoder(&g_ctx, &inst);
+		mk_struct_ptr_decoder(&g_ctx, &inst);
+		mk_struct_list_free(&g_ctx, &inst);
+		mk_struct_ptr_free(&g_ctx, &inst);
+	}
+	free(inst.fields);
+	str_release(&nm);
+	g_nsubst = saved;
 }
 
 #if 0
@@ -2246,6 +2559,7 @@ int main() {
 
 		str_reset(&HDR);
 		str_reset(&SRC);
+		brand_done_clear();
 
 		str_addf(&HDR, "#ifndef CAPN_%X%X\n", (uint32_t) (file_node->n.id >> 32), (uint32_t) file_node->n.id);
 		str_addf(&HDR, "#define CAPN_%X%X\n", (uint32_t) (file_node->n.id >> 32), (uint32_t) file_node->n.id);

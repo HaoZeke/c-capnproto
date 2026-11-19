@@ -220,6 +220,7 @@ EXTRA_DIST += \
 	tests/reflect.capnp \
 	tests/jsonann.capnp \
 	tests/json-ann-test.cpp \
+	tests/brand-test.cpp \
 	tests/rpcstubs.capnp \
 	tests/rpcstubs-test.cpp \
 	tests/reflect-other.capnp \

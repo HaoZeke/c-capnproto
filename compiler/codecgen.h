@@ -53,6 +53,9 @@ typedef struct {
 
 struct node *find_node(uint64_t id);
 
+/* Generic name, or Name_Arg when the brand binds a type parameter. */
+const char *node_brand_name(struct node *n, Brand_ptr brand);
+
 const char *get_mapname(Annotation_list l);
 const char *get_maplistcount(Annotation_list l);
 const char *get_mapuniontag(Annotation_list l);
