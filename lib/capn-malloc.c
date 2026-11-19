@@ -52,15 +52,35 @@ struct check_segment_alignment {
 
 static struct capn_segment *create(void *u, uint32_t id, int sz) {
 	struct capn_segment *s;
-	sz += sizeof(*s);
-	if (sz < CAPN_CREATE_MIN_SZ) {
-		sz = CAPN_CREATE_MIN_SZ;
+	size_t need, total, unit;
+
+	(void) u;
+	(void) id;
+	/* sz is the caller's int (the create callback). A request near
+	 * INT_MAX plus this header used to wrap the signed add and the
+	 * 4096-byte round-up, then calloc a 4096-byte segment for a
+	 * multi-gigabyte list. Count in size_t and refuse a wrap. */
+	if (sz < 0)
+		return NULL;
+	need = (size_t) sz;
+	if (need > (size_t) -1 - sizeof(*s))
+		return NULL;
+	total = need + sizeof(*s);
+	unit = (size_t) CAPN_CREATE_MIN_SZ;
+	if (total < unit) {
+		total = unit;
 	} else {
-		sz = (sz + CAPN_CREATE_MIN_SZ - 1) & ~(CAPN_CREATE_MIN_SZ - 1);
+		if (unit == 0 || (unit & (unit - 1)) != 0)
+			return NULL;
+		if (total > (size_t) -1 - (unit - 1))
+			return NULL;
+		total = (total + unit - 1) & ~(unit - 1);
 	}
-	s = (struct capn_segment*) calloc(1, sz);
+	s = (struct capn_segment*) calloc(1, total);
+	if (!s)
+		return NULL;
 	s->data = (char*) (s+1);
-	s->cap = sz - sizeof(*s);
+	s->cap = total - sizeof(*s);
 	s->user = s;
 	return s;
 }
