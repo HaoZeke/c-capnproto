@@ -636,6 +636,244 @@ char *capn_dyn_to_text(const struct capn_dyn_struct *s, capn_ptr st)
 	return b.buf ? b.buf : empty_string();
 }
 
+/* Multi-line text, as `capnp decode` prints it. Indent amount starts at
+ * 1. A list or struct stays on one line when every item is at most 24
+ * bytes, contains no newline, and a struct's items total at most 64. */
+
+enum { PRETTY_BARE = 0, PRETTY_PREFIXED = 1, PRETTY_LIST = 0, PRETTY_RECORD = 1 };
+
+struct piece {
+	char *s;
+	size_t n;
+};
+
+static struct piece piece_fail(void)
+{
+	struct piece p;
+	p.s = NULL;
+	p.n = 0;
+	return p;
+}
+
+static struct piece piece_from_sb(struct sb *b)
+{
+	struct piece p;
+	if (b->err) {
+		free(b->buf);
+		return piece_fail();
+	}
+	if (b->buf == NULL)
+		b->buf = empty_string();
+	if (b->buf == NULL)
+		return piece_fail();
+	p.s = b->buf;
+	p.n = b->len;
+	return p;
+}
+
+static int piece_inline(const struct piece *p)
+{
+	size_t i;
+	if (p->s == NULL || p->n > 24)
+		return 0;
+	for (i = 0; i < p->n; i++)
+		if (p->s[i] == '\n')
+			return 0;
+	return 1;
+}
+
+static struct piece pretty_value(const struct capn_dyn_type *t, const struct frame *fr,
+                                 struct dv *v, int amount, int mode);
+
+static struct piece pretty_delimit(struct piece *items, int n, int amount, int mode, int kind)
+{
+	struct sb b;
+	int i, all = 1;
+	size_t total = 0;
+	char pad[80];
+	int padn;
+
+	memset(&b, 0, sizeof b);
+	if (amount != 0) {
+		for (i = 0; i < n; i++) {
+			if (!piece_inline(&items[i])) {
+				all = 0;
+				break;
+			}
+			if (kind == PRETTY_RECORD) {
+				total += items[i].n;
+				if (total > 64) {
+					all = 0;
+					break;
+				}
+			}
+		}
+	}
+	if (amount == 0 || all) {
+		for (i = 0; i < n; i++) {
+			if (i)
+				sb_str(&b, ", ");
+			sb_add(&b, items[i].s, items[i].n);
+		}
+	} else {
+		padn = amount * 2;
+		if (padn > (int) sizeof pad - 1)
+			padn = (int) sizeof pad - 1;
+		memset(pad, ' ', (size_t) padn);
+		pad[padn] = '\0';
+		if (mode == PRETTY_BARE)
+			sb_str(&b, " ");
+		else {
+			sb_str(&b, "\n");
+			sb_str(&b, pad);
+		}
+		for (i = 0; i < n; i++) {
+			if (i) {
+				sb_str(&b, ",\n");
+				sb_str(&b, pad);
+			}
+			sb_add(&b, items[i].s, items[i].n);
+		}
+		sb_str(&b, " ");
+	}
+	return piece_from_sb(&b);
+}
+
+static struct piece pretty_list(const struct capn_dyn_type *t, const struct frame *fr,
+                                capn_ptr list, int amount, int mode)
+{
+	const struct frame *efr = fr;
+	const struct capn_dyn_type *et = resolve(t->elem, &efr);
+	struct piece *items = NULL;
+	struct piece body;
+	struct sb b;
+	int i, n;
+
+	capn_resolve(&list);
+	n = capn_ptr_len(list);
+	if (n < 0)
+		n = 0;
+	if (n > 0) {
+		items = (struct piece *) calloc((size_t) n, sizeof *items);
+		if (items == NULL)
+			return piece_fail();
+	}
+	for (i = 0; i < n; i++) {
+		struct dv ev;
+		get_elem_value(list, et, i, &ev);
+		items[i] = pretty_value(et, efr, &ev, amount + 1, PRETTY_BARE);
+		if (items[i].s == NULL)
+			goto fail;
+	}
+	body = pretty_delimit(items, n, amount, mode, PRETTY_LIST);
+	for (i = 0; i < n; i++)
+		free(items[i].s);
+	free(items);
+	if (body.s == NULL)
+		return piece_fail();
+	memset(&b, 0, sizeof b);
+	sb_str(&b, "[");
+	sb_add(&b, body.s, body.n);
+	sb_str(&b, "]");
+	free(body.s);
+	return piece_from_sb(&b);
+fail:
+	for (i = 0; i < n; i++)
+		free(items[i].s);
+	free(items);
+	return piece_fail();
+}
+
+static struct piece pretty_struct(const struct capn_dyn_struct *s, capn_ptr st,
+                                  const struct frame *fr, int amount, int mode)
+{
+	struct piece *items = NULL;
+	struct piece body;
+	struct sb b;
+	int i, n = 0, slot = 0;
+	capn_resolve(&st);
+	if (s->nfields > 0) {
+		items = (struct piece *) calloc((size_t) s->nfields, sizeof *items);
+		if (items == NULL)
+			return piece_fail();
+	}
+	for (i = 0; i < s->nfields; i++) {
+		const struct capn_dyn_field *f = &s->fields[i];
+		const struct frame *ffr = fr;
+		const struct capn_dyn_type *rt = resolve(&f->type, &ffr);
+		struct dv v;
+		struct piece val;
+		struct sb item;
+
+		if (!field_has(s, st, f, rt))
+			continue;
+		get_field_value(st, f, rt, &v);
+		if (f->is_group)
+			val = pretty_struct(rt->st, v.p, fr, amount + 1, PRETTY_PREFIXED);
+		else
+			val = pretty_value(rt, ffr, &v, amount + 1, PRETTY_PREFIXED);
+		if (val.s == NULL)
+			goto fail;
+		memset(&item, 0, sizeof item);
+		sb_str(&item, f->name);
+		sb_str(&item, " = ");
+		sb_add(&item, val.s, val.n);
+		free(val.s);
+		items[slot] = piece_from_sb(&item);
+		if (items[slot].s == NULL)
+			goto fail;
+		slot++;
+		n++;
+	}
+	body = pretty_delimit(items, n, amount, mode, PRETTY_RECORD);
+	for (i = 0; i < n; i++)
+		free(items[i].s);
+	free(items);
+	items = NULL;
+	if (body.s == NULL)
+		return piece_fail();
+	memset(&b, 0, sizeof b);
+	sb_str(&b, "(");
+	sb_add(&b, body.s, body.n);
+	sb_str(&b, ")");
+	free(body.s);
+	return piece_from_sb(&b);
+fail:
+	for (i = 0; i < n; i++)
+		free(items[i].s);
+	free(items);
+	return piece_fail();
+}
+
+static struct piece pretty_value(const struct capn_dyn_type *t, const struct frame *fr,
+                                 struct dv *v, int amount, int mode)
+{
+	struct sb b;
+
+	switch (t->kind) {
+	case CAPN_DYN_LIST:
+		return pretty_list(t, fr, v->p, amount, mode);
+	case CAPN_DYN_STRUCT:
+		if (t->st != NULL) {
+			struct frame nf;
+			enter_struct(&nf, t, fr);
+			return pretty_struct(t->st, v->p, &nf, amount, mode);
+		}
+		break;
+	default:
+		break;
+	}
+	memset(&b, 0, sizeof b);
+	text_value(&b, t, fr, v);
+	return piece_from_sb(&b);
+}
+
+char *capn_dyn_to_text_pretty(const struct capn_dyn_struct *s, capn_ptr st)
+{
+	struct piece p = pretty_struct(s, st, NULL, 1, PRETTY_BARE);
+	return p.s;
+}
+
 /* --- JSON output ------------------------------------------------------- */
 
 struct jctx {
