@@ -1593,7 +1593,7 @@ static int build_data(struct bctx *b, struct capn_segment *seg, const struct vno
 		if (l.p.type == CAPN_NULL)
 			return berr(b, n, "out of memory");
 		for (i = 0; i < n->count; i++) {
-			uint64_t v;
+			uint64_t v = 0;
 			struct capn_dyn_type t = {CAPN_DYN_UINT8, NULL, NULL, NULL, NULL, 0, 0};
 			if (parse_scalar(b, &t, n->v[i], &v) != 0)
 				return -1;
@@ -1674,7 +1674,7 @@ static int build_list(struct bctx *b, struct capn_segment *seg, const struct cap
 
 	for (i = 0; i < cnt; i++) {
 		const struct vnode *el = n->v[i];
-		uint64_t bits;
+		uint64_t bits = 0;
 		switch (et->kind) {
 		case CAPN_DYN_VOID:
 			break;
@@ -1755,7 +1755,7 @@ static int assign_field(struct bctx *b, const struct capn_dyn_struct *s, const s
                         const struct capn_dyn_type *rt, const struct frame *ffr,
                         const struct vnode *val)
 {
-	uint64_t bits;
+	uint64_t bits = 0;
 	(void) s;
 
 	switch (rt->kind) {
