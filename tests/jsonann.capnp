@@ -67,5 +67,5 @@ struct Doc $discriminator(name = "kind") {
     city @16 :Text $name("town");
   }
 
-  defaultNest @17 :DefaultNest $flatten() = (value = "default");
+  defaultNest @17 :DefaultNest = (value = "default") $flatten();
 }
