@@ -383,6 +383,19 @@ if get_option('enable_tests') and not meson.is_subproject()
         override_options: ['cpp_std=c++17'],
       )
 
+      frame_wrap_test = executable(
+        'frame_wrap_test',
+        'interop' / 'frame_wrap_test.c',
+        c_args: ['-D_POSIX_C_SOURCE=200809L'],
+      )
+      test(
+        'frame_wrap',
+        frame_wrap_test,
+        args: [rpc_client_c.full_path()],
+        depends: [rpc_client_c],
+        timeout: 10,
+      )
+
       test(
         'rpc_interop_cpp',
         bash,

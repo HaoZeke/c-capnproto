@@ -8,6 +8,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -136,31 +137,38 @@ static ssize_t read_all(int fd, void *p, size_t count)
  * from the stream without a length prefix of our own. */
 static ssize_t read_frame(int fd, uint8_t *buf, size_t cap)
 {
-	uint32_t nsegs, i, table_bytes, total_words = 0;
+	uint32_t count, i, table_bytes;
+	size_t nsegs, total_words = 0;
 	if (read_all(fd, buf, 4) != 4)
 		return -1;
-	memcpy(&nsegs, buf, 4);
-	nsegs += 1;
-	if (nsegs > 64)
+	memcpy(&count, buf, 4);
+	/* The count is one less than the number of segments. Adding one in
+	 * a uint32 wraps 0xffffffff to 0 and the bound never fires. */
+	if (count >= 64u)
 		return -1;
-	table_bytes = 4 + nsegs * 4;
+	nsegs = (size_t) count + 1u;
+	table_bytes = 4u + (uint32_t) nsegs * 4u;
 	if (table_bytes % 8)
 		table_bytes += 4;
-	if (table_bytes > cap)
+	if ((size_t) table_bytes > cap)
 		return -1;
 	if (read_all(fd, buf + 4, table_bytes - 4) != (ssize_t)(table_bytes - 4))
 		return -1;
 	for (i = 0; i < nsegs; i++) {
 		uint32_t w;
 		memcpy(&w, buf + 4 + i * 4, 4);
+		if ((size_t) w > SIZE_MAX - total_words)
+			return -1;
 		total_words += w;
 	}
-	if (table_bytes + total_words * 8 > cap)
+	if (total_words > (SIZE_MAX - (size_t) table_bytes) / 8)
+		return -1;
+	if ((size_t) table_bytes + total_words * 8 > cap)
 		return -1;
 	if (read_all(fd, buf + table_bytes, total_words * 8) !=
 	    (ssize_t)(total_words * 8))
 		return -1;
-	return (ssize_t)(table_bytes + total_words * 8);
+	return (ssize_t)((size_t) table_bytes + total_words * 8);
 }
 
 static void fill_add(void *ctx, capn_ptr params)
