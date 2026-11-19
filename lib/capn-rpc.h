@@ -23,9 +23,7 @@
 extern "C" {
 #endif
 
-#define CAPN_RPC_MAX_EXPORTS 64
-#define CAPN_RPC_MAX_ANSWERS 64
-#define CAPN_RPC_MAX_QUESTIONS 64
+#define CAPN_RPC_INITIAL_TABLE_CAPACITY 8
 #define CAPN_RPC_MAX_PROVISIONS 32
 #define CAPN_RPC_MAX_INTRODUCTIONS 8
 /* Long enough for a hostname; a longer one is refused, not truncated. */
@@ -191,9 +189,12 @@ struct capn_rpc_pending_call {
 };
 
 struct capn_rpc_conn {
-	struct capn_rpc_export exports[CAPN_RPC_MAX_EXPORTS];
-	struct capn_rpc_answer answers[CAPN_RPC_MAX_ANSWERS];
-	struct capn_rpc_question questions[CAPN_RPC_MAX_QUESTIONS];
+	struct capn_rpc_export *exports;
+	int exports_cap;
+	struct capn_rpc_answer *answers;
+	int answers_cap;
+	struct capn_rpc_question *questions;
+	int questions_cap;
 	/* Shared with this vat's other connections when one is attached;
 	 * otherwise `own_vat` below. */
 	struct capn_rpc_vat *vat;
