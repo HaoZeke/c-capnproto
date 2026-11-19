@@ -124,6 +124,11 @@ int persistent_dispatch(void *, uint64_t iface, uint16_t method, capn_ptr,
 	return capn_set_text(results, 0, ref);
 }
 
+int counter_like_dispatch(void *, uint64_t, uint16_t, capn_ptr, capn_ptr)
+{
+	return 0;
+}
+
 class RpcClient : public ::testing::Test {
  protected:
 	void SetUp() override
@@ -472,6 +477,18 @@ TEST_F(RpcClient, PersistenceIsOrdinaryDispatchOfPersistentSave)
 	uint32_t q2 = capn_rpc_send_call(&client, 0, kPersistentId, 1, 0, 1, NULL, NULL);
 	settle();
 	EXPECT_TRUE(capn_rpc_is_failed(&client, q2));
+}
+
+TEST_F(RpcClient, OneServerExportedWithTwoDispatchersGetsTwoIds)
+{
+	int obj = 0;
+	int a = capn_rpc_export(&vat, &obj, doubler_dispatch);
+	int b = capn_rpc_export(&vat, &obj, doubler_dispatch);
+	int c2 = capn_rpc_export(&vat, &obj, counter_like_dispatch);
+	EXPECT_GE(a, 0);
+	EXPECT_EQ(a, b) << "the same object must keep one id";
+	EXPECT_NE(a, c2) << "a different dispatcher is a different capability";
+	EXPECT_EQ(2, vat.exports[a].refcount);
 }
 
 } // namespace
