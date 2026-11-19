@@ -131,9 +131,100 @@ int counter_like_dispatch(void *, uint64_t, uint16_t, capn_ptr, capn_ptr)
 	return 0;
 }
 
+int promise_hits;
+int settled_hits;
+int g_seen_import;
+uint32_t g_remote_question;
+int promise_obj;
+struct capn_rpc_conn *g_vat;
+
+int settled_dispatch(void *, uint64_t, uint16_t, capn_ptr params, capn_ptr results)
+{
+	settled_hits++;
+	capn_resolve(&params);
+	uint32_t in = params.type == CAPN_STRUCT ? capn_read32(params, 0) : 0;
+	capn_write32(results, 0, in + 5);
+	return 0;
+}
+
+int promise_dispatch(void *, uint64_t, uint16_t, capn_ptr params, capn_ptr results)
+{
+	promise_hits++;
+	capn_resolve(&params);
+	uint32_t in = params.type == CAPN_STRUCT ? capn_read32(params, 0) : 0;
+	capn_write32(results, 0, in + 1);
+	return 0;
+}
+
+/* method 0 records a callback and calls it. method 1 returns a promise.
+ * method 2 returns that call as a receiverAnswer. */
+int promise_host_dispatch(void *, uint64_t, uint16_t method, capn_ptr params,
+                          capn_ptr results)
+{
+	if (method == 0) {
+		capn_resolve(&params);
+		capn_ptr cap = capn_getp(params, 0, 1);
+		int is_export = -1;
+		g_seen_import = capn_rpc_param_cap(g_vat, cap, &is_export);
+		if (g_seen_import < 0 || is_export != 0)
+			return -1;
+		uint32_t arg = 4;
+		g_remote_question = capn_rpc_send_call(g_vat, static_cast<uint32_t>(g_seen_import),
+		                                       0, 0, 8, 0, fill_u32, &arg);
+		return g_remote_question == static_cast<uint32_t>(-1) ? -1 : 0;
+	}
+	if (method == 1) {
+		capn_ptr cap = capn_rpc_new_promise_cap(g_vat, results.seg, &promise_obj,
+		                                        settled_dispatch);
+		if (cap.type != CAPN_INTERFACE)
+			return -1;
+		return capn_setp(results, 0, cap);
+	}
+	if (method == 2) {
+		uint16_t path = 0;
+		capn_ptr cap = capn_rpc_new_answer_cap(g_vat, results.seg, g_remote_question,
+		                                       &path, 1);
+		if (cap.type != CAPN_INTERFACE)
+			return -1;
+		return capn_setp(results, 0, cap);
+	}
+	return -1;
+}
+
+int frame_which(const std::vector<uint8_t> &f)
+{
+	struct capn m;
+	if (capn_init_mem(&m, f.data(), f.size(), 0) != 0)
+		return -1;
+	Message_ptr mp;
+	mp.p = capn_getp(capn_root(&m), 0, 1);
+	struct Message msg;
+	read_Message(&msg, mp);
+	int w = msg.which;
+	capn_free(&m);
+	return w;
+}
+
+uint32_t frame_call_target(const std::vector<uint8_t> &f)
+{
+	struct capn m;
+	if (capn_init_mem(&m, f.data(), f.size(), 0) != 0)
+		return static_cast<uint32_t>(-1);
+	Message_ptr mp;
+	mp.p = capn_getp(capn_root(&m), 0, 1);
+	struct Message msg;
+	read_Message(&msg, mp);
+	struct Call call;
+	read_Call(&call, msg.call);
+	struct MessageTarget t;
+	read_MessageTarget(&t, call.target);
+	uint32_t id = t.importedCap;
+	capn_free(&m);
+	return id;
+}
+
 /* Capabilities in payloads. The server hands out `doubler` objects and
  * accepts a callback capability it then calls back. */
-struct capn_rpc_conn *g_vat;
 int g_callback_hits;
 int g_callback_arg;
 int g_callback_failed;
@@ -205,6 +296,10 @@ class RpcClient : public ::testing::Test {
 		g_wire = &wire;
 		doubler_calls = 0;
 		doubler_fail_from = 1 << 30;
+		promise_hits = 0;
+		settled_hits = 0;
+		g_seen_import = -1;
+		g_remote_question = static_cast<uint32_t>(-1);
 		capn_rpc_init(&client, send_to_vat, NULL);
 		capn_rpc_init(&vat, send_to_client, NULL);
 		capn_rpc_set_bootstrap(&vat, &doubler_calls, doubler_dispatch);
@@ -482,20 +577,14 @@ TEST_F(RpcClient, UnimplementedForOurCallFailsItAndIsNeverEchoed)
 
 TEST_F(RpcClient, UnimplementedEchoesTheOriginalMessageNotAWrapper)
 {
-	/* A Resolve this vat does not adopt is answered with Unimplemented
-	 * whose payload is that Resolve itself. */
+	/* obsoleteSave is not implemented. The reply's payload is that
+	 * message, not an Unimplemented wrapped around another. */
 	struct capn msg;
 	capn_init_malloc(&msg);
 	struct capn_segment *cs = capn_root(&msg).seg;
-	struct Resolve rs;
-	memset(&rs, 0, sizeof rs);
-	rs.promiseId = 5;
-	Resolve_ptr rp = new_Resolve(cs);
-	write_Resolve(&rs, rp);
 	struct Message m;
 	memset(&m, 0, sizeof m);
-	m.which = Message_resolve;
-	m.resolve = rp;
+	m.which = Message_obsoleteSave;
 	Message_ptr mp = new_Message(cs);
 	write_Message(&m, mp);
 	capn_setp(capn_root(&msg), 0, mp.p);
@@ -516,10 +605,7 @@ TEST_F(RpcClient, UnimplementedEchoesTheOriginalMessageNotAWrapper)
 	ASSERT_EQ(Message_unimplemented, out.which);
 	struct Message echoed;
 	read_Message(&echoed, out.unimplemented);
-	EXPECT_EQ(Message_resolve, echoed.which);
-	struct Resolve back;
-	read_Resolve(&back, echoed.resolve);
-	EXPECT_EQ(5u, back.promiseId);
+	EXPECT_EQ(Message_obsoleteSave, echoed.which);
 	capn_free(&reply);
 }
 
@@ -831,6 +917,238 @@ TEST_F(RpcClient, ParkedCallsAreReleasedWithTheConnection)
 	capn_rpc_send_call(&client, 0, 0x1234, 0, 8, 1, NULL, NULL);
 	settle();
 	/* TearDown's capn_rpc_free must release the parked message (leak check). */
+}
+
+TEST_F(RpcClient, QueuedPromiseCallIsDeliveredBeforeResolve)
+{
+	int obj = 0;
+	int settled = 0;
+	ASSERT_EQ(0, capn_rpc_export_promise(&vat, &obj, promise_dispatch));
+	uint32_t arg = 3;
+	uint32_t q = capn_rpc_send_call(&client, 0, 1, 0, 8, 0, fill_u32, &arg);
+	pump(&vat, wire.to_vat);
+	EXPECT_TRUE(wire.to_client.empty());
+	EXPECT_EQ(0, promise_hits);
+
+	ASSERT_EQ(0, capn_rpc_resolve(&vat, 0, &settled, settled_dispatch));
+	ASSERT_EQ(2u, wire.to_client.size());
+	EXPECT_EQ(Message__return, frame_which(wire.to_client[0]));
+	EXPECT_EQ(Message_resolve, frame_which(wire.to_client[1]));
+	EXPECT_EQ(0, promise_hits);
+	EXPECT_EQ(1, settled_hits);
+
+	pump(&client, wire.to_client);
+	EXPECT_TRUE(capn_rpc_is_answered(&client, q));
+	EXPECT_FALSE(capn_rpc_is_failed(&client, q));
+	struct capn m;
+	capn_ptr content;
+	ASSERT_EQ(0, capn_rpc_answer_content(&client, q, &m, &content));
+	EXPECT_EQ(8u, capn_read32(content, 0));
+	capn_free(&m);
+
+	int broken = 1, to_export = -1;
+	uint32_t target = 0;
+	EXPECT_EQ(1, capn_rpc_promise_state(&client, 0, &broken, &to_export, &target));
+	EXPECT_EQ(0, broken);
+	EXPECT_EQ(0, to_export);
+	EXPECT_EQ(1u, target);
+
+	arg = 4;
+	uint32_t q2 = capn_rpc_send_call(&client, 0, 1, 0, 8, 0, fill_u32, &arg);
+	ASSERT_EQ(1u, wire.to_vat.size());
+	EXPECT_EQ(1u, frame_call_target(wire.to_vat[0]));
+	pump(&vat, wire.to_vat);
+	pump(&client, wire.to_client);
+	ASSERT_EQ(0, capn_rpc_answer_content(&client, q2, &m, &content));
+	EXPECT_EQ(9u, capn_read32(content, 0));
+	capn_free(&m);
+	EXPECT_EQ(2, settled_hits);
+}
+
+TEST_F(RpcClient, ResolvingAPromiseInPlaceDispatchesTheSameExport)
+{
+	int obj = 0;
+	ASSERT_EQ(0, capn_rpc_export_promise(&vat, &obj, promise_dispatch));
+	uint32_t arg = 10;
+	uint32_t q = capn_rpc_send_call(&client, 0, 1, 0, 8, 0, fill_u32, &arg);
+	pump(&vat, wire.to_vat);
+	ASSERT_EQ(0, capn_rpc_resolve(&vat, 0, &obj, promise_dispatch));
+	EXPECT_EQ(1, promise_hits);
+	ASSERT_EQ(Message__return, frame_which(wire.to_client[0]));
+	EXPECT_EQ(Message_resolve, frame_which(wire.to_client[1]));
+	pump(&client, wire.to_client);
+	struct capn m;
+	capn_ptr content;
+	ASSERT_EQ(0, capn_rpc_answer_content(&client, q, &m, &content));
+	EXPECT_EQ(11u, capn_read32(content, 0));
+	capn_free(&m);
+	int to_export = -1;
+	uint32_t target = 9;
+	EXPECT_EQ(1, capn_rpc_promise_state(&client, 0, NULL, &to_export, &target));
+	EXPECT_EQ(0u, target);
+}
+
+TEST_F(RpcClient, RejectedPromiseFailsQueuedAndLaterCalls)
+{
+	int obj = 0;
+	ASSERT_EQ(0, capn_rpc_export_promise(&vat, &obj, promise_dispatch));
+	uint32_t arg = 1;
+	uint32_t q = capn_rpc_send_call(&client, 0, 1, 0, 8, 0, fill_u32, &arg);
+	pump(&vat, wire.to_vat);
+	ASSERT_EQ(0, capn_rpc_resolve_exception(&vat, 0, "no such service"));
+	ASSERT_EQ(2u, wire.to_client.size());
+	EXPECT_EQ(Message__return, frame_which(wire.to_client[0]));
+	EXPECT_EQ(Message_resolve, frame_which(wire.to_client[1]));
+	pump(&client, wire.to_client);
+	EXPECT_TRUE(capn_rpc_is_failed(&client, q));
+	int broken = 0;
+	EXPECT_EQ(1, capn_rpc_promise_state(&client, 0, &broken, NULL, NULL));
+	EXPECT_EQ(1, broken);
+
+	size_t sent = wire.to_vat.size();
+	uint32_t q2 = capn_rpc_send_call(&client, 0, 1, 0, 8, 0, fill_u32, &arg);
+	EXPECT_TRUE(capn_rpc_is_failed(&client, q2));
+	EXPECT_EQ(sent, wire.to_vat.size());
+}
+
+TEST_F(RpcClient, ReflectedPromiseWaitsForTheDisembargoEcho)
+{
+	g_vat = &vat;
+	g_callback_hits = 0;
+	capn_rpc_set_bootstrap(&vat, &promise_obj, promise_host_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	uint32_t qreg = capn_rpc_send_call(&client, 0, 0, 0, 0, 1, fill_with_callback, &client);
+	settle();
+	ASSERT_TRUE(capn_rpc_is_answered(&client, qreg));
+	ASSERT_GE(g_seen_import, 0);
+
+	capn_rpc_send_call(&client, 0, 0, 1, 0, 1, NULL, NULL);
+	pump(&vat, wire.to_vat);
+	ASSERT_FALSE(wire.to_client.empty());
+	struct capn desc;
+	ASSERT_EQ(0, capn_init_mem(&desc, wire.to_client[0].data(), wire.to_client[0].size(), 0));
+	Message_ptr mp;
+	mp.p = capn_getp(capn_root(&desc), 0, 1);
+	struct Message msg;
+	read_Message(&msg, mp);
+	struct Return ret;
+	read_Return(&ret, msg._return);
+	struct Payload pl;
+	read_Payload(&pl, ret.results);
+	capn_ptr cap = capn_getp(pl.content, 0, 1);
+	struct CapDescriptor cd;
+	get_CapDescriptor(&cd, pl.capTable, (int) cap.cap_idx);
+	EXPECT_EQ(CapDescriptor_senderPromise, cd.which);
+	uint32_t promise_id = cd.senderPromise;
+	capn_free(&desc);
+	pump(&client, wire.to_client);
+
+	uint32_t arg = 9;
+	uint32_t qcall = capn_rpc_send_call(&client, promise_id, 0, 0, 8, 0, fill_u32, &arg);
+	pump(&vat, wire.to_vat);
+	EXPECT_TRUE(wire.to_client.empty());
+
+	ASSERT_EQ(0, capn_rpc_resolve_import(&vat, static_cast<int>(promise_id),
+	                                    static_cast<uint32_t>(g_seen_import)));
+	ASSERT_EQ(2u, wire.to_client.size());
+	EXPECT_EQ(Message_call, frame_which(wire.to_client[0]));
+	EXPECT_EQ(Message_resolve, frame_which(wire.to_client[1]));
+	EXPECT_EQ(static_cast<uint32_t>(g_seen_import), frame_call_target(wire.to_client[0]));
+
+	pump(&client, wire.to_client);
+	EXPECT_FALSE(capn_rpc_is_answered(&client, qcall));
+	int disembargoes = 0;
+	int calls = 0;
+	for (size_t i = 0; i < wire.to_vat.size(); i++) {
+		int w = frame_which(wire.to_vat[i]);
+		if (w == Message_disembargo)
+			disembargoes++;
+		if (w == Message_call)
+			calls++;
+	}
+	EXPECT_EQ(1, disembargoes);
+	EXPECT_EQ(0, calls);
+
+	arg = 1;
+	uint32_t qheld = capn_rpc_send_call(&client, promise_id, 0, 0, 8, 0, fill_u32, &arg);
+	EXPECT_FALSE(capn_rpc_is_answered(&client, qheld));
+	disembargoes = 0;
+	calls = 0;
+	for (size_t i = 0; i < wire.to_vat.size(); i++) {
+		int w = frame_which(wire.to_vat[i]);
+		if (w == Message_disembargo)
+			disembargoes++;
+		if (w == Message_call)
+			calls++;
+	}
+	EXPECT_EQ(1, disembargoes);
+	EXPECT_EQ(0, calls);
+
+	pump(&vat, wire.to_vat);
+	pump(&client, wire.to_client);
+	EXPECT_TRUE(capn_rpc_is_answered(&client, qcall));
+	EXPECT_FALSE(capn_rpc_is_failed(&client, qcall));
+	EXPECT_TRUE(capn_rpc_is_answered(&client, qheld));
+	EXPECT_FALSE(capn_rpc_is_failed(&client, qheld));
+	int broken = 1, to_export = 0;
+	uint32_t target = 0;
+	EXPECT_EQ(1, capn_rpc_promise_state(&client, promise_id, &broken, &to_export, &target));
+	EXPECT_EQ(0, broken);
+	EXPECT_EQ(1, to_export);
+	EXPECT_EQ(static_cast<uint32_t>(g_seen_import), target);
+	/* Register called the callback once, the forwarded call once, and the
+	 * call that waited on the echo once. */
+	EXPECT_EQ(3, g_callback_hits);
+}
+
+TEST_F(RpcClient, ReturnedAnswerCapNamesTheOutstandingQuestion)
+{
+	g_vat = &vat;
+	g_callback_hits = 0;
+	capn_rpc_set_bootstrap(&vat, &promise_obj, promise_host_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+	uint32_t qreg = capn_rpc_send_call(&client, 0, 0, 0, 0, 1, fill_with_callback, &client);
+	settle();
+	ASSERT_TRUE(capn_rpc_is_answered(&client, qreg));
+	ASSERT_NE(static_cast<uint32_t>(-1), g_remote_question);
+
+	uint32_t q = capn_rpc_send_call(&client, 0, 0, 2, 0, 1, NULL, NULL);
+	pump(&vat, wire.to_vat);
+	ASSERT_FALSE(wire.to_client.empty());
+	struct capn desc;
+	ASSERT_EQ(0, capn_init_mem(&desc, wire.to_client[0].data(), wire.to_client[0].size(), 0));
+	Message_ptr mp;
+	mp.p = capn_getp(capn_root(&desc), 0, 1);
+	struct Message msg;
+	read_Message(&msg, mp);
+	struct Return ret;
+	read_Return(&ret, msg._return);
+	struct Payload pl;
+	read_Payload(&pl, ret.results);
+	capn_ptr cap = capn_getp(pl.content, 0, 1);
+	ASSERT_EQ(CAPN_INTERFACE, cap.type);
+	struct CapDescriptor cd;
+	get_CapDescriptor(&cd, pl.capTable, cap.len);
+	EXPECT_EQ(CapDescriptor_receiverAnswer, cd.which);
+	struct PromisedAnswer pa;
+	read_PromisedAnswer(&pa, cd.receiverAnswer);
+	EXPECT_EQ(g_remote_question, pa.questionId);
+	EXPECT_EQ(1, capn_len(pa.transform));
+	capn_free(&desc);
+
+	pump(&client, wire.to_client);
+	struct capn m;
+	capn_ptr content;
+	ASSERT_EQ(0, capn_rpc_answer_content(&client, q, &m, &content));
+	cap = capn_getp(content, 0, 1);
+	int is_export = -1;
+	int id = capn_rpc_answer_cap(&client, q, cap, &is_export);
+	EXPECT_EQ(2, is_export);
+	EXPECT_EQ(static_cast<int>(g_remote_question), id);
+	capn_free(&m);
 }
 
 } // namespace
