@@ -52,7 +52,7 @@ libcapnp_c = library(
   include_directories: include_directories(['lib', 'compiler']),
   implicit_include_directories: false,
   override_options: lib_override,
-  soversion: '1',
+  soversion: '2',
   install: true,
 )
 
