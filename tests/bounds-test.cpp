@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 #include "capnp_c.h"
 #include "addressbook.capnp.h"
@@ -651,5 +652,106 @@ TEST(NewObjectLimits, RefusesSizesThatWouldWrapOrNotFit) {
   EXPECT_EQ(CAPN_LIST, capn_new_list8(s, 0).p.type);
   EXPECT_EQ(CAPN_LIST, capn_new_list8(s, 5).p.type);
   EXPECT_EQ(CAPN_STRUCT, capn_new_struct(s, 8, 1).type);
+  capn_free(&c);
+}
+
+/* 4194432 bits is a legal list (count < 2^29) whose byte count does not
+ * fit in the 19-bit datasz field. The copy must follow the allocation. */
+TEST(NewObjectLimits, BitListPastDataszFieldRoundTrips) {
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *s = capn_root(&c).seg;
+  const int bits = 4194432;
+  const size_t nbytes = ((size_t) bits + 7u) / 8u;
+  capn_list1 l = capn_new_list1(s, bits);
+  ASSERT_EQ(CAPN_BIT_LIST, l.p.type);
+  ASSERT_NE(nullptr, l.p.data);
+
+  std::vector<uint8_t> src(nbytes, 0x3c);
+  src[0] = 0xa5;
+  src[nbytes - 1] = 0x11;
+  std::vector<uint8_t> dst(nbytes, 0);
+  ASSERT_EQ(bits, capn_setv1(l, 0, src.data(), bits));
+  ASSERT_EQ(bits, capn_getv1(l, 0, dst.data(), bits));
+  EXPECT_EQ(0, memcmp(src.data(), dst.data(), nbytes));
+
+  ASSERT_EQ(0, capn_set_root(&c, l.p));
+  int64_t need = capn_size(&c);
+  ASSERT_GT(need, 0);
+  std::vector<uint8_t> framed((size_t) need);
+  int64_t wr = capn_write_mem(&c, framed.data(), framed.size(), 0);
+  ASSERT_EQ(need, wr);
+  capn_free(&c);
+
+  struct capn in;
+  ASSERT_EQ(0, capn_init_mem(&in, framed.data(), (size_t) wr, 0));
+  capn_ptr root = capn_getp(capn_root(&in), 0, 1);
+  ASSERT_EQ(CAPN_BIT_LIST, root.type);
+  EXPECT_EQ(bits, root.len);
+  capn_list1 got;
+  got.p = root;
+  std::vector<uint8_t> back(nbytes, 0);
+  ASSERT_EQ(bits, capn_getv1(got, 0, back.data(), bits));
+  EXPECT_EQ(0xa5, back[0]);
+  EXPECT_EQ(0x11, back[nbytes - 1]);
+  capn_free(&in);
+}
+
+TEST(NewObjectLimits, BitListSetvClampsToTheAllocation) {
+  alignas(8) unsigned char buf[32];
+  memset(buf, 0x11, sizeof buf);
+  struct capn_segment seg;
+  memset(&seg, 0, sizeof seg);
+  seg.data = (char *) buf;
+  seg.len = sizeof buf;
+  seg.cap = sizeof buf;
+
+  capn_list1 l;
+  memset(&l, 0, sizeof l);
+  l.p.type = CAPN_BIT_LIST;
+  l.p.data = (char *) buf;
+  l.p.len = 4194432;
+  l.p.datasz = 16;
+  l.p.seg = &seg;
+
+  std::vector<uint8_t> src(524304, 0xff);
+  int n = capn_setv1(l, 0, src.data(), l.p.len);
+  EXPECT_GT(n, 0);
+  EXPECT_LE((n + 7) / 8, 16);
+  for (int i = 16; i < 32; i++)
+    EXPECT_EQ(0x11, buf[i]) << i;
+
+  unsigned char out[32];
+  memset(out, 0, sizeof out);
+  int g = capn_getv1(l, 0, out, l.p.len);
+  EXPECT_GT(g, 0);
+  EXPECT_LE((g + 7) / 8, 16);
+}
+
+TEST(DecodeBounds, BitListPastDataszFieldIsReadable) {
+  /* Element count fits in 29 bits. The byte count is 524288, one past
+   * the 19-bit datasz field, which C++ 1.4.0 still encodes. */
+  const int bits = 4194304;
+  const size_t nbytes = 524288;
+  const size_t segsz = 8 + nbytes;
+  std::vector<uint8_t> seg(segsz, 0);
+  uint64_t ptr = 1ull | (1ull << 32) | ((uint64_t) bits << 35);
+  wr64(seg.data(), ptr);
+  seg[8] = 0xa5;
+  seg[8 + nbytes - 1] = 0x5a;
+  std::vector<uint8_t> framed(8 + segsz);
+  struct capn c;
+  ASSERT_EQ(0, init_one_seg(&c, seg.data(), segsz, framed.data(), framed.size()));
+  capn_ptr root = root_getp(&c);
+  ASSERT_EQ(CAPN_BIT_LIST, root.type) << "a wire-legal bit list must decode";
+  EXPECT_EQ(bits, root.len);
+  capn_list1 l;
+  l.p = root;
+  uint8_t first = 0, last = 0;
+  ASSERT_EQ(8, capn_getv1(l, 0, &first, 8));
+  EXPECT_EQ(0xa5, first);
+  ASSERT_EQ(8, capn_getv1(l, bits - 8, &last, 8));
+  EXPECT_EQ(0x5a, last);
+  EXPECT_EQ(0, capn_validate(&c));
   capn_free(&c);
 }
