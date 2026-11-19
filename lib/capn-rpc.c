@@ -792,11 +792,11 @@ static int send_unimplemented(struct capn_rpc_conn *c, Message_ptr orig)
 	memset(&m, 0, sizeof m);
 	mp = new_Message(cs);
 	m.which = Message_unimplemented;
-	/* capn_setp copies across messages, which is what this needs: the
-	 * incoming message is freed as soon as this returns. */
-	m.unimplemented.p = capn_new_struct(cs, 8, 1);
-	capn_setp(m.unimplemented.p, 0, orig.p);
 	write_Message(&m, mp);
+	/* The echoed message is the union's pointer, not a Message wrapped
+	 * in another. capn_setp copies across messages, which is what this
+	 * needs: the incoming message is freed as soon as this returns. */
+	capn_setp(mp.p, 0, orig.p);
 	capn_setp(capn_root(&msg), 0, mp.p);
 
 	rc = send_message(c, &msg);
