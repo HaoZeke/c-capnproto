@@ -179,6 +179,7 @@ void fill_with_callback(void *ctx, capn_ptr params)
 /* A server that answers later: it parks the call and returns PENDING. */
 struct Parked {
 	uint32_t question;
+	uint32_t generation;
 	capn_ptr results;
 	uint32_t arg;
 	int calls;
@@ -189,6 +190,7 @@ int parking_dispatch(void *, uint64_t, uint16_t, capn_ptr params, capn_ptr resul
 {
 	capn_resolve(&params);
 	g_parked.question = capn_rpc_current_question(g_vat);
+	g_parked.generation = capn_rpc_current_generation(g_vat);
 	g_parked.results = results;
 	g_parked.arg = params.type == CAPN_STRUCT ? capn_read32(params, 0) : 0;
 	g_parked.calls++;
@@ -689,7 +691,7 @@ TEST_F(RpcClient, DeferredReplyIsSentWhenTheServerReturns)
 	EXPECT_FALSE(capn_rpc_is_answered(&client, q)) << "answered before the server returned";
 
 	capn_write32(g_parked.results, 0, g_parked.arg * 3);
-	ASSERT_EQ(0, capn_rpc_return(&vat, g_parked.question));
+	ASSERT_EQ(0, capn_rpc_return(&vat, g_parked.question, g_parked.generation));
 	settle();
 	ASSERT_TRUE(capn_rpc_is_answered(&client, q));
 	ASSERT_FALSE(capn_rpc_is_failed(&client, q));
@@ -700,7 +702,7 @@ TEST_F(RpcClient, DeferredReplyIsSentWhenTheServerReturns)
 	capn_free(&m);
 
 	/* Answering twice is refused. */
-	EXPECT_EQ(-1, capn_rpc_return(&vat, g_parked.question));
+	EXPECT_EQ(-1, capn_rpc_return(&vat, g_parked.question, g_parked.generation));
 }
 
 TEST_F(RpcClient, DeferredReplyCanFail)
@@ -713,7 +715,7 @@ TEST_F(RpcClient, DeferredReplyCanFail)
 
 	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 0, 8, 1, NULL, NULL);
 	settle();
-	ASSERT_EQ(0, capn_rpc_return_exception(&vat, g_parked.question, "gave up"));
+	ASSERT_EQ(0, capn_rpc_return_exception(&vat, g_parked.question, g_parked.generation, "gave up"));
 	settle();
 	EXPECT_TRUE(capn_rpc_is_answered(&client, q));
 	EXPECT_TRUE(capn_rpc_is_failed(&client, q));
@@ -735,8 +737,74 @@ TEST_F(RpcClient, FinishCancelsAParkedCall)
 
 	/* The call is gone; returning for it reports that and sends nothing. */
 	size_t before = wire.to_client.size();
-	EXPECT_EQ(-1, capn_rpc_return(&vat, g_parked.question));
+	EXPECT_EQ(-1, capn_rpc_return(&vat, g_parked.question, g_parked.generation));
 	EXPECT_EQ(before, wire.to_client.size());
+}
+
+TEST_F(RpcClient, FillAfterFinishDoesNotUseFreedResults)
+{
+	g_vat = &vat;
+	g_parked = Parked();
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, parking_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 0, 8, 1, NULL, NULL);
+	settle();
+	ASSERT_EQ(1, g_parked.calls);
+	capn_rpc_send_finish(&client, q);
+	settle();
+
+	/* The results struct is still live, and the write must not be a
+	 * use after free. The return sends nothing. */
+	capn_write32(g_parked.results, 0, 123);
+	size_t before = wire.to_client.size();
+	EXPECT_EQ(-1, capn_rpc_return(&vat, g_parked.question, g_parked.generation));
+	EXPECT_EQ(before, wire.to_client.size());
+	EXPECT_FALSE(capn_rpc_is_answered(&client, q));
+}
+
+TEST_F(RpcClient, ReusedQuestionIdDoesNotCompleteTheWrongCall)
+{
+	g_vat = &vat;
+	g_parked = Parked();
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, parking_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	uint32_t arg = 1;
+	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 0, 8, 1, fill_u32, &arg);
+	settle();
+	uint32_t gen1 = g_parked.generation;
+	capn_ptr old_results = g_parked.results;
+	capn_rpc_send_finish(&client, q);
+	settle();
+
+	client.next_question_id = q;
+	arg = 4;
+	uint32_t q2 = capn_rpc_send_call(&client, 0, 0x1234, 0, 8, 1, fill_u32, &arg);
+	settle();
+	ASSERT_EQ(q, q2);
+	uint32_t gen2 = g_parked.generation;
+	capn_ptr new_results = g_parked.results;
+	EXPECT_NE(gen1, gen2);
+	EXPECT_NE(old_results.data, new_results.data);
+
+	/* The cancelled answer's return must not send the new call's results. */
+	capn_write32(old_results, 0, 111);
+	EXPECT_EQ(-1, capn_rpc_return(&vat, q, gen1));
+	EXPECT_FALSE(capn_rpc_is_answered(&client, q2));
+
+	capn_write32(new_results, 0, 222);
+	ASSERT_EQ(0, capn_rpc_return(&vat, q, gen2));
+	settle();
+	ASSERT_TRUE(capn_rpc_is_answered(&client, q2));
+	ASSERT_FALSE(capn_rpc_is_failed(&client, q2));
+	struct capn m;
+	capn_ptr content;
+	ASSERT_EQ(0, capn_rpc_answer_content(&client, q2, &m, &content));
+	EXPECT_EQ(222u, capn_read32(content, 0));
+	capn_free(&m);
 }
 
 TEST_F(RpcClient, ParkedCallsAreReleasedWithTheConnection)

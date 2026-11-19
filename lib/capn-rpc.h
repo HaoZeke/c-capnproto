@@ -183,7 +183,13 @@ struct capn_rpc_pending_cap {
  * being built in. */
 struct capn_rpc_pending_call {
 	int used;
+	/* Finish arrived before the server answered. The message stays
+	 * until return so a fill of `results` is not a use after free.
+	 * return then sends nothing. */
+	int cancelled;
 	uint32_t question_id;
+	/* Distinguishes a question id the peer reused after Finish. */
+	uint32_t generation;
 	struct capn *msg;
 	capn_ptr results;
 };
@@ -220,6 +226,9 @@ struct capn_rpc_conn {
 	CapDescriptor_list in_caps;
 	struct capn_rpc_pending_call pending_calls[CAPN_RPC_MAX_PENDING_CALLS];
 	uint32_t current_question;
+	/* Generation of the call being dispatched. 0 outside dispatch. */
+	uint32_t current_generation;
+	uint32_t answer_clock;
 };
 
 /* Zero the tables and install the transmit callback. */
@@ -232,16 +241,22 @@ void capn_rpc_init(struct capn_rpc_conn *c, capn_rpc_send_fn send,
 void capn_rpc_free(struct capn_rpc_conn *c);
 
 /* Deferred replies. A dispatch function that cannot answer yet returns
- * CAPN_RPC_PENDING after noting capn_rpc_current_question() and keeping
- * the `results` pointer; later it fills `results` and calls
- * capn_rpc_return, or capn_rpc_return_exception. `params` points into the
- * incoming message and is gone once dispatch returns, so copy what is
- * needed first. If the peer sends Finish in the meantime the call is
- * cancelled and capn_rpc_return reports -1, and the results are dropped. */
+ * CAPN_RPC_PENDING after noting capn_rpc_current_question() and
+ * capn_rpc_current_generation(), and keeping the `results` pointer.
+ * Later it fills `results` and calls capn_rpc_return, or
+ * capn_rpc_return_exception, passing that same id and generation.
+ * `params` points into the incoming message and is gone once dispatch
+ * returns, so copy what is needed first. If the peer sends Finish in
+ * the meantime the call is cancelled: filling `results` is still
+ * allowed, and return sends nothing and reports -1. A later call that
+ * reuses the question id has a new generation, so the old return cannot
+ * complete it. */
 uint32_t capn_rpc_current_question(const struct capn_rpc_conn *c);
-int capn_rpc_return(struct capn_rpc_conn *c, uint32_t question_id);
+uint32_t capn_rpc_current_generation(const struct capn_rpc_conn *c);
+int capn_rpc_return(struct capn_rpc_conn *c, uint32_t question_id,
+                    uint32_t generation);
 int capn_rpc_return_exception(struct capn_rpc_conn *c, uint32_t question_id,
-                              const char *reason);
+                              uint32_t generation, const char *reason);
 
 /* Size the results struct dispatch receives. It must cover the largest
  * results of any method this connection serves; the generated
