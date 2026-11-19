@@ -60,6 +60,7 @@ void set_Rec(const struct Rec *s, Rec_list l, int i) {
 
 capn_data Rec_get_info(Rec_ptr p)
 {
+	capn_resolve(&p.p);
 	capn_data info;
 	info = capn_get_data(p.p, 0);
 if (!info.p.type) {
@@ -68,23 +69,42 @@ if (!info.p.type) {
 	return info;
 }
 
+int Rec_has_info(Rec_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr info;
+	info = capn_getp(p.p, 0, 1);
+	return info.type != CAPN_NULL;
+}
+
 capn_ptr_list Rec_get_tags(Rec_ptr p)
 {
+	capn_resolve(&p.p);
 	capn_ptr_list tags;
-	tags.p = capn_getp(p.p, 1, 0);
+	tags.p = capn_getp(p.p, 1, 1);
 if (!tags.p.type) {
 	tags = capn_val2;
 }
 	return tags;
 }
 
+int Rec_has_tags(Rec_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr tags;
+	tags = capn_getp(p.p, 1, 1);
+	return tags.type != CAPN_NULL;
+}
+
 void Rec_set_info(Rec_ptr p, capn_data info)
 {
+	capn_resolve(&p.p);
 	capn_setp(p.p, 0, (info.p.data != capn_val1.p.data) ? info.p : capn_null);
 }
 
 void Rec_set_tags(Rec_ptr p, capn_ptr_list tags)
 {
+	capn_resolve(&p.p);
 	capn_setp(p.p, 1, (tags.p.data != capn_val2.p.data) ? tags.p : capn_null);
 }
 
@@ -106,7 +126,7 @@ void read_Event(struct Event *s capnp_unused, Event_ptr p) {
 void write_Event(const struct Event *s capnp_unused, Event_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
-	capn_setp(p.p, 0, s->args.p);
+	capn_setp(p.p, 0, (s->args.p.type != CAPN_NULL) ? s->args.p : capn_null);
 }
 void get_Event(struct Event *s, Event_list l, int i) {
 	Event_ptr p;
@@ -121,12 +141,22 @@ void set_Event(const struct Event *s, Event_list l, int i) {
 
 capn_ptr_list Event_get_args(Event_ptr p)
 {
+	capn_resolve(&p.p);
 	capn_ptr_list args;
-	args.p = capn_getp(p.p, 0, 0);
+	args.p = capn_getp(p.p, 0, 1);
 	return args;
+}
+
+int Event_has_args(Event_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr args;
+	args = capn_getp(p.p, 0, 1);
+	return args.type != CAPN_NULL;
 }
 
 void Event_set_args(Event_ptr p, capn_ptr_list args)
 {
-	capn_setp(p.p, 0, args.p);
+	capn_resolve(&p.p);
+	capn_setp(p.p, 0, (args.p.type != CAPN_NULL) ? args.p : capn_null);
 }
