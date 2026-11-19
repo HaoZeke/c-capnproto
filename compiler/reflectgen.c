@@ -3,9 +3,9 @@
  * For every struct, group and enum in a file, emit a const descriptor the
  * runtime in lib/capn-dyn.c walks to read, print and build messages
  * without generated per-type code. Descriptors hold names, types, slot
- * offsets, union discriminants and scalar defaults; pointer-typed defaults
- * other than Text are not recorded, because an unset pointer is not part
- * of a message's value (C++ prints and encodes it as absent too).
+ * offsets, union discriminants, scalar defaults and the bytes of struct,
+ * list, text and data defaults. An unset pointer still counts as absent
+ * when printing, which is what capnp decode does.
  */
 
 #include <inttypes.h>
@@ -17,6 +17,7 @@
 #include "reflectgen.h"
 
 static int g_tcount;
+static int g_dcount;
 
 static struct node *file_of(struct node *n) {
 	while (n && n->n.which != Node_file && n->n.scopeId) {
@@ -297,6 +298,65 @@ static uint64_t default_bits(struct Type *t, struct Value *v) {
 	}
 }
 
+/* Copy a pointer default into its own message and emit a capn_ptr that
+ * addresses those bytes. expr receives "&capn_dyn_dpN" or "NULL". */
+static void emit_default_ptr(struct str *pre, struct str *expr, int is_text,
+                             capn_text text, capn_ptr src)
+{
+	struct capn dst;
+	capn_ptr root, out;
+	int n, i, off;
+
+	str_reset(expr);
+	str_addf(expr, "NULL");
+	memset(&dst, 0, sizeof dst);
+	capn_init_malloc(&dst);
+	root = capn_root(&dst);
+	if (is_text) {
+		if (capn_set_text(root, 0, text))
+			goto done;
+	} else if (capn_setp(root, 0, src)) {
+		goto done;
+	}
+	out = capn_getp(root, 0, 1);
+	if (out.type == CAPN_NULL)
+		goto done;
+
+	n = ++g_dcount;
+	if ((out.type == CAPN_LIST || out.type == CAPN_PTR_LIST || out.type == CAPN_BIT_LIST) &&
+	    out.len == 0 && out.data == NULL) {
+		str_reset(expr);
+		str_addf(pre, "static const capn_ptr capn_dyn_dp%d = {%u,0,0,%u,%u,%u,0,NULL,NULL,0,0};\n",
+		         n, out.type, out.is_composite_list, out.datasz, out.ptrs);
+		str_addf(expr, "&capn_dyn_dp%d", n);
+		goto done;
+	}
+	if (out.seg == NULL || out.data == NULL || out.seg->data == NULL)
+		goto done;
+	off = (int) (out.data - out.seg->data);
+	if (off < 0 || (size_t) off > out.seg->len)
+		goto done;
+
+	str_reset(expr);
+	str_addf(pre, "static const uint8_t capn_dyn_db%d[] = {", n);
+	for (i = 0; i < (int) out.seg->len; i++) {
+		if (i)
+			str_addf(pre, ",");
+		str_addf(pre, "%u", (unsigned char) out.seg->data[i]);
+	}
+	str_addf(pre, "};\n");
+	str_addf(pre,
+	         "static struct capn_segment capn_dyn_ds%d = {{0},0,0,0,(char*)capn_dyn_db%d,%zu,%zu,0};\n",
+	         n, n, out.seg->len, out.seg->len);
+	str_addf(pre,
+	         "static const capn_ptr capn_dyn_dp%d = {%u,%u,%u,%u,%u,%u,%d,(char*)capn_dyn_db%d+%d,&capn_dyn_ds%d,0,0};\n",
+	         n, out.type, out.has_ptr_tag, out.is_list_member, out.is_composite_list,
+	         out.datasz, out.ptrs, out.len, n, off, n);
+	str_addf(expr, "&capn_dyn_dp%d", n);
+done:
+	capn_free(&dst);
+}
+
 static void emit_struct_forward(struct str *out, struct node *n, int group) {
 	if (group) {
 		str_addf(out, "static const struct capn_dyn_struct capn_dyn_g%" PRIx64 ";\n", n->n.id);
@@ -315,6 +375,7 @@ static void emit_struct(struct str *src, struct node *n, int group) {
 		struct str tb = STR_INIT;
 		const char *dtext = "NULL";
 		struct str dtbuf = STR_INIT;
+		struct str dexpr = STR_INIT;
 		struct str jnbuf = STR_INIT, jpbuf = STR_INIT;
 		const char *jname = "NULL";
 		const char *jprefix = "NULL";
@@ -338,10 +399,22 @@ static void emit_struct(struct str *src, struct node *n, int group) {
 			read_Value(&v, f->f.slot.defaultValue);
 			bits = default_bits(&t, &v);
 			offset = f->f.slot.offset;
+			str_addf(&dexpr, "NULL");
 			if (t.which == Type_text && v.which == Value_text && v.text.len > 0) {
+				capn_ptr none = {CAPN_NULL};
 				add_cstr(&dtbuf, v.text.str, v.text.len);
 				dtext = dtbuf.str;
 				dlen = v.text.len;
+				emit_default_ptr(&pre, &dexpr, 1, v.text, none);
+			} else if (t.which == Type_data && v.which == Value_data && v.data.p.type != CAPN_NULL) {
+				capn_text none = {0, "", NULL};
+				emit_default_ptr(&pre, &dexpr, 0, none, v.data.p);
+			} else if (t.which == Type__list && v.which == Value__list && v._list.type != CAPN_NULL) {
+				capn_text none = {0, "", NULL};
+				emit_default_ptr(&pre, &dexpr, 0, none, v._list);
+			} else if (t.which == Type__struct && v.which == Value__struct && v._struct.type != CAPN_NULL) {
+				capn_text none = {0, "", NULL};
+				emit_default_ptr(&pre, &dexpr, 0, none, v._struct);
 			}
 		}
 
@@ -364,12 +437,13 @@ static void emit_struct(struct str *src, struct node *n, int group) {
 
 		str_addf(&fields, "\t{");
 		add_cstr(&fields, f->f.name.str, f->f.name.len);
-		str_addf(&fields, ", %s, %" PRIu32 "u, %uu, %u, 0x%" PRIx64 "ull, %s, %d, %s, %d, %s, %d},\n",
+		str_addf(&fields, ", %s, %" PRIu32 "u, %uu, %u, 0x%" PRIx64 "ull, %s, %d, %s, %d, %s, %d, %s},\n",
 				lit.str, offset, (unsigned) f->f.discriminantValue, is_group, bits, dtext, dlen,
-				jname, jflatten, jprefix, jdata);
+				jname, jflatten, jprefix, jdata, dexpr.str ? dexpr.str : "NULL");
 		str_release(&lit);
 		str_release(&tb);
 		str_release(&dtbuf);
+		str_release(&dexpr);
 		str_release(&jnbuf);
 		str_release(&jpbuf);
 	}
@@ -377,7 +451,7 @@ static void emit_struct(struct str *src, struct node *n, int group) {
 	if (nf == 0) {
 		/* ISO C has no empty initialiser list; keep one inert entry that
 		 * nfields excludes. */
-		str_addf(&fields, "\t{\"\", {CAPN_DYN_VOID, NULL, NULL, NULL, NULL, 0ull, 0u}, 0u, 0xffffu, 0, 0ull, NULL, 0, NULL, 0, NULL, 0}\n");
+		str_addf(&fields, "\t{\"\", {CAPN_DYN_VOID, NULL, NULL, NULL, NULL, 0ull, 0u}, 0u, 0xffffu, 0, 0ull, NULL, 0, NULL, 0, NULL, 0, NULL}\n");
 	}
 
 	str_addf(src, "%s", pre.str);
@@ -505,6 +579,7 @@ void define_reflect(capnp_ctx_t *ctx, struct node *file_node) {
 	int ngroups = 0, cap = 0, i;
 
 	g_tcount = 0;
+	g_dcount = 0;
 
 	for (n = file_node->file_nodes; n != NULL; n = n->next_file_node) {
 		if (n->n.which == Node__struct && !n->n._struct.isGroup)

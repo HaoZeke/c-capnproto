@@ -91,10 +91,18 @@ int capn_dyn_set_which(const struct capn_dyn_struct *s, capn_ptr st,
 	return capn_write16(st, 2 * (int) s->union_offset, (uint16_t) f->discriminant);
 }
 
-capn_ptr capn_dyn_get_ptr(capn_ptr st, const struct capn_dyn_field *f)
+static capn_ptr wire_ptr(capn_ptr st, const struct capn_dyn_field *f)
 {
 	capn_resolve(&st);
 	return capn_getp(st, (int) f->offset, 1);
+}
+
+capn_ptr capn_dyn_get_ptr(capn_ptr st, const struct capn_dyn_field *f)
+{
+	capn_ptr p = wire_ptr(st, f);
+	if (p.type == CAPN_NULL && f->default_ptr != NULL)
+		return *f->default_ptr;
+	return p;
 }
 
 capn_text capn_dyn_get_text(capn_ptr st, const struct capn_dyn_field *f)
@@ -118,11 +126,11 @@ int capn_dyn_has(const struct capn_dyn_struct *s, capn_ptr st,
 	case CAPN_DYN_INTERFACE:
 	case CAPN_DYN_ANYPOINTER:
 	case CAPN_DYN_PARAM:
-		return capn_dyn_get_ptr(st, f).type != CAPN_NULL;
+		return wire_ptr(st, f).type != CAPN_NULL;
 	case CAPN_DYN_STRUCT:
 		if (f->is_group)
 			return 1;
-		return capn_dyn_get_ptr(st, f).type != CAPN_NULL;
+		return wire_ptr(st, f).type != CAPN_NULL;
 	default:
 		return 1;
 	}
@@ -591,7 +599,7 @@ static int field_has(const struct capn_dyn_struct *s, capn_ptr st,
 	if (rt->kind == CAPN_DYN_STRUCT && f->is_group)
 		return 1;
 	if (is_pointer_kind(rt->kind))
-		return capn_dyn_get_ptr(st, f).type != CAPN_NULL;
+		return wire_ptr(st, f).type != CAPN_NULL;
 	return 1;
 }
 

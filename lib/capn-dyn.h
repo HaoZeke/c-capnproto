@@ -12,9 +12,10 @@
  * accept for the types they cover.
  *
  * Not covered: Interface and AnyPointer fields are opaque (printed as
- * a placeholder, never decoded), fields typed by a generic parameter are
- * AnyPointer, and defaults of Struct, List and Data fields are not
- * recorded because an unset pointer is absent from a message's value.
+ * a placeholder, never decoded). Fields typed by a generic parameter are
+ * AnyPointer until a brand binds them. Pointer defaults are returned by
+ * capn_dyn_get_ptr and capn_dyn_get_text; capn_dyn_has stays false when
+ * the wire pointer is null.
  */
 
 #ifndef CAPN_DYN_H
@@ -109,6 +110,10 @@ struct capn_dyn_field {
 	const char *json_prefix;
 	/* $Json.base64 is 1, $Json.hex is 2, a JSON number array is 0. */
 	uint8_t json_data;
+	/* Struct, list, text or data default. NULL when the field has none.
+	 * The pointer addresses a static segment. capn_dyn_has stays false
+	 * while the wire pointer is null. */
+	const capn_ptr *default_ptr;
 };
 
 struct capn_dyn_struct {
