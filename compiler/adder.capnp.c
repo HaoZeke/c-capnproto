@@ -14,6 +14,70 @@ static const capn_text capn_val0 = {0,capn_val0_str,0};
 static const capn_ptr capn_null = {CAPN_NULL};
 static const capn_text capn_text_null = {0,0,0};
 
+Adder_borrow_results_ptr new_Adder_borrow_results(struct capn_segment *s) {
+	Adder_borrow_results_ptr p;
+	p.p = capn_new_struct(s, 8, 1);
+	return p;
+}
+Adder_borrow_results_list new_Adder_borrow_results_list(struct capn_segment *s, int len) {
+	Adder_borrow_results_list p;
+	p.p = capn_new_struct_list(s, len, 8, 1);
+	return p;
+}
+void read_Adder_borrow_results(struct Adder_borrow_results *s capnp_unused, Adder_borrow_results_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	s->n = (int32_t) ((int32_t)capn_read32(p.p, 0));
+	s->cap.p = capn_getp(p.p, 0, 0);
+}
+void write_Adder_borrow_results(const struct Adder_borrow_results *s capnp_unused, Adder_borrow_results_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	capn_write32(p.p, 0, (uint32_t) (s->n));
+	capn_setp(p.p, 0, (s->cap.p.type != CAPN_NULL) ? s->cap.p : capn_null);
+}
+void get_Adder_borrow_results(struct Adder_borrow_results *s, Adder_borrow_results_list l, int i) {
+	Adder_borrow_results_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_Adder_borrow_results(s, p);
+}
+void set_Adder_borrow_results(const struct Adder_borrow_results *s, Adder_borrow_results_list l, int i) {
+	Adder_borrow_results_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_Adder_borrow_results(s, p);
+}
+
+Adder_borrow_params_ptr new_Adder_borrow_params(struct capn_segment *s) {
+	Adder_borrow_params_ptr p;
+	p.p = capn_new_struct(s, 8, 0);
+	return p;
+}
+Adder_borrow_params_list new_Adder_borrow_params_list(struct capn_segment *s, int len) {
+	Adder_borrow_params_list p;
+	p.p = capn_new_struct_list(s, len, 8, 0);
+	return p;
+}
+void read_Adder_borrow_params(struct Adder_borrow_params *s capnp_unused, Adder_borrow_params_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	s->n = (int32_t) ((int32_t)capn_read32(p.p, 0));
+}
+void write_Adder_borrow_params(const struct Adder_borrow_params *s capnp_unused, Adder_borrow_params_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	capn_write32(p.p, 0, (uint32_t) (s->n));
+}
+void get_Adder_borrow_params(struct Adder_borrow_params *s, Adder_borrow_params_list l, int i) {
+	Adder_borrow_params_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_Adder_borrow_params(s, p);
+}
+void set_Adder_borrow_params(const struct Adder_borrow_params *s, Adder_borrow_params_list l, int i) {
+	Adder_borrow_params_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_Adder_borrow_params(s, p);
+}
+
 Adder_seq_results_ptr new_Adder_seq_results(struct capn_segment *s) {
 	Adder_seq_results_ptr p;
 	p.p = capn_new_struct(s, 8, 0);
@@ -784,6 +848,25 @@ int Adder_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn
 		write_Adder_seq_results(&out, rp);
 		return 0;
 	}
+	case 7: {
+		struct Adder_borrow_params in;
+		Adder_borrow_params_ptr pp;
+		int rc;
+		struct Adder_borrow_results out;
+		Adder_borrow_results_ptr rp;
+		if (srv->on_borrow == NULL)
+			return -1;
+		memset(&in, 0, sizeof in);
+		memset(&out, 0, sizeof out);
+		pp.p = params;
+		read_Adder_borrow_params(&in, pp);
+		rc = srv->on_borrow(srv->self, &in, &out, results.seg);
+		if (rc != 0)
+			return rc;
+		rp.p = results;
+		write_Adder_borrow_results(&out, rp);
+		return 0;
+	}
 	default:
 		return -1;
 	}
@@ -996,6 +1079,36 @@ int Adder_return_seq(struct capn_rpc_conn *c, uint32_t question, uint32_t genera
 		return -1;
 	rp.p = results;
 	write_Adder_seq_results(out, rp);
+	return capn_rpc_return(c, question, generation);
+}
+
+static void Adder_borrow_fill(void *ctx, capn_ptr params) {
+	Adder_borrow_params_ptr pp;
+	pp.p = params;
+	write_Adder_borrow_params((const struct Adder_borrow_params *) ctx, pp);
+}
+uint32_t Adder_call_borrow(struct capn_rpc_conn *c, uint32_t cap, const struct Adder_borrow_params *in) {
+	return capn_rpc_send_call(c, cap, Adder_INTERFACE_ID, 7, (int) (Adder_borrow_params_word_count * 8), (int) Adder_borrow_params_pointer_count, Adder_borrow_fill, (void *) in);
+}
+int Adder_results_borrow(struct capn_rpc_conn *c, uint32_t question, struct Adder_borrow_results *out, struct capn *msg) {
+	capn_ptr content;
+	Adder_borrow_results_ptr rp;
+	if (capn_rpc_answer_content(c, question, msg, &content) != 0)
+		return -1;
+	rp.p = content;
+	read_Adder_borrow_results(out, rp);
+	return 0;
+}
+int Adder_return_borrow(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_borrow_results *out) {
+	capn_ptr results;
+	Adder_borrow_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_Adder_borrow_results(out, rp);
 	return capn_rpc_return(c, question, generation);
 }
 

@@ -44,6 +44,16 @@ public:
 		return kj::READY_NOW;
 	}
 
+	/* The promise resolves on a later turn and carries another Adder. */
+	kj::Promise<void> borrow(BorrowContext context) override {
+		int32_t n = context.getParams().getN();
+		return kj::evalLater([n, context = kj::mv(context)]() mutable {
+			auto r = context.getResults();
+			r.setN(n);
+			r.setCap(kj::heap<CountLeafImpl>());
+		});
+	}
+
 	kj::Promise<void> defer(DeferContext ctx) override {
 		auto paf = kj::newPromiseAndFulfiller<Adder::Client>();
 		fulfiller = kj::mv(paf.fulfiller);
