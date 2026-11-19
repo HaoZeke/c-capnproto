@@ -332,6 +332,68 @@ TEST_F(RpcClient, ResultStructSizeFollowsTheConnectionSetting)
 	capn_free(&m);
 }
 
+TEST_F(RpcClient, PeerAbortFailsOutstandingQuestionsAndStopsTheConnection)
+{
+	uint32_t q = capn_rpc_send_bootstrap(&client);
+	ASSERT_NE((uint32_t)-1, q);
+	wire.to_vat.clear();
+
+	ASSERT_EQ(0, capn_rpc_send_abort(&vat, "going away"));
+	EXPECT_TRUE(capn_rpc_is_aborted(&vat));
+	ASSERT_EQ(1u, wire.to_client.size());
+	EXPECT_EQ(0, capn_rpc_handle(&client, wire.to_client[0].data(), wire.to_client[0].size()));
+	wire.to_client.clear();
+
+	EXPECT_TRUE(capn_rpc_is_aborted(&client));
+	EXPECT_TRUE(capn_rpc_is_answered(&client, q));
+	EXPECT_TRUE(capn_rpc_is_failed(&client, q));
+
+	/* Nothing more is accepted, and nothing is sent back. */
+	capn_rpc_send_bootstrap(&vat);
+	size_t before = wire.to_client.size();
+	pump(&client, wire.to_vat);
+	pump(&vat, wire.to_vat);
+	EXPECT_EQ(before, wire.to_client.size());
+}
+
+TEST_F(RpcClient, UnimplementedForOurCallFailsItAndIsNeverEchoed)
+{
+	capn_rpc_send_bootstrap(&client);
+	settle();
+	uint32_t arg = 1;
+	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 0, 8, 1, fill_u32, &arg);
+	ASSERT_NE((uint32_t)-1, q);
+	ASSERT_EQ(1u, wire.to_vat.size());
+
+	/* The peer replies Unimplemented, echoing our Call, instead of a Return. */
+	std::vector<uint8_t> call = wire.to_vat.front();
+	wire.to_vat.clear();
+	struct capn in;
+	ASSERT_EQ(0, capn_init_mem(&in, call.data(), call.size(), 0));
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_unimplemented;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(mp.p, 0, capn_getp(capn_root(&in), 0, 1));
+	capn_setp(capn_root(&msg), 0, mp.p);
+	uint8_t buf[4096];
+	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
+	capn_free(&msg);
+	capn_free(&in);
+	ASSERT_GT(sz, 0);
+
+	wire.to_client.clear();
+	EXPECT_EQ(0, capn_rpc_handle(&client, buf, static_cast<size_t>(sz)));
+	EXPECT_TRUE(capn_rpc_is_answered(&client, q));
+	EXPECT_TRUE(capn_rpc_is_failed(&client, q));
+	EXPECT_TRUE(wire.to_vat.empty()) << "answered an Unimplemented with another";
+	EXPECT_TRUE(wire.to_client.empty());
+}
+
 TEST_F(RpcClient, UnimplementedEchoesTheOriginalMessageNotAWrapper)
 {
 	/* A Resolve this vat does not adopt is answered with Unimplemented
