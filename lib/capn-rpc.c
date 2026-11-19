@@ -21,13 +21,17 @@ static struct capn_rpc_answer *answer_find(struct capn_rpc_conn *c,
 static int table_grow(void **table, int *cap, size_t item_size)
 {
 	void *next;
-	int next_cap = *cap ? *cap : CAPN_RPC_INITIAL_TABLE_CAPACITY;
+	int next_cap;
 
-	if (*cap) {
-		if (*cap > INT_MAX / 2)
-			return -1;
-		next_cap *= 2;
-	}
+	if (*cap <= 0)
+		next_cap = CAPN_RPC_INITIAL_TABLE_CAPACITY;
+	else if (*cap >= CAPN_RPC_MAX_TABLE_CAPACITY ||
+		 *cap > CAPN_RPC_MAX_TABLE_CAPACITY / 2)
+		return -1;
+	else
+		next_cap = *cap * 2;
+	if (next_cap > CAPN_RPC_MAX_TABLE_CAPACITY)
+		return -1;
 	if ((size_t) next_cap > SIZE_MAX / item_size)
 		return -1;
 	next = realloc(*table, (size_t) next_cap * item_size);
