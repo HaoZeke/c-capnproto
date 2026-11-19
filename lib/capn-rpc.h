@@ -25,7 +25,6 @@ extern "C" {
 
 #define CAPN_RPC_MAX_EXPORTS 64
 #define CAPN_RPC_MAX_ANSWERS 64
-#define CAPN_RPC_MAX_ANSWER_BYTES 8192
 #define CAPN_RPC_MAX_QUESTIONS 64
 #define CAPN_RPC_MAX_PROVISIONS 32
 #define CAPN_RPC_MAX_INTRODUCTIONS 8
@@ -67,7 +66,7 @@ struct capn_rpc_export {
 struct capn_rpc_answer {
 	int used;
 	uint32_t question_id;
-	uint8_t frame[CAPN_RPC_MAX_ANSWER_BYTES];
+	uint8_t *frame;
 	size_t len;
 };
 
@@ -77,7 +76,7 @@ struct capn_rpc_question {
 	uint32_t question_id;
 	int answered;
 	int failed;
-	uint8_t reply[CAPN_RPC_MAX_ANSWER_BYTES];
+	uint8_t *reply;
 	size_t reply_len;
 };
 
@@ -191,6 +190,11 @@ struct capn_rpc_conn {
 /* Zero the tables and install the transmit callback. */
 void capn_rpc_init(struct capn_rpc_conn *c, capn_rpc_send_fn send,
                    void *send_ctx);
+
+/* Release the frames a connection still holds for pipelining and for
+ * unclaimed answers. Call it when the connection is finished; the
+ * connection must not be used afterwards without capn_rpc_init. */
+void capn_rpc_free(struct capn_rpc_conn *c);
 
 /* Share level 3 arrangements with this vat's other connections. Call
  * after capn_rpc_init and before any Provide; `vat` must outlive the
