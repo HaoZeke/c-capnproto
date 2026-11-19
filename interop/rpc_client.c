@@ -1,9 +1,9 @@
 /* Live-peer RPC interop: this vat against capnp-C++.
  *
- * Bootstraps the Adder served by interop/rpc_peer_server.c++ over
- * rpc-twoparty on 127.0.0.1:<argv[1]> and calls add(), which proves
- * protocol-level compatibility with the reference implementation rather
- * than only wire-format byte equality against our own encoders.
+ * Bootstraps the CountLeaf served by interop/rpc_peer_server.c++ over
+ * rpc-twoparty on 127.0.0.1:<argv[1]>. add() and tag() use the Adder
+ * interface id. inc() uses the grandparent id, which the C++ leaf
+ * accepts the same way a C leaf must.
  */
 
 #include <arpa/inet.h>
@@ -229,6 +229,100 @@ int main(int argc, char **argv)
 			fprintf(stderr, "tag(9, \"wire\") came back as n=%d label=%.*s\n",
 			        out.n, out.label.len,
 			        out.label.str ? out.label.str : "");
+			capn_free(&m);
+			return 1;
+		}
+		capn_free(&m);
+	}
+
+	{
+		struct CountBase_inc_params in;
+		struct CountBase_inc_results out;
+		struct capn m;
+		memset(&in, 0, sizeof in);
+		in.n = 7;
+		qcall = CountBase_call_inc(&conn, 0, &in);
+		if (qcall == (uint32_t)-1) {
+			fprintf(stderr, "inc call not sent\n");
+			return 1;
+		}
+		{
+			ssize_t n = read_frame(g_fd, buf, sizeof buf);
+			if (n <= 0 || capn_rpc_handle(&conn, buf, (size_t)n) != 0) {
+				fprintf(stderr, "inc reply not handled\n");
+				return 1;
+			}
+		}
+		if (!capn_rpc_is_answered(&conn, qcall) ||
+		    capn_rpc_is_failed(&conn, qcall)) {
+			fprintf(stderr, "capnp-C++ did not answer inc()\n");
+			return 1;
+		}
+		memset(&out, 0, sizeof out);
+		if (CountBase_results_inc(&conn, qcall, &out, &m) != 0 || out.n != 8) {
+			fprintf(stderr, "inc(7) returned %d\n", out.n);
+			capn_free(&m);
+			return 1;
+		}
+		capn_free(&m);
+	}
+	{
+		struct CountMid_twice_params in;
+		struct CountMid_twice_results out;
+		struct capn m;
+		memset(&in, 0, sizeof in);
+		in.n = 3;
+		qcall = CountMid_call_twice(&conn, 0, &in);
+		if (qcall == (uint32_t)-1) {
+			fprintf(stderr, "twice call not sent\n");
+			return 1;
+		}
+		{
+			ssize_t n = read_frame(g_fd, buf, sizeof buf);
+			if (n <= 0 || capn_rpc_handle(&conn, buf, (size_t)n) != 0) {
+				fprintf(stderr, "twice reply not handled\n");
+				return 1;
+			}
+		}
+		if (!capn_rpc_is_answered(&conn, qcall) ||
+		    capn_rpc_is_failed(&conn, qcall)) {
+			fprintf(stderr, "capnp-C++ did not answer twice()\n");
+			return 1;
+		}
+		memset(&out, 0, sizeof out);
+		if (CountMid_results_twice(&conn, qcall, &out, &m) != 0 || out.n != 6) {
+			fprintf(stderr, "twice(3) returned %d\n", out.n);
+			capn_free(&m);
+			return 1;
+		}
+		capn_free(&m);
+	}
+	{
+		struct CountLeaf_dec_params in;
+		struct CountLeaf_dec_results out;
+		struct capn m;
+		memset(&in, 0, sizeof in);
+		in.n = 10;
+		qcall = CountLeaf_call_dec(&conn, 0, &in);
+		if (qcall == (uint32_t)-1) {
+			fprintf(stderr, "dec call not sent\n");
+			return 1;
+		}
+		{
+			ssize_t n = read_frame(g_fd, buf, sizeof buf);
+			if (n <= 0 || capn_rpc_handle(&conn, buf, (size_t)n) != 0) {
+				fprintf(stderr, "dec reply not handled\n");
+				return 1;
+			}
+		}
+		if (!capn_rpc_is_answered(&conn, qcall) ||
+		    capn_rpc_is_failed(&conn, qcall)) {
+			fprintf(stderr, "capnp-C++ did not answer dec()\n");
+			return 1;
+		}
+		memset(&out, 0, sizeof out);
+		if (CountLeaf_results_dec(&conn, qcall, &out, &m) != 0 || out.n != 9) {
+			fprintf(stderr, "dec(10) returned %d\n", out.n);
 			capn_free(&m);
 			return 1;
 		}

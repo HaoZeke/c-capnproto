@@ -56,3 +56,15 @@ interface TextMid extends(TextRoot) {
 interface TextLeaf extends(TextMid) {
   n2 @0 () -> (n :Int32);
 }
+
+interface ChainRoot {
+  inc @0 (n :Int32) -> (n :Int32);
+}
+
+interface ChainMid extends(ChainRoot) {
+  twice @0 (n :Int32) -> (n :Int32);
+}
+
+interface ChainLeaf extends(ChainMid) {
+  dec @0 (n :Int32) -> (n :Int32);
+}
