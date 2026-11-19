@@ -102,6 +102,13 @@ void capn_reset_copy(struct capn *c) {
  * segments cannot be decoded. */
 #define CAPN_MAX_SEGS 1024
 
+/* Largest framed message the stream readers will allocate for, matching
+ * the 64 MiB default traversal limit (C++ refuses a larger message at
+ * the framing layer, before it allocates). Override at compile time. */
+#ifndef CAPN_MAX_MESSAGE_BYTES
+#define CAPN_MAX_MESSAGE_BYTES ((uint32_t) 64u * 1024u * 1024u)
+#endif
+
 #ifndef __KERNEL__
 static int read_fd_all(ssize_t (*read_fd)(int fd, void *p, size_t count), int fd, void *p, size_t count)
 {
@@ -238,8 +245,15 @@ static int init_fp(struct capn *c, FILE *f,
 		total += hdr[i];
 	}
 
+	if (total > CAPN_MAX_MESSAGE_BYTES)
+		goto err;
+	/* A buffer cannot hold more than it was given, or than the longest
+	 * run a packed stream can inflate to (255 zero words per two bytes). */
+	if (!f && !read_fd && total > (packed ? z->avail_in * 1024u + 8u : z->avail_in))
+		goto err;
+
 	/* Allocate space for the data and the capn_segment structs */
-	s = (struct capn_segment*) calloc(1, total + (sizeof(*s) * segnum));
+	s = (struct capn_segment*) calloc(1, (size_t) total + (sizeof(*s) * segnum));
 	if (!s)
 		goto err;
 
