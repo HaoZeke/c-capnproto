@@ -91,6 +91,10 @@ target_include_directories(capnpc-c PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/lib"
   "${CMAKE_CURRENT_SOURCE_DIR}/compiler"
 )
+# With BUILD_SHARED_LIBS the installed plugin must find its runtime.
+set_target_properties(capnpc-c PROPERTIES
+  INSTALL_RPATH "${CMAKE_INSTALL_FULL_LIBDIR}"
+)
 
 if(C_CAPNPROTO_INSTALL)
 install(TARGETS capnp_c capnpc-c

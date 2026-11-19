@@ -114,6 +114,9 @@ capnpc_c = executable(
   dependencies: [libcapnp_dep],
   c_args: common_c_args,
   install: true,
+  # The plugin links the shared runtime, which installs outside the
+  # default loader path on multiarch systems.
+  install_rpath: get_option('prefix') / get_option('libdir'),
 )
 
 # Schema annotations used by generators / fieldgetset.
