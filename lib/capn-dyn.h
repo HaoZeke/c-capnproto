@@ -169,6 +169,10 @@ CAPN_EXPORT int64_t capn_dyn_bits_to_i64(const struct capn_dyn_field *f, uint64_
  * a malloc'd string, or NULL on out of memory. */
 CAPN_EXPORT char *capn_dyn_to_text(const struct capn_dyn_struct *s, capn_ptr st);
 
+/* Multi-line text format, as `capnp decode` prints it (without --short).
+ * Returns a malloc'd string, or NULL on out of memory. */
+char *capn_dyn_to_text_pretty(const struct capn_dyn_struct *s, capn_ptr st);
+
 /* JSON, as `capnp convert binary:json` prints it (`--short` is
  * CAPN_DYN_COMPACT). 64-bit integers are strings, Data is an array of
  * numbers, enums are names, non-finite floats are the strings "NaN",
