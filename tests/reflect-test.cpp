@@ -96,6 +96,14 @@ class Reflect : public ::testing::Test {
     EXPECT_EQ(want_text(c, bin), text) << c.text;
     free(text);
 
+    char *pretty = capn_dyn_to_text_pretty(c.desc, root);
+    ASSERT_NE(nullptr, pretty);
+    CmdResult want_pretty = run_argv(cli("decode", nullptr, c.type, false),
+                                     bin.data(), bin.size());
+    EXPECT_EQ(0, want_pretty.status) << want_pretty.err;
+    EXPECT_EQ(strip(want_pretty.out), pretty) << c.text;
+    free(pretty);
+
     char *json = capn_dyn_to_json(c.desc, root, CAPN_DYN_COMPACT);
     ASSERT_NE(nullptr, json);
     EXPECT_EQ(want_json(c, bin), json) << c.text;
