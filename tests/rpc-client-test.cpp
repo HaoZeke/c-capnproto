@@ -10,6 +10,8 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <sys/socket.h>
+#include <unistd.h>
 #include <deque>
 #include <vector>
 
@@ -637,3 +639,61 @@ TEST_F(RpcClient, PassingBackACapabilityNamesTheReceiversExport)
 }
 
 } // namespace
+
+TEST(RpcFd, TwoVatsTalkOverASocketPair)
+{
+	int sv[2];
+	ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_STREAM, 0, sv));
+	int calls = 0;
+	struct capn_rpc_conn client, server;
+	capn_rpc_init(&client, capn_rpc_fd_send, &sv[0]);
+	capn_rpc_init(&server, capn_rpc_fd_send, &sv[1]);
+	capn_rpc_set_bootstrap(&server, &calls, doubler_dispatch);
+	doubler_calls = 0;
+	doubler_fail_from = 1 << 30;
+
+	uint32_t qb = capn_rpc_send_bootstrap(&client);
+	ASSERT_EQ(0, capn_rpc_fd_pump(&server, sv[1]));
+	ASSERT_EQ(0, capn_rpc_fd_pump(&client, sv[0]));
+	EXPECT_TRUE(capn_rpc_is_answered(&client, qb));
+
+	uint32_t arg = 20;
+	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 0, 8, 1, fill_u32, &arg);
+	ASSERT_NE((uint32_t)-1, q);
+	ASSERT_EQ(0, capn_rpc_fd_pump(&server, sv[1]));
+	ASSERT_EQ(0, capn_rpc_fd_pump(&client, sv[0]));
+	struct capn m;
+	capn_ptr content;
+	ASSERT_EQ(0, capn_rpc_answer_content(&client, q, &m, &content));
+	EXPECT_EQ(40u, capn_read32(content, 0));
+	capn_free(&m);
+
+	close(sv[0]);
+	EXPECT_EQ(1, capn_rpc_fd_pump(&server, sv[1]));
+	close(sv[1]);
+	capn_rpc_free(&client);
+	capn_rpc_free(&server);
+}
+
+TEST(RpcFd, ARefusedFrameIsAnErrorNotAHang)
+{
+	int sv[2];
+	ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_STREAM, 0, sv));
+	/* A table claiming 2000 segments, and then a truncated stream. */
+	const uint8_t bad[8] = {0xcf, 0x07, 0, 0, 0, 0, 0, 0};
+	ASSERT_EQ(8, write(sv[0], bad, 8));
+	uint8_t *f = nullptr;
+	size_t n = 0;
+	EXPECT_EQ(-1, capn_rpc_fd_read_frame(sv[1], &f, &n));
+	EXPECT_EQ(nullptr, f);
+	close(sv[0]);
+	close(sv[1]);
+
+	/* A segment claiming more than the limit allows. */
+	ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_STREAM, 0, sv));
+	const uint8_t big[16] = {0, 0, 0, 0, 0xff, 0xff, 0xff, 0x1f, 0, 0, 0, 0, 0, 0, 0, 0};
+	ASSERT_EQ(16, write(sv[0], big, 16));
+	EXPECT_EQ(-1, capn_rpc_fd_read_frame(sv[1], &f, &n));
+	close(sv[0]);
+	close(sv[1]);
+}

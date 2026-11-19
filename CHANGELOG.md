@@ -24,6 +24,8 @@ Pre-1.0 minor releases may include breaking wire or API changes.
   `capn_rpc_param_cap` and `capn_rpc_answer_cap` read one, and
   `capn_rpc_send_pipelined_call` calls a capability inside an answer that
   has not arrived.
+- `capn_rpc_fd_send`, `capn_rpc_fd_read_frame` and `capn_rpc_fd_pump`: a
+  blocking descriptor transport for the vat on Unix-like systems.
 - `scripts/regen-generated.sh`, which rewrites every checked-in
   `*.capnp.[ch]` or, with `--check`, fails on a stale one; CI runs it.
 - Tests that read back the values baked into generated constants, that
