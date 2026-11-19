@@ -215,9 +215,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-s390x-linux-gnu g++-s390x-linux-gnu \
-            libc6-dev-s390x-cross qemu-user-static
+            libc6-dev-s390x-cross qemu-user
       # No host capnp: the CLI parity tests are not built. The runtime
-      # suite runs under qemu-s390x-static.
+      # suite runs under qemu-s390x from qemu-user. ubuntu-latest does
+      # not ship qemu-user-static.
       - name: Configure
         run: meson setup build-s390x --cross-file cross/s390x.ini -Denable_tests=true
       - name: Build
