@@ -12,3 +12,16 @@ interface Adder @0xea01e10cbc414411 {
   # as data shifts the text on the wire.
   tag @1 (n :Int32, label :Text) -> (n :Int32, label :Text);
 }
+
+# Three interfaces. A call on the leaf carries the root's interface id.
+interface CountBase {
+  inc @0 (n :Int32) -> (n :Int32);
+}
+
+interface CountMid extends(CountBase) {
+  twice @0 (n :Int32) -> (n :Int32);
+}
+
+interface CountLeaf extends(CountMid, Adder) {
+  dec @0 (n :Int32) -> (n :Int32);
+}

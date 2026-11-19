@@ -1,4 +1,6 @@
-/* C vat serving Adder, for the capnp-C++ client in rpc_peer_client.c++. */
+/* C vat serving CountLeaf, for the capnp-C++ client in rpc_peer_client.c++.
+ * The leaf extends CountMid and Adder. CountMid extends CountBase, so a
+ * call that names CountBase is forwarded through the middle server. */
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -19,6 +21,33 @@ static int on_add(void *self, const struct Adder_add_params *in,
 	(void) self;
 	(void) seg;
 	out->sum = in->a + in->b;
+	return 0;
+}
+
+static int on_inc(void *self, const struct CountBase_inc_params *in,
+                  struct CountBase_inc_results *out, struct capn_segment *seg)
+{
+	(void) self;
+	(void) seg;
+	out->n = in->n + 1;
+	return 0;
+}
+
+static int on_twice(void *self, const struct CountMid_twice_params *in,
+                    struct CountMid_twice_results *out, struct capn_segment *seg)
+{
+	(void) self;
+	(void) seg;
+	out->n = in->n * 2;
+	return 0;
+}
+
+static int on_dec(void *self, const struct CountLeaf_dec_params *in,
+                  struct CountLeaf_dec_results *out, struct capn_segment *seg)
+{
+	(void) self;
+	(void) seg;
+	out->n = in->n - 1;
 	return 0;
 }
 
@@ -46,7 +75,10 @@ int main(int argc, char **argv)
 {
 	struct sockaddr_in addr;
 	struct capn_rpc_conn conn;
-	struct Adder_server server;
+	struct Adder_server adder;
+	struct CountBase_server base;
+	struct CountMid_server mid;
+	struct CountLeaf_server leaf;
 	int port = argc > 1 ? atoi(argv[1]) : 43118;
 	int lfd, fd, one = 1;
 
@@ -69,12 +101,21 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	memset(&server, 0, sizeof server);
-	server.on_add = on_add;
-	server.on_tag = on_tag;
+	memset(&adder, 0, sizeof adder);
+	memset(&base, 0, sizeof base);
+	memset(&mid, 0, sizeof mid);
+	memset(&leaf, 0, sizeof leaf);
+	adder.on_add = on_add;
+	adder.on_tag = on_tag;
+	base.on_inc = on_inc;
+	mid.on_twice = on_twice;
+	mid.super_CountBase = &base;
+	leaf.on_dec = on_dec;
+	leaf.super_CountMid = &mid;
+	leaf.super_Adder = &adder;
 	capn_rpc_init(&conn, capn_rpc_fd_send, &fd);
-	capn_rpc_set_bootstrap(&conn, &server, Adder_dispatch);
-	capn_rpc_set_result_size(&conn, Adder_RESULT_DATASZ, Adder_RESULT_PTRS);
+	capn_rpc_set_bootstrap(&conn, &leaf, CountLeaf_dispatch);
+	capn_rpc_set_result_size(&conn, CountLeaf_RESULT_DATASZ, CountLeaf_RESULT_PTRS);
 
 	for (;;) {
 		int rc = capn_rpc_fd_pump(&conn, fd);

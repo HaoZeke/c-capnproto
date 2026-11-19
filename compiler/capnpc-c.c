@@ -1717,6 +1717,31 @@ static void define_interface_methods(struct node *n)
 	}
 }
 
+/* Emit `interface_id == X` for `iface` and every interface it extends.
+ * capnpc-c++ dispatchCall switches on each transitive superclass id and
+ * runs that interface's own methods. The handlers here live on the
+ * server object behind the direct superclass pointer, so that
+ * superclass's dispatch receives the ancestor id. */
+static void emit_ancestor_id_tests(struct node *iface, int *first, int depth)
+{
+	int i;
+
+	if (iface == NULL || iface->n.which != Node__interface || depth > 64)
+		return;
+	if (!*first)
+		str_addf(&SRC, " || ");
+	*first = 0;
+	str_addf(&SRC, "interface_id == %s_INTERFACE_ID", iface->name.str);
+	for (i = 0; i < capn_len(iface->n._interface.superclasses); i++) {
+		struct Superclass superclass;
+		struct node *older;
+
+		get_Superclass(&superclass, iface->n._interface.superclasses, i);
+		older = find_node_mayfail(superclass.id);
+		emit_ancestor_id_tests(older, first, depth + 1);
+	}
+}
+
 /* Largest result a method of `iface` or any interface it extends will
  * write. A subclass connection sizes its results from the subclass
  * macros, and an inherited method writes into that same struct. */
@@ -1805,16 +1830,17 @@ static void define_rpcstubs(struct node *n)
 	for (i = 0; i < capn_len(n->n._interface.superclasses); i++) {
 		struct Superclass superclass;
 		struct node *parent;
+		int first = 1;
 
 		get_Superclass(&superclass, n->n._interface.superclasses, i);
 		parent = find_node_mayfail(superclass.id);
-		if (parent && parent->n.which == Node__interface) {
-			str_addf(&SRC,
-				 "\t\tif (interface_id == %s_INTERFACE_ID && srv->super_%s != NULL)\n"
-				 "\t\t\treturn %s_dispatch((void *) srv->super_%s, interface_id, method_id, params, results);\n",
-				 parent->name.str, parent->name.str, parent->name.str,
-				 parent->name.str);
-		}
+		if (!parent || parent->n.which != Node__interface)
+			continue;
+		str_addf(&SRC, "\t\tif (srv->super_%s != NULL && (", parent->name.str);
+		emit_ancestor_id_tests(parent, &first, 0);
+		str_addf(&SRC,
+			 "))\n\t\t\treturn %s_dispatch((void *) srv->super_%s, interface_id, method_id, params, results);\n",
+			 parent->name.str, parent->name.str);
 	}
 	str_addf(&SRC, "\t\treturn -1;\n\t}\n\tswitch (method_id) {\n");
 
