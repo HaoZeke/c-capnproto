@@ -207,21 +207,23 @@ TEST(Schema, ReadSimple) {
   ASSERT_NE(nullptr, file.displayName.str);
   EXPECT_STREQ("compiler/simple.capnp", file.displayName.str);
 
-  struct Node foo;
-  memset(&foo, 0, sizeof foo);
-  get_Node(&foo, req.nodes, 1);
-  EXPECT_EQ(18431039506069174025ull, foo.id);
-  ASSERT_NE(nullptr, foo.displayName.str);
-  EXPECT_STREQ("compiler/simple.capnp:Foo", foo.displayName.str);
+  Node_ptr foop;
+  foop.p = capn_getp(req.nodes.p, 1, 0);
+  EXPECT_EQ(18431039506069174025ull, Node_get_id(foop));
+  capn_text foo_name = Node_get_displayName(foop);
+  ASSERT_NE(nullptr, foo_name.str);
+  EXPECT_STREQ("compiler/simple.capnp:Foo", foo_name.str);
   EXPECT_EQ(Node_file, file.which);
-  /* Foo's discriminant in this blob is not the struct arm. Walk fields
-   * of whichever node actually is a struct. */
+  /* Foo's discriminant is not a Node arm. Loading it into the enum
+   * is undefined, so compare the raw word and skip that node. */
   for (int n = 0; n < capn_len(req.nodes); n++) {
+    Node_ptr np;
     struct Node node;
+    np.p = capn_getp(req.nodes.p, n, 0);
+    if (capn_read16(np.p, 12) != Node__struct)
+      continue;
     memset(&node, 0, sizeof node);
     get_Node(&node, req.nodes, n);
-    if (node.which != Node__struct)
-      continue;
     for (int i = 0; i < capn_len(node._struct.fields); i++) {
       struct Field field;
       memset(&field, 0, sizeof field);
