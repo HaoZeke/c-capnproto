@@ -387,6 +387,11 @@ static uint64_t lookup_double(struct capn_segment **s, char **d, uint64_t val) {
 		*s = NULL;
 		return 0;
 	}
+	/* C++ boundsCheck of a double-far landing pad charges both words. */
+	if (charge_traversal(seg->capn, 16, 0) != 0) {
+		*s = NULL;
+		return 0;
+	}
 
 	p = seg->data + off;
 	far = capn_flip64(*(uint64_t*) p);
@@ -437,6 +442,11 @@ static uint64_t lookup_far(struct capn_segment **s, char **d, uint64_t val) {
 		*s = NULL;
 		return 0;
 	}
+	/* C++ boundsCheck of a single-far landing pad charges that word. */
+	if (charge_traversal(seg->capn, 8, 0) != 0) {
+		*s = NULL;
+		return 0;
+	}
 
 	*d = seg->data + off;
 	return capn_flip64(*(uint64_t*)*d);
@@ -476,13 +486,17 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 
 	/* Capability / other pointer: A=3. No landing object.
 	 * B (bits 2-31) must be 0; C (high 32) is the table index.
-	 * Do not apply_offset or charge_traversal: C is the table
-	 * index, not an object size or list length. */
+	 * The index is not a list length and is not a size. C++ counts
+	 * the pointer word itself (getRoot / a far landing pad) against
+	 * the traversal limit, so charge one word and nothing more. */
 	if ((val & 3) == OTHER_PTR) {
 		if ((U32(val) >> 2) != 0)
 			goto err;
+		if (charge_traversal(s->capn, 8, 0) != 0)
+			goto err;
 		ret.type = CAPN_INTERFACE;
-		ret.len = (int) U32(val >> 32);
+		ret.len = 0;
+		ret.cap_idx = U32(val >> 32);
 		ret.seg = s;
 		ret.data = d;
 		if (rem > 0) {
@@ -574,7 +588,8 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 			stride = (size_t) ret.datasz + 8u * (size_t) ret.ptrs;
 			if (!mul_size(stride, (size_t) ret.len, &total))
 				goto err;
-			if (total != words)
+			/* C++ accepts trailing padding: actualSize <= wordCount. */
+			if (total > words)
 				goto err;
 			nbytes = words;
 			break;
@@ -1083,8 +1098,8 @@ err:
 
 static int write_ptr_tag(char *d, capn_ptr p, int64_t off) {
 	if (p.type == CAPN_INTERFACE) {
-		/* A=3, B=0, C = capability table index (p.len). */
-		uint64_t cap = OTHER_PTR | (U64((uint32_t) p.len) << 32);
+		/* A=3, B=0, C = capability table index (p.cap_idx). */
+		uint64_t cap = OTHER_PTR | (U64(p.cap_idx) << 32);
 		*(uint64_t*) d = capn_flip64(cap);
 		return 0;
 	}
@@ -1294,7 +1309,7 @@ static capn_ptr new_clone(struct capn_segment *s, capn_ptr p) {
 		return capn_new_list(s, p.len, p.datasz, p.ptrs);
 	case CAPN_INTERFACE: {
 		capn_ptr n = capn_new_interface(s, p.datasz, p.ptrs);
-		n.len = p.len;
+		n.cap_idx = p.cap_idx;
 		return n;
 	}
 	default:
@@ -1307,7 +1322,8 @@ static int is_ptr_equal(const struct capn_ptr *a, const struct capn_ptr *b) {
 		&& a->type == b->type
 		&& a->len == b->len
 		&& a->datasz == b->datasz
-		&& a->ptrs == b->ptrs;
+		&& a->ptrs == b->ptrs
+		&& a->cap_idx == b->cap_idx;
 }
 
 /* Bytes from data to the end of the segment allocation.

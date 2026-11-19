@@ -197,7 +197,7 @@ TEST(Schema, ReadSimple) {
 
   struct CodeGeneratorRequest req;
   read_CodeGeneratorRequest(&req, root);
-  for (int i = 0; i < req.nodes.p.len; i++) {
+  for (int i = 0; i < capn_len(req.nodes); i++) {
   }
 
   capn_free(&ctx);

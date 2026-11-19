@@ -683,6 +683,7 @@ TEST_F(RpcClient, PassingBackACapabilityNamesTheReceiversExport)
 	capn_ptr cap = capn_rpc_new_import_cap(&client, cs, 5);
 	ASSERT_EQ(CAPN_INTERFACE, cap.type);
 	ASSERT_EQ(0, cap.len);
+	ASSERT_EQ(0u, cap.cap_idx);
 	EXPECT_EQ(1, client.npending);
 	client.npending = 0;
 	capn_free(&msg);
@@ -789,9 +790,12 @@ TEST_F(RpcClient, ReusedQuestionIdDoesNotCompleteTheWrongCall)
 	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 0, 8, 1, fill_u32, &arg);
 	settle();
 	uint32_t gen1 = g_parked.generation;
-	capn_ptr old_results = g_parked.results;
+	/* The id stays live until the cancelled call is returned. Finish
+	 * alone does not free it, so return before the id is reused. */
 	capn_rpc_send_finish(&client, q);
 	settle();
+	EXPECT_EQ(-1, capn_rpc_return(&vat, q, gen1));
+	EXPECT_FALSE(capn_rpc_is_aborted(&vat));
 
 	client.next_question_id = q;
 	arg = 4;
@@ -801,10 +805,9 @@ TEST_F(RpcClient, ReusedQuestionIdDoesNotCompleteTheWrongCall)
 	uint32_t gen2 = g_parked.generation;
 	capn_ptr new_results = g_parked.results;
 	EXPECT_NE(gen1, gen2);
-	EXPECT_NE(old_results.data, new_results.data);
+	EXPECT_FALSE(capn_rpc_is_aborted(&vat));
 
-	/* The cancelled answer's return must not send the new call's results. */
-	capn_write32(old_results, 0, 111);
+	/* The finished call's generation must not send the new call's results. */
 	EXPECT_EQ(-1, capn_rpc_return(&vat, q, gen1));
 	EXPECT_FALSE(capn_rpc_is_answered(&client, q2));
 

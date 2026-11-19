@@ -195,6 +195,10 @@ struct capn_rpc_pending_call {
 	uint32_t generation;
 	struct capn *msg;
 	capn_ptr results;
+	/* Capabilities built into this call's results. A cap created after
+	 * dispatch returned CAPN_RPC_PENDING is appended here too. */
+	struct capn_rpc_pending_cap caps[CAPN_RPC_MAX_PENDING_CAPS];
+	int ncaps;
 };
 
 struct capn_rpc_conn {
@@ -235,13 +239,13 @@ struct capn_rpc_conn {
 };
 
 /* Zero the tables and install the transmit callback. */
-void capn_rpc_init(struct capn_rpc_conn *c, capn_rpc_send_fn send,
+CAPN_EXPORT void capn_rpc_init(struct capn_rpc_conn *c, capn_rpc_send_fn send,
                    void *send_ctx);
 
 /* Release the frames a connection still holds for pipelining and for
  * unclaimed answers. Call it when the connection is finished; the
  * connection must not be used afterwards without capn_rpc_init. */
-void capn_rpc_free(struct capn_rpc_conn *c);
+CAPN_EXPORT void capn_rpc_free(struct capn_rpc_conn *c);
 
 /* Deferred replies. A dispatch function that cannot answer yet returns
  * CAPN_RPC_PENDING after noting capn_rpc_current_question() and
@@ -254,63 +258,63 @@ void capn_rpc_free(struct capn_rpc_conn *c);
  * allowed, and return sends nothing and reports -1. A later call that
  * reuses the question id has a new generation, so the old return cannot
  * complete it. */
-uint32_t capn_rpc_current_question(const struct capn_rpc_conn *c);
-uint32_t capn_rpc_current_generation(const struct capn_rpc_conn *c);
-int capn_rpc_return(struct capn_rpc_conn *c, uint32_t question_id,
+CAPN_EXPORT uint32_t capn_rpc_current_question(const struct capn_rpc_conn *c);
+CAPN_EXPORT uint32_t capn_rpc_current_generation(const struct capn_rpc_conn *c);
+CAPN_EXPORT int capn_rpc_return(struct capn_rpc_conn *c, uint32_t question_id,
                     uint32_t generation);
-int capn_rpc_return_exception(struct capn_rpc_conn *c, uint32_t question_id,
+CAPN_EXPORT int capn_rpc_return_exception(struct capn_rpc_conn *c, uint32_t question_id,
                               uint32_t generation, const char *reason);
 
 /* Size the results struct dispatch receives. It must cover the largest
  * results of any method this connection serves; the generated
  * `<Interface>_<method>_method` descriptors give the sizes per method. */
-void capn_rpc_set_result_size(struct capn_rpc_conn *c, int datasz, int ptrs);
+CAPN_EXPORT void capn_rpc_set_result_size(struct capn_rpc_conn *c, int datasz, int ptrs);
 
 /* Share level 3 arrangements with this vat's other connections. Call
  * after capn_rpc_init and before any Provide; `vat` must outlive the
  * connection. */
-void capn_rpc_set_vat(struct capn_rpc_conn *c, struct capn_rpc_vat *vat);
+CAPN_EXPORT void capn_rpc_set_vat(struct capn_rpc_conn *c, struct capn_rpc_vat *vat);
 
 /* Ask the peer to hold `imported_cap` for a third vat, and return the
  * question id, which is also what a later Disembargo.provide names. The
  * nonce is the whole of the arrangement: the recipient presents it in an
  * Accept, and the host matches on it alone. */
-uint32_t capn_rpc_send_provide(struct capn_rpc_conn *c, uint32_t imported_cap,
+CAPN_EXPORT uint32_t capn_rpc_send_provide(struct capn_rpc_conn *c, uint32_t imported_cap,
                                const char *recipient_host, uint16_t recipient_port,
                                uint64_t nonce);
 
 /* Claim a capability a third vat provided for us. Returns the question
  * id; the answer carries the capability. */
-uint32_t capn_rpc_send_accept(struct capn_rpc_conn *c, uint64_t nonce, int embargo);
+CAPN_EXPORT uint32_t capn_rpc_send_accept(struct capn_rpc_conn *c, uint64_t nonce, int embargo);
 
 /* Lift the embargo on the Accept this vat arranged with Provide. */
-int capn_rpc_send_disembargo_provide(struct capn_rpc_conn *c, uint32_t provide_qid);
+CAPN_EXPORT int capn_rpc_send_disembargo_provide(struct capn_rpc_conn *c, uint32_t provide_qid);
 
 /* Tell the peer this connection is being torn down because of `reason`,
  * and refuse further messages on it. Returns the send callback's result. */
-int capn_rpc_send_abort(struct capn_rpc_conn *c, const char *reason);
+CAPN_EXPORT int capn_rpc_send_abort(struct capn_rpc_conn *c, const char *reason);
 
 /* 1 once the connection has aborted, from either side. */
-int capn_rpc_is_aborted(const struct capn_rpc_conn *c);
+CAPN_EXPORT int capn_rpc_is_aborted(const struct capn_rpc_conn *c);
 
 /* Set the capability answered to `Bootstrap`. */
-void capn_rpc_set_bootstrap(struct capn_rpc_conn *c, void *server,
+CAPN_EXPORT void capn_rpc_set_bootstrap(struct capn_rpc_conn *c, void *server,
                             capn_rpc_dispatch_fn dispatch);
 
 /* Export a capability, or return the id it already holds. -1 when the
  * table is full. */
-int capn_rpc_export(struct capn_rpc_conn *c, void *server,
+CAPN_EXPORT int capn_rpc_export(struct capn_rpc_conn *c, void *server,
                     capn_rpc_dispatch_fn dispatch);
 
 /* Handle one framed message. Returns 0 when handled, non-zero on a
  * malformed frame. Replies go out through the send callback. */
-int capn_rpc_handle(struct capn_rpc_conn *c, const uint8_t *data, size_t len);
+CAPN_EXPORT int capn_rpc_handle(struct capn_rpc_conn *c, const uint8_t *data, size_t len);
 
 /* --- client side -------------------------------------------------- */
 
 /* Ask for the peer's bootstrap capability. Returns the questionId, or
  * (uint32_t)-1 when the question table is full. */
-uint32_t capn_rpc_send_bootstrap(struct capn_rpc_conn *c);
+CAPN_EXPORT uint32_t capn_rpc_send_bootstrap(struct capn_rpc_conn *c);
 
 /* Write a call's parameter struct. */
 typedef void (*capn_rpc_fill_fn)(void *ctx, capn_ptr params);
@@ -320,7 +324,7 @@ typedef void (*capn_rpc_fill_fn)(void *ctx, capn_ptr params);
 /* `params_datasz` is in bytes and `params_ptrs` in pointer slots: the
  * caller knows its own method signature, and a struct sized here rather
  * than guessed silently drops any field past the end. */
-uint32_t capn_rpc_send_call(struct capn_rpc_conn *c, uint32_t imported_cap,
+CAPN_EXPORT uint32_t capn_rpc_send_call(struct capn_rpc_conn *c, uint32_t imported_cap,
                             uint64_t interface_id, uint16_t method_id,
                             int params_datasz, int params_ptrs,
                             capn_rpc_fill_fn fill, void *fill_ctx);
@@ -329,7 +333,7 @@ uint32_t capn_rpc_send_call(struct capn_rpc_conn *c, uint32_t imported_cap,
  * before that answer has arrived (promise pipelining). `path` is the
  * list of pointer indices to follow into the answer's results, as
  * PromisedAnswer.transform. Returns the questionId or (uint32_t)-1. */
-uint32_t capn_rpc_send_pipelined_call(struct capn_rpc_conn *c, uint32_t question_id,
+CAPN_EXPORT uint32_t capn_rpc_send_pipelined_call(struct capn_rpc_conn *c, uint32_t question_id,
                                       const uint16_t *path, int npath,
                                       uint64_t interface_id, uint16_t method_id,
                                       int params_datasz, int params_ptrs,
@@ -341,49 +345,52 @@ uint32_t capn_rpc_send_pipelined_call(struct capn_rpc_conn *c, uint32_t question
  * for you. `new_export_cap` hands the peer one of this vat's objects;
  * `new_import_cap` hands back a capability the peer hosts. Both return a
  * null pointer when the payload already holds CAPN_RPC_MAX_PENDING_CAPS. */
-capn_ptr capn_rpc_new_export_cap(struct capn_rpc_conn *c, struct capn_segment *seg,
+CAPN_EXPORT capn_ptr capn_rpc_new_export_cap(struct capn_rpc_conn *c, struct capn_segment *seg,
                                  void *server, capn_rpc_dispatch_fn dispatch);
-capn_ptr capn_rpc_new_import_cap(struct capn_rpc_conn *c, struct capn_segment *seg,
+CAPN_EXPORT capn_ptr capn_rpc_new_import_cap(struct capn_rpc_conn *c, struct capn_segment *seg,
                                  uint32_t import_id);
 
 /* What a capability pointer received in params (during dispatch) or in an
- * answer names. Returns an id, or -1. `*is_export` is 0 for a capability
- * the peer hosts, whose id is what capn_rpc_send_call takes as
- * `imported_cap`, and 1 for one of this vat's own exports passed back. */
-int capn_rpc_param_cap(struct capn_rpc_conn *c, capn_ptr cap, int *is_export);
-int capn_rpc_answer_cap(struct capn_rpc_conn *c, uint32_t question_id, capn_ptr cap,
+ * answer names. Returns the wire id, which is a uint32, or -1. A value
+ * at or above 2^31 is not folded into a negative int. `*is_export` is 0
+ * for a capability the peer hosts, whose id is what capn_rpc_send_call
+ * takes as `imported_cap`, and 1 for one of this vat's own exports
+ * passed back. */
+CAPN_EXPORT int64_t capn_rpc_param_cap(struct capn_rpc_conn *c, capn_ptr cap, int *is_export);
+CAPN_EXPORT int64_t capn_rpc_answer_cap(struct capn_rpc_conn *c, uint32_t question_id, capn_ptr cap,
                         int *is_export);
 
 /* Tell the peer we are done with an answer, and drop our copy. */
-int capn_rpc_send_finish(struct capn_rpc_conn *c, uint32_t question_id);
+CAPN_EXPORT int capn_rpc_send_finish(struct capn_rpc_conn *c, uint32_t question_id);
 
 /* Drop `count` references to an import. */
-int capn_rpc_send_release(struct capn_rpc_conn *c, uint32_t import_id,
+CAPN_EXPORT int capn_rpc_send_release(struct capn_rpc_conn *c, uint32_t import_id,
                           uint32_t count);
 
 /* 1 once the Return for `question_id` has arrived. */
-int capn_rpc_is_answered(struct capn_rpc_conn *c, uint32_t question_id);
+CAPN_EXPORT int capn_rpc_is_answered(struct capn_rpc_conn *c, uint32_t question_id);
 
 /* 1 when that Return carried an exception. */
-int capn_rpc_is_failed(struct capn_rpc_conn *c, uint32_t question_id);
+CAPN_EXPORT int capn_rpc_is_failed(struct capn_rpc_conn *c, uint32_t question_id);
 
 /* Results of an answered question. Returns 0 and fills `msg_out` / `out`
  * on success; non-zero while the question is outstanding or if it
  * failed. The caller frees `msg_out` with capn_free. */
 /* The import id of a capability an answer returned, or -1 when the
- * answer carries none. A returned capability arrives as a pointer into
- * the answer's capTable; calling it needs the id the descriptor beside
- * it names, which is what this reads. */
-int capn_rpc_answer_cap_id(struct capn_rpc_conn *c, uint32_t question_id);
+ * answer carries none. The id is the wire uint32, not a truncated int.
+ * A returned capability arrives as a pointer into the answer's capTable;
+ * calling it needs the id the descriptor beside it names, which is what
+ * this reads. */
+CAPN_EXPORT int64_t capn_rpc_answer_cap_id(struct capn_rpc_conn *c, uint32_t question_id);
 
-int capn_rpc_answer_content(struct capn_rpc_conn *c, uint32_t question_id,
+CAPN_EXPORT int capn_rpc_answer_content(struct capn_rpc_conn *c, uint32_t question_id,
                             struct capn *msg_out, capn_ptr *out);
 
 /* Nonces of capabilities held for a third vat, for tests and shutdown
  * accounting. Writes up to `cap` entries and returns how many exist. */
 /* Introductions handed to us and not yet picked up. Copies up to `max`
  * into `out` (may be NULL) and returns how many are held. */
-int capn_rpc_pending_introductions(struct capn_rpc_conn *c,
+CAPN_EXPORT int capn_rpc_pending_introductions(struct capn_rpc_conn *c,
                                    struct capn_rpc_introduction *out, int max);
 
 /* Finish the pickup for `nonce`: releases the vine, which the sender
@@ -391,19 +398,19 @@ int capn_rpc_pending_introductions(struct capn_rpc_conn *c,
  * third party has actually handed the capability over; releasing early
  * drops the fallback path with nothing in its place. Returns 0 on
  * success, -1 if no such introduction is held. */
-int capn_rpc_introduction_done(struct capn_rpc_conn *c, uint64_t nonce);
+CAPN_EXPORT int capn_rpc_introduction_done(struct capn_rpc_conn *c, uint64_t nonce);
 
 /* Write a `thirdPartyHosted` descriptor into `cd`: where the recipient
  * should go, which pending Provide to claim once there, and the vine we
  * export so calls work in the meantime. */
-int capn_rpc_write_third_party_cap(struct capn_rpc_conn *c, CapDescriptor_ptr cd,
+CAPN_EXPORT int capn_rpc_write_third_party_cap(struct capn_rpc_conn *c, CapDescriptor_ptr cd,
                                    const char *host, uint16_t port,
                                    uint64_t nonce, uint32_t vine_id);
 
 /* Accepts claimed but still embargoed, awaiting Disembargo.provide. */
-int capn_rpc_embargoed_accepts(struct capn_rpc_conn *c);
+CAPN_EXPORT int capn_rpc_embargoed_accepts(struct capn_rpc_conn *c);
 
-int capn_rpc_pending_provisions(struct capn_rpc_conn *c, uint64_t *out,
+CAPN_EXPORT int capn_rpc_pending_provisions(struct capn_rpc_conn *c, uint64_t *out,
                                 int cap);
 
 /* --- blocking file descriptor transport -----------------------------------
@@ -414,30 +421,30 @@ int capn_rpc_pending_provisions(struct capn_rpc_conn *c, uint64_t *out,
  * block, and exist only on Unix-like systems. */
 
 /* A capn_rpc_send_fn that writes the frame to the descriptor *ctx. */
-int capn_rpc_fd_send(void *ctx, const uint8_t *data, size_t len);
+CAPN_EXPORT int capn_rpc_fd_send(void *ctx, const uint8_t *data, size_t len);
 
 /* Read one stream-framed message into a malloc'd buffer. Returns 0, 1 on
  * a clean end of stream before any byte, or -1 on error or a message
  * over 64 MiB. */
-int capn_rpc_fd_read_frame(int fd, uint8_t **frame, size_t *len);
+CAPN_EXPORT int capn_rpc_fd_read_frame(int fd, uint8_t **frame, size_t *len);
 
 /* Read one frame and handle it. Returns 0, 1 at end of stream, or -1. */
-int capn_rpc_fd_pump(struct capn_rpc_conn *c, int fd);
+CAPN_EXPORT int capn_rpc_fd_pump(struct capn_rpc_conn *c, int fd);
 
 /* --- stream flow control ------------------------------------------- */
 
-void capn_rpc_stream_init(struct capn_rpc_stream *s, int window);
+CAPN_EXPORT void capn_rpc_stream_init(struct capn_rpc_stream *s, int window);
 
 /* Send one stream call, blocking only when the window is full. Returns 0
  * on success, non-zero once the stream has failed. */
-int capn_rpc_stream_send(struct capn_rpc_conn *c, struct capn_rpc_stream *s,
+CAPN_EXPORT int capn_rpc_stream_send(struct capn_rpc_conn *c, struct capn_rpc_stream *s,
                          uint32_t imported_cap, uint64_t interface_id,
                          uint16_t method_id, int params_datasz,
                          int params_ptrs, capn_rpc_fill_fn fill,
                          void *fill_ctx);
 
 /* Wait for every outstanding call. Returns 0 when all succeeded. */
-int capn_rpc_stream_finish(struct capn_rpc_conn *c,
+CAPN_EXPORT int capn_rpc_stream_finish(struct capn_rpc_conn *c,
                            struct capn_rpc_stream *s);
 
 

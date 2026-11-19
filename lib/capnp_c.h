@@ -191,8 +191,8 @@ enum CAPN_TYPE {
 	CAPN_PTR_LIST = 3,
 	CAPN_BIT_LIST = 4,
 	CAPN_FAR_POINTER = 5,
-	/* Capability pointer (encoding.html: A=3, B=0). len is the
-	 * capability table index. There is no object body. */
+	/* Capability pointer (encoding.html: A=3, B=0). The table index
+	 * is cap_idx. len is 0: it is not a list. There is no object body. */
 	CAPN_INTERFACE = 6,
 };
 
@@ -203,6 +203,7 @@ struct capn_ptr {
 	unsigned int is_composite_list : 1;
 	unsigned int datasz : 19;
 	unsigned int ptrs : 16;
+	/* List element count. 0 for structs, null, and capabilities. */
 	int len;
 	char *data;
 	struct capn_segment *seg;
@@ -210,6 +211,8 @@ struct capn_ptr {
 	 * initializers in generated constants keep working. 0/0 = unset. */
 	int nesting;
 	unsigned int nesting_valid;
+	/* Capability table index when type is CAPN_INTERFACE. Not a length. */
+	uint32_t cap_idx;
 };
 
 struct capn_text {
@@ -288,8 +291,23 @@ CAPN_EXPORT int capn_canonicalize(struct capn *src, struct capn *dst);
  * until the root pointer is set. Empty messages are valid. */
 CAPN_EXPORT int capn_set_root(struct capn *c, capn_ptr p);
 
-#define capn_len(list) ((list).p.type == CAPN_FAR_POINTER ? (capn_resolve(&(list).p), (list).p.len) : (list).p.len)
-#define capn_ptr_len(p) ((p).type == CAPN_FAR_POINTER ? (capn_resolve(&(p)), (p).len) : (p).len)
+/* Element count of a list pointer. Far pointers are resolved first.
+ * Structs, capabilities, and nulls are not lists: the result is 0,
+ * so a capability table index cannot drive a list loop. */
+CAPN_INLINE int capn_checked_len(capn_ptr *p) {
+	if (p->type == CAPN_FAR_POINTER)
+		capn_resolve(p);
+	switch (p->type) {
+	case CAPN_LIST:
+	case CAPN_PTR_LIST:
+	case CAPN_BIT_LIST:
+		return p->len;
+	default:
+		return 0;
+	}
+}
+#define capn_len(list) capn_checked_len(&(list).p)
+#define capn_ptr_len(p) capn_checked_len(&(p))
 
 /* capn_getp|setp functions get/set ptrs in list/structs
  * off is the list index or pointer index in a struct
@@ -384,8 +402,9 @@ CAPN_EXPORT int capn_setv64(capn_list64 p, int off, const uint64_t *data, int sz
  *     data == NULL (all-zero word).
  *   - capn_new_interface(seg, datasz, ptrs) is a capability pointer
  *     (A=3, B=0). datasz/ptrs are unused (ABI match with capn_new_struct);
- *     there is no object body. The table index is capn_ptr.len (0 on create).
- *     A null interface is CAPN_NULL, not index 0.
+ *     there is no object body. The table index is capn_ptr.cap_idx
+ *     (0 on create). len stays 0. A null interface is CAPN_NULL, not
+ *     index 0.
  * Text is List(UInt8) with a trailing NUL included in the wire element count.
  */
 CAPN_EXPORT capn_ptr capn_new_string(struct capn_segment *seg, const char *str, ssize_t sz);
@@ -535,7 +554,11 @@ CAPN_INLINE int capn_write1(capn_ptr p, int off, int val) {
 }
 
 CAPN_INLINE uint8_t capn_read8(capn_ptr p, int off) {
-	return off+1 <= p.datasz ? capn_flip8(*(uint8_t*) (p.data+off)) : 0;
+	/* A list pointer stores the element width in datasz and may sit at
+	 * the end of the segment. C++ getStruct on a non-struct reads the
+	 * default, so only a struct is loaded. */
+	return (p.type == CAPN_STRUCT && off+1 <= p.datasz) ?
+		capn_flip8(*(uint8_t*) (p.data+off)) : 0;
 }
 CAPN_INLINE int capn_write8(capn_ptr p, int off, uint8_t val) {
 	if (off+1 <= p.datasz) {
@@ -547,7 +570,8 @@ CAPN_INLINE int capn_write8(capn_ptr p, int off, uint8_t val) {
 }
 
 CAPN_INLINE uint16_t capn_read16(capn_ptr p, int off) {
-	return off+2 <= p.datasz ? capn_flip16(*(uint16_t*) (p.data+off)) : 0;
+	return (p.type == CAPN_STRUCT && off+2 <= p.datasz) ?
+		capn_flip16(*(uint16_t*) (p.data+off)) : 0;
 }
 CAPN_INLINE int capn_write16(capn_ptr p, int off, uint16_t val) {
 	if (off+2 <= p.datasz) {
@@ -559,7 +583,8 @@ CAPN_INLINE int capn_write16(capn_ptr p, int off, uint16_t val) {
 }
 
 CAPN_INLINE uint32_t capn_read32(capn_ptr p, int off) {
-	return off+4 <= p.datasz ? capn_flip32(*(uint32_t*) (p.data+off)) : 0;
+	return (p.type == CAPN_STRUCT && off+4 <= p.datasz) ?
+		capn_flip32(*(uint32_t*) (p.data+off)) : 0;
 }
 CAPN_INLINE int capn_write32(capn_ptr p, int off, uint32_t val) {
 	if (off+4 <= p.datasz) {
@@ -571,7 +596,8 @@ CAPN_INLINE int capn_write32(capn_ptr p, int off, uint32_t val) {
 }
 
 CAPN_INLINE uint64_t capn_read64(capn_ptr p, int off) {
-	return off+8 <= p.datasz ? capn_flip64(*(uint64_t*) (p.data+off)) : 0;
+	return (p.type == CAPN_STRUCT && off+8 <= p.datasz) ?
+		capn_flip64(*(uint64_t*) (p.data+off)) : 0;
 }
 CAPN_INLINE int capn_write64(capn_ptr p, int off, uint64_t val) {
 	if (off+8 <= p.datasz) {
