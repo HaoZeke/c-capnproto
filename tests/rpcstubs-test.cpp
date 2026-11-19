@@ -173,6 +173,69 @@ TEST_F(RpcStubs, StreamMethodHasNoResultReader) {
   EXPECT_EQ(123456789012ULL, calc.last_tick);
 }
 
+struct Later {
+  struct capn_rpc_conn *vat;
+  int32_t a;
+  int32_t b;
+  uint32_t question;
+  uint32_t generation;
+};
+
+static int on_add_later(void *self, const struct Calc_add_params *in,
+                        struct Calc_add_results *, struct capn_segment *) {
+  Later *s = static_cast<Later *>(self);
+  s->a = in->a;
+  s->b = in->b;
+  s->question = capn_rpc_current_question(s->vat);
+  s->generation = capn_rpc_current_generation(s->vat);
+  return CAPN_RPC_PENDING;
+}
+
+TEST(RpcStubDefer, HandlerCanFinishACallLater) {
+  Wire wire;
+  struct capn_rpc_conn client, vat;
+  struct Calc_server server;
+  Later later;
+  struct Calc_add_params in;
+
+  g_wire = &wire;
+  capn_rpc_init(&client, to_vat, NULL);
+  capn_rpc_init(&vat, to_client, NULL);
+  memset(&server, 0, sizeof server);
+  memset(&later, 0, sizeof later);
+  later.vat = &vat;
+  server.self = &later;
+  server.on_add = on_add_later;
+  capn_rpc_set_bootstrap(&vat, &server, Calc_dispatch);
+  capn_rpc_set_result_size(&vat, Calc_RESULT_DATASZ, Calc_RESULT_PTRS);
+  capn_rpc_send_bootstrap(&client);
+  pump(&vat, wire.to_vat);
+  pump(&client, wire.to_client);
+
+  memset(&in, 0, sizeof in);
+  in.a = 20;
+  in.b = 22;
+  uint32_t q = Calc_call_add(&client, 0, &in);
+  pump(&vat, wire.to_vat);
+  EXPECT_TRUE(wire.to_client.empty());
+  EXPECT_FALSE(capn_rpc_is_answered(&client, q));
+
+  struct Calc_add_results filled;
+  memset(&filled, 0, sizeof filled);
+  filled.sum = later.a + later.b;
+  ASSERT_EQ(0, Calc_return_add(&vat, later.question, later.generation, &filled));
+  pump(&client, wire.to_client);
+
+  struct capn msg;
+  struct Calc_add_results got;
+  memset(&got, 0, sizeof got);
+  ASSERT_EQ(0, Calc_results_add(&client, q, &got, &msg));
+  EXPECT_EQ(42, got.sum);
+  capn_free(&msg);
+  capn_rpc_free(&client);
+  capn_rpc_free(&vat);
+}
+
 TEST_F(RpcStubs, MissingHandlerOrWrongInterfaceFails) {
   server.on_add = NULL;
   struct Calc_add_params in;
