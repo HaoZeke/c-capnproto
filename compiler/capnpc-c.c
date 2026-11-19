@@ -1816,6 +1816,8 @@ static void emit_branded(struct node *n, Brand_ptr brand, const char *name) {
 		mk_struct_list_free(&g_ctx, &inst);
 		mk_struct_ptr_free(&g_ctx, &inst);
 	}
+	for (j = 0; j < flen; j++)
+		str_release(&inst.fields[j].v.tname_buf);
 	free(inst.fields);
 	str_release(&nm);
 	g_nsubst = saved;
