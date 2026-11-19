@@ -252,6 +252,9 @@ struct capn_rpc_queued {
 	uint32_t question_id;
 	uint8_t *frame;
 	size_t len;
+	/* Arrival order. A later call may reuse a lower slot, so the slot
+	 * index is not the order the frames must be replayed. */
+	uint64_t seq;
 };
 
 /* A call this vat made after Resolve but before the embargo echo. */
@@ -359,6 +362,8 @@ struct capn_rpc_conn {
 	struct capn_rpc_import *imports;
 	int imports_cap;
 	struct capn_rpc_queued queued[CAPN_RPC_MAX_QUEUED];
+	/* Next arrival stamp for `queued`. Starts at 0; the first frame is 1. */
+	uint64_t queue_clock;
 	struct capn_rpc_held held[CAPN_RPC_MAX_HELD];
 	struct capn_rpc_relay relays[CAPN_RPC_MAX_RELAYS];
 	uint32_t next_embargo;
