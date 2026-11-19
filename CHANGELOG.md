@@ -40,9 +40,26 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ### Changed
 
-- `CAPN_RPC_MAX_ANSWER_BYTES` is gone: RPC frames are sized from the
-  message, and `capn_rpc_answer` / `capn_rpc_question` hold heap frames
-  that `capn_rpc_free` releases.
+- The shared library soname stays 1 (meson `soversion: 1`, libtool
+  `-version-info 1:0:0`, CMake `SOVERSION 1`). It moved from 0 for this
+  unreleased series and is not raised again.
+- `struct capn_rpc_pending_call` carries `caps` and `ncaps` until
+  `capn_rpc_return`. `struct capn_rpc_conn` carries `cap_dest` and
+  `cap_dest_n`, which name that table during dispatch.
+  `capn_rpc_pending_results` reads the parked results struct. A generated
+  stub can return `CAPN_RPC_PENDING` and finish with
+  `<Interface>_return_<method>`.
+- `capn_rpc_new_export_cap`, `capn_rpc_new_import_cap`,
+  `capn_rpc_new_promise_cap` and `capn_rpc_new_answer_cap` append to
+  `cap_dest` while a call is being filled or dispatched, otherwise to the
+  parked call whose message owns the segment, otherwise to the connection
+  list.
+- `CAPN_RPC_MAX_ANSWERS`, `CAPN_RPC_MAX_EXPORTS` and
+  `CAPN_RPC_MAX_QUESTIONS` are gone. Tables grow up to
+  `CAPN_RPC_MAX_TABLE_CAPACITY` (1024). `CAPN_RPC_MAX_ANSWER_BYTES` is
+  gone: RPC frames are sized from the message, and `capn_rpc_answer` /
+  `capn_rpc_question` hold heap frames that `capn_rpc_free` releases.
+  Every `capn_rpc_init` must be paired with `capn_rpc_free`.
 - Stream readers refuse a message over 64 MiB, as C++ does, and a buffer
   whose segment table claims more than the buffer holds
   (`CAPN_MAX_MESSAGE_BYTES` overrides the limit at compile time).
@@ -57,7 +74,15 @@ Pre-1.0 minor releases may include breaking wire or API changes.
   turning a schema default or a null into explicit data; it now writes a
   null again.
 - `capn_setp` with a same-session far pointer stored the pointer word in
-  the struct's first data word instead of the named slot.
+  the struct's first data word instead of the named slot. A far pointer
+  that does land in the right slot now deep-copies the object it names;
+  copying the word aliases the landing pad. A far pointer that does not
+  resolve is stored as null.
+- Reusing a question id that is still live aborts the connection. The
+  reason is the Call text from C++ 1.4.0: `expected !answer.active;
+  questionId is already in use`. That covers an answer still waiting for
+  Finish, a call that has not returned, a queued frame, and an unfinished
+  Join. A Bootstrap reuses that same text.
 - `capn_getv`/`capn_setv` for 16, 32 and 64 bit lists treated the element
   offset as bytes; `getv1`/`setv1` mixed bits and bytes; negative offsets
   and counts are rejected, as are negative indices to `capn_get*`,
