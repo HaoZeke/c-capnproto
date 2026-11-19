@@ -7,6 +7,8 @@
 #   2. CMake find_package      (against a real staged install)
 #   3. pkg-config              (for non-CMake build systems)
 #   4. meson subproject        (the .wrap path)
+#   5. meson install          (the plugin must find its runtime, and the
+#                              pkg-config file must name the plugin)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -65,5 +67,18 @@ EOF
 meson setup "$WORK/mwb" "$WORK/mw" >"$WORK/mw.log" 2>&1 || { tail -25 "$WORK/mw.log"; exit 1; }
 meson compile -C "$WORK/mwb" >>"$WORK/mw.log" 2>&1 || { tail -25 "$WORK/mw.log"; exit 1; }
 "$WORK/mwb/smoke"
+
+echo "== 5. meson install"
+MPFX="$WORK/mprefix"
+meson setup "$WORK/mi" "$ROOT" --prefix="$MPFX" -Denable_tests=false \
+  >"$WORK/mi.log" 2>&1 || { tail -25 "$WORK/mi.log"; exit 1; }
+meson install -C "$WORK/mi" >>"$WORK/mi.log" 2>&1 || { tail -25 "$WORK/mi.log"; exit 1; }
+# No LD_LIBRARY_PATH: the installed plugin has to resolve its own runtime.
+if (unset LD_LIBRARY_PATH; ldd "$MPFX/bin/capnpc-c" | grep 'not found'); then
+  echo "installed capnpc-c cannot find libcapnp_c" >&2
+  exit 1
+fi
+mpc=$(find "$MPFX" -name c-capnproto.pc | head -1)
+grep -q '^codegen=' "$mpc" || { echo "meson .pc lacks codegen" >&2; exit 1; }
 
 echo "ok packaging-smoke"
