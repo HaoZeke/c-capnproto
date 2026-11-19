@@ -1646,13 +1646,30 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 		goto copy_ptr;
 
 	copy_ptr:
-		/* A far pointer word means the same thing anywhere in the
-		 * session, so it can be copied into the slot as it is. */
-		if (far_tgt.type == CAPN_FAR_POINTER && far_tgt.seg->capn == p.seg->capn) {
-			uint64_t val = capn_flip64(*(uint64_t*) far_tgt.data);
-			if ((val & 3) == FAR_PTR) {
-				*(uint64_t*) data = *(uint64_t*) far_tgt.data;
-				return 0;
+		/* An unresolved far word is not a value. Follow it and
+		 * deep-copy the object, as C++ copyPointer does. Copying the
+		 * word aliases the landing pad, and (val & 3) == FAR_PTR is
+		 * also true of a double far (DOUBLE_PTR == 6). A follow that
+		 * fails (missing segment, out of range) stores null. */
+		if (far_tgt.type == CAPN_FAR_POINTER && p.seg != NULL) {
+			int follow = 0;
+			if (far_tgt.seg != NULL && far_tgt.data != NULL &&
+			    bounds_ok(far_tgt.seg, far_tgt.data, 8)) {
+				uint64_t val = capn_flip64(*(uint64_t *) far_tgt.data);
+				unsigned kind = (unsigned) (val & 7);
+				if (kind == FAR_PTR || kind == DOUBLE_PTR)
+					follow = 1;
+			}
+			if (follow) {
+				if (tgt.type == CAPN_NULL || tgt.seg == NULL ||
+				    tgt.data == NULL) {
+					memset(&tgt, 0, sizeof tgt);
+				} else if (tgt.seg->capn == p.seg->capn) {
+					from[0] = tgt;
+					if (copy_ptr(p.seg, data, to, from, &dep))
+						return -1;
+					break;
+				}
 			}
 		}
 		err = write_ptr(p.seg, data, tgt);
