@@ -19,6 +19,11 @@ Pre-1.0 minor releases may include breaking wire or API changes.
   through their brands.
 - `capn_rpc_free`, `capn_rpc_send_abort`, `capn_rpc_is_aborted` and
   `capn_rpc_set_result_size`.
+- RPC capabilities in payloads: `capn_rpc_new_export_cap` and
+  `capn_rpc_new_import_cap` build a capability pointer and the capTable,
+  `capn_rpc_param_cap` and `capn_rpc_answer_cap` read one, and
+  `capn_rpc_send_pipelined_call` calls a capability inside an answer that
+  has not arrived.
 - `scripts/regen-generated.sh`, which rewrites every checked-in
   `*.capnp.[ch]` or, with `--check`, fails on a stale one; CI runs it.
 - Tests that read back the values baked into generated constants, that
@@ -52,6 +57,8 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 - RPC: frames over 8 KiB were dropped; `Unimplemented` and `Abort` were
   answered with an `Unimplemented` of their own and the echo wrapped the
   message in a second one; a `Release` count of 0xffffffff overflowed.
+- `capn_rpc_export` reused an export whenever the server pointer matched,
+  so one object served by two dispatchers collapsed into the first.
 - `capnpc-c`: a header for a `-> stream` method included the nonexistent
   `capnp/stream.capnp.h`; two schemas in one request read freed memory;
   an all-Void union produced an empty C union; generated constants warned

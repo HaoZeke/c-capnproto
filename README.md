@@ -367,6 +367,16 @@ capnp-fortran, capnp-janet and capnp-ts. It carries the join keys as
 well, so the vat speaks it instead of `rpc-twoparty.capnp`, not
 alongside -- both declare the same C names.
 
+Capabilities travel in params and results: inside a `fill` callback or
+`dispatch`, `capn_rpc_new_export_cap` hands the peer one of this vat's
+objects and `capn_rpc_new_import_cap` hands back one the peer hosts; the
+receiver reads them with `capn_rpc_param_cap` or `capn_rpc_answer_cap`.
+`capn_rpc_send_pipelined_call` calls a capability inside an answer that
+has not arrived yet. `dispatch` runs to completion before the reply is
+sent (there are no deferred replies), `Resolve` is answered
+`Unimplemented`, and `capn_rpc_send_abort` / `capn_rpc_is_aborted` end a
+connection.
+
 A handoff is arranged on one connection and claimed on another, so the
 arrangement belongs to the vat rather than the connection:
 `capn_rpc_set_vat` shares it between a vat's connections, and it holds
