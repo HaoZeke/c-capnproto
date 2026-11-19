@@ -441,7 +441,7 @@ static void decode_value(struct value* v, Type_ptr type, Value_ptr value, const 
 				str_addf(&SRC, "{");
 
 			if (use_buf) {
-				str_addf(&SRC, "%d,%d,%d,%d,%d,%d,%d,(char*)&capn_buf[%d],(struct capn_segment*)&capn_seg",
+				str_addf(&SRC, "%d,%d,%d,%d,%d,%d,%d,(char*)&capn_buf[%d],(struct capn_segment*)&capn_seg,0,0",
 						p.type,
 						p.has_ptr_tag,
 						p.is_list_member,

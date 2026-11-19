@@ -26,6 +26,10 @@ static capn_text chars_to_text(const char *chars) {
   };
 }
 
+#ifndef TEST_CAPNP_GENERATED_C
+#define TEST_CAPNP_GENERATED_C "test.capnp.c"
+#endif
+
 #ifndef CODEGEN_DEFAULTS_GENERATED_C
 #define CODEGEN_DEFAULTS_GENERATED_C "codegen-defaults.capnp.c"
 #endif
@@ -253,4 +257,33 @@ TEST(CodegenDefaults, ReservedNamesAndVoidOnlyUnionCompile) {
   EXPECT_STREQ("in", out._stdin.str);
   EXPECT_EQ(Names_voids_b, out.voids_which);
   capn_free(&c);
+}
+
+TEST(CodegenDefaults, ConstantInitializersNameEveryField) {
+  const char *candidates[] = {
+    TEST_CAPNP_GENERATED_C,
+    "test.capnp.c",
+    "compiler/test.capnp.c",
+    "../compiler/test.capnp.c",
+  };
+  std::string body = read_generated(candidates, sizeof(candidates) / sizeof(candidates[0]));
+  ASSERT_FALSE(body.empty()) << "could not read generated test.capnp.c";
+  size_t checked = 0;
+  size_t pos = 0;
+  while (pos < body.size()) {
+    size_t eol = body.find('\n', pos);
+    if (eol == std::string::npos) {
+      eol = body.size();
+    }
+    std::string line = body.substr(pos, eol - pos);
+    pos = eol + 1;
+    bool is_text = line.find("capn_text ") != std::string::npos;
+    if (!is_text && line.find("&capn_seg") != std::string::npos) {
+      checked++;
+      EXPECT_NE(std::string::npos, line.find("&capn_seg,0,0}"))
+          << "capn_ptr constants must initialise nesting and nesting_valid, "
+             "or -Wextra warns in every including translation unit: " << line;
+    }
+  }
+  EXPECT_GT(checked, 0u);
 }
