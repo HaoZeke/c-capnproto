@@ -12,6 +12,8 @@
 #include "rpc-threeparty.capnp.h"
 
 /* Defined below, beside the rest of the answer table. */
+static void attach_cap_table(struct capn_rpc_conn *c, struct capn_segment *cs,
+                             struct Payload *pl);
 static struct capn_rpc_answer *answer_find(struct capn_rpc_conn *c,
                                            uint32_t qid);
 
@@ -537,6 +539,8 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp)
 	memset(&m, 0, sizeof m);
 	memset(&r, 0, sizeof r);
 	memset(&results, 0, sizeof results);
+	c->npending = 0;
+	c->in_caps = params.capTable;
 
 	/* Sized by capn_rpc_set_result_size: one data word and one pointer is
 	 * enough for the bundled servers, and a richer one asks for more. */
@@ -547,13 +551,16 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp)
 	}
 	rc = c->exports[eid].dispatch(c->exports[eid].server, call.interfaceId,
 	                              call.methodId, params.content, rstruct);
+	memset(&c->in_caps, 0, sizeof c->in_caps);
 	if (rc != 0) {
+		c->npending = 0;
 		capn_free(&msg);
 		return send_return_exception(c, call.questionId, "call failed");
 	}
 
 	plp = new_Payload(cs);
 	results.content = rstruct;
+	attach_cap_table(c, cs, &results);
 	write_Payload(&results, plp);
 
 	rp = new_Return(cs);
@@ -1019,10 +1026,106 @@ uint32_t capn_rpc_send_bootstrap(struct capn_rpc_conn *c)
 	return qid;
 }
 
-uint32_t capn_rpc_send_call(struct capn_rpc_conn *c, uint32_t imported_cap,
-                            uint64_t interface_id, uint16_t method_id,
-                            int params_datasz, int params_ptrs,
-                            capn_rpc_fill_fn fill, void *fill_ctx)
+/* Write the Payload for params or results: the content struct is already
+ * filled, and any capability made while filling it is in the pending list. */
+static void attach_cap_table(struct capn_rpc_conn *c, struct capn_segment *cs,
+                             struct Payload *pl)
+{
+	int i;
+
+	if (c->npending == 0)
+		return;
+	pl->capTable = new_CapDescriptor_list(cs, c->npending);
+	for (i = 0; i < c->npending; i++) {
+		struct CapDescriptor cd;
+		memset(&cd, 0, sizeof cd);
+		if (c->pending_caps[i].is_import) {
+			cd.which = CapDescriptor_receiverHosted;
+			cd.receiverHosted = c->pending_caps[i].id;
+		} else {
+			cd.which = CapDescriptor_senderHosted;
+			cd.senderHosted = c->pending_caps[i].id;
+		}
+		set_CapDescriptor(&cd, pl->capTable, i);
+	}
+	c->npending = 0;
+}
+
+capn_ptr capn_rpc_new_export_cap(struct capn_rpc_conn *c, struct capn_segment *seg,
+                                 void *server, capn_rpc_dispatch_fn dispatch)
+{
+	capn_ptr p;
+	int eid;
+
+	memset(&p, 0, sizeof p);
+	if (c->npending >= CAPN_RPC_MAX_PENDING_CAPS)
+		return p;
+	eid = capn_rpc_export(c, server, dispatch);
+	if (eid < 0)
+		return p;
+	p = capn_new_interface(seg, 0, 0);
+	if (p.type == CAPN_NULL)
+		return p;
+	p.len = c->npending;
+	c->pending_caps[c->npending].is_import = 0;
+	c->pending_caps[c->npending].id = (uint32_t) eid;
+	c->npending++;
+	return p;
+}
+
+capn_ptr capn_rpc_new_import_cap(struct capn_rpc_conn *c, struct capn_segment *seg,
+                                 uint32_t import_id)
+{
+	capn_ptr p;
+
+	memset(&p, 0, sizeof p);
+	if (c->npending >= CAPN_RPC_MAX_PENDING_CAPS)
+		return p;
+	p = capn_new_interface(seg, 0, 0);
+	if (p.type == CAPN_NULL)
+		return p;
+	p.len = c->npending;
+	c->pending_caps[c->npending].is_import = 1;
+	c->pending_caps[c->npending].id = import_id;
+	c->npending++;
+	return p;
+}
+
+/* What the capTable entry a capability pointer indexes names. */
+static int cap_lookup(CapDescriptor_list table, capn_ptr cap, int *is_export)
+{
+	struct CapDescriptor cd;
+
+	capn_resolve(&cap);
+	capn_resolve(&table.p);
+	if (cap.type != CAPN_INTERFACE || table.p.type == CAPN_NULL)
+		return -1;
+	if (cap.len < 0 || cap.len >= capn_ptr_len(table.p))
+		return -1;
+	get_CapDescriptor(&cd, table, cap.len);
+	if (cd.which == CapDescriptor_senderHosted) {
+		if (is_export)
+			*is_export = 0;
+		return (int) cd.senderHosted;
+	}
+	if (cd.which == CapDescriptor_receiverHosted) {
+		if (is_export)
+			*is_export = 1;
+		return (int) cd.receiverHosted;
+	}
+	return -1;
+}
+
+int capn_rpc_param_cap(struct capn_rpc_conn *c, capn_ptr cap, int *is_export)
+{
+	return cap_lookup(c->in_caps, cap, is_export);
+}
+
+static uint32_t send_call_impl(struct capn_rpc_conn *c, int pipelined,
+                               uint32_t target_id, const uint16_t *path, int npath,
+                               uint64_t interface_id, uint16_t method_id,
+                               int params_datasz, int params_ptrs,
+                               capn_rpc_fill_fn fill, void *fill_ctx)
 {
 	struct capn msg;
 	struct Message m;
@@ -1047,15 +1150,40 @@ uint32_t capn_rpc_send_call(struct capn_rpc_conn *c, uint32_t imported_cap,
 	memset(&call, 0, sizeof call);
 	memset(&t, 0, sizeof t);
 	memset(&params, 0, sizeof params);
+	c->npending = 0;
 
-	t.which = MessageTarget_importedCap;
-	t.importedCap = imported_cap;
+	if (pipelined) {
+		struct PromisedAnswer pa;
+		PromisedAnswer_ptr pap;
+		int i;
+
+		memset(&pa, 0, sizeof pa);
+		pa.questionId = target_id;
+		if (npath > 0) {
+			pa.transform = new_PromisedAnswer_Op_list(cs, npath);
+			for (i = 0; i < npath; i++) {
+				struct PromisedAnswer_Op op;
+				memset(&op, 0, sizeof op);
+				op.which = PromisedAnswer_Op_getPointerField;
+				op.getPointerField = path[i];
+				set_PromisedAnswer_Op(&op, pa.transform, i);
+			}
+		}
+		pap = new_PromisedAnswer(cs);
+		write_PromisedAnswer(&pa, pap);
+		t.which = MessageTarget_promisedAnswer;
+		t.promisedAnswer = pap;
+	} else {
+		t.which = MessageTarget_importedCap;
+		t.importedCap = target_id;
+	}
 	tp = new_MessageTarget(cs);
 	write_MessageTarget(&t, tp);
 
 	params.content = capn_new_struct(cs, params_datasz, params_ptrs);
 	if (fill)
 		fill(fill_ctx, params.content);
+	attach_cap_table(c, cs, &params);
 	plp = new_Payload(cs);
 	write_Payload(&params, plp);
 
@@ -1078,6 +1206,27 @@ uint32_t capn_rpc_send_call(struct capn_rpc_conn *c, uint32_t imported_cap,
 	}
 	capn_free(&msg);
 	return qid;
+}
+
+uint32_t capn_rpc_send_call(struct capn_rpc_conn *c, uint32_t imported_cap,
+                            uint64_t interface_id, uint16_t method_id,
+                            int params_datasz, int params_ptrs,
+                            capn_rpc_fill_fn fill, void *fill_ctx)
+{
+	return send_call_impl(c, 0, imported_cap, NULL, 0, interface_id, method_id,
+	                      params_datasz, params_ptrs, fill, fill_ctx);
+}
+
+uint32_t capn_rpc_send_pipelined_call(struct capn_rpc_conn *c, uint32_t question_id,
+                                      const uint16_t *path, int npath,
+                                      uint64_t interface_id, uint16_t method_id,
+                                      int params_datasz, int params_ptrs,
+                                      capn_rpc_fill_fn fill, void *fill_ctx)
+{
+	if (npath < 0 || (npath > 0 && path == NULL))
+		return (uint32_t)-1;
+	return send_call_impl(c, 1, question_id, path, npath, interface_id, method_id,
+	                      params_datasz, params_ptrs, fill, fill_ctx);
 }
 
 int capn_rpc_send_finish(struct capn_rpc_conn *c, uint32_t question_id)
@@ -1194,6 +1343,34 @@ int capn_rpc_answer_cap_id(struct capn_rpc_conn *c, uint32_t question_id)
 		id = (int)cd.senderHosted;
 
 out:
+	capn_free(&msg);
+	return id;
+}
+
+int capn_rpc_answer_cap(struct capn_rpc_conn *c, uint32_t question_id, capn_ptr cap,
+                        int *is_export)
+{
+	struct capn msg;
+	struct Message m;
+	struct Return r;
+	struct Payload pl;
+	Message_ptr mp;
+	struct capn_rpc_question *q = question_find(c, question_id);
+	int id = -1;
+
+	if (q == NULL || !q->answered || q->failed)
+		return -1;
+	if (capn_init_mem(&msg, q->reply, q->reply_len, 0) != 0)
+		return -1;
+	mp.p = capn_getp(capn_root(&msg), 0, 1);
+	read_Message(&m, mp);
+	if (m.which == Message__return) {
+		read_Return(&r, m._return);
+		if (r.which == Return_results) {
+			read_Payload(&pl, r.results);
+			id = cap_lookup(pl.capTable, cap, is_export);
+		}
+	}
 	capn_free(&msg);
 	return id;
 }

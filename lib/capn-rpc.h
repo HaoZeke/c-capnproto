@@ -34,6 +34,8 @@ extern "C" {
 /* Outstanding unacknowledged calls a stream may hold. */
 #define CAPN_RPC_STREAM_MAX_WINDOW 64
 #define CAPN_RPC_MAX_JOIN_PARTS 16
+/* Capabilities one params or results payload can carry. */
+#define CAPN_RPC_MAX_PENDING_CAPS 16
 
 struct capn_rpc_conn;
 
@@ -169,6 +171,13 @@ struct capn_rpc_vat {
 	struct capn_rpc_provision provisions[CAPN_RPC_MAX_PROVISIONS];
 };
 
+/* A capability made while a payload is being filled, kept until the
+ * payload's capTable is written. */
+struct capn_rpc_pending_cap {
+	int is_import;
+	uint32_t id;
+};
+
 struct capn_rpc_conn {
 	struct capn_rpc_export exports[CAPN_RPC_MAX_EXPORTS];
 	struct capn_rpc_answer answers[CAPN_RPC_MAX_ANSWERS];
@@ -192,6 +201,10 @@ struct capn_rpc_conn {
 	 * pointer slots. capn_rpc_init sets 8 and 1. */
 	int results_datasz;
 	int results_ptrs;
+	struct capn_rpc_pending_cap pending_caps[CAPN_RPC_MAX_PENDING_CAPS];
+	int npending;
+	/* The capTable of the call being dispatched, valid during dispatch. */
+	CapDescriptor_list in_caps;
 };
 
 /* Zero the tables and install the transmit callback. */
@@ -266,6 +279,35 @@ uint32_t capn_rpc_send_call(struct capn_rpc_conn *c, uint32_t imported_cap,
                             uint64_t interface_id, uint16_t method_id,
                             int params_datasz, int params_ptrs,
                             capn_rpc_fill_fn fill, void *fill_ctx);
+
+/* Call a method on a capability the answer to `question_id` will carry,
+ * before that answer has arrived (promise pipelining). `path` is the
+ * list of pointer indices to follow into the answer's results, as
+ * PromisedAnswer.transform. Returns the questionId or (uint32_t)-1. */
+uint32_t capn_rpc_send_pipelined_call(struct capn_rpc_conn *c, uint32_t question_id,
+                                      const uint16_t *path, int npath,
+                                      uint64_t interface_id, uint16_t method_id,
+                                      int params_datasz, int params_ptrs,
+                                      capn_rpc_fill_fn fill, void *fill_ctx);
+
+/* Capabilities in payloads. Inside a fill callback (params) or dispatch
+ * (results), these make a capability pointer to store in a pointer slot
+ * with capn_setp (or in a list), and the payload's capTable is written
+ * for you. `new_export_cap` hands the peer one of this vat's objects;
+ * `new_import_cap` hands back a capability the peer hosts. Both return a
+ * null pointer when the payload already holds CAPN_RPC_MAX_PENDING_CAPS. */
+capn_ptr capn_rpc_new_export_cap(struct capn_rpc_conn *c, struct capn_segment *seg,
+                                 void *server, capn_rpc_dispatch_fn dispatch);
+capn_ptr capn_rpc_new_import_cap(struct capn_rpc_conn *c, struct capn_segment *seg,
+                                 uint32_t import_id);
+
+/* What a capability pointer received in params (during dispatch) or in an
+ * answer names. Returns an id, or -1. `*is_export` is 0 for a capability
+ * the peer hosts, whose id is what capn_rpc_send_call takes as
+ * `imported_cap`, and 1 for one of this vat's own exports passed back. */
+int capn_rpc_param_cap(struct capn_rpc_conn *c, capn_ptr cap, int *is_export);
+int capn_rpc_answer_cap(struct capn_rpc_conn *c, uint32_t question_id, capn_ptr cap,
+                        int *is_export);
 
 /* Tell the peer we are done with an answer, and drop our copy. */
 int capn_rpc_send_finish(struct capn_rpc_conn *c, uint32_t question_id);
