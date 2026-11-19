@@ -210,9 +210,11 @@ static int resolve_promised_answer(struct capn_rpc_conn *c,
 		goto out;
 	/* The pointer holds a capTable index; the descriptor beside it says
 	 * which export the caller is naming. */
-	if (cursor.len < 0 || cursor.len >= capn_len(pl.capTable))
+	if (capn_len(pl.capTable) < 0 ||
+	    cursor.cap_idx > (uint32_t) INT_MAX ||
+	    (int) cursor.cap_idx >= capn_len(pl.capTable))
 		goto out;
-	get_CapDescriptor(&cd, pl.capTable, cursor.len);
+	get_CapDescriptor(&cd, pl.capTable, (int) cursor.cap_idx);
 	if (cd.which != CapDescriptor_senderHosted)
 		goto out;
 	if (cd.senderHosted < (uint32_t) c->exports_cap &&
@@ -1260,7 +1262,7 @@ capn_ptr capn_rpc_new_export_cap(struct capn_rpc_conn *c, struct capn_segment *s
 	p = capn_new_interface(seg, 0, 0);
 	if (p.type == CAPN_NULL)
 		return p;
-	p.len = c->npending;
+	p.cap_idx = (uint32_t) c->npending;
 	c->pending_caps[c->npending].is_import = 0;
 	c->pending_caps[c->npending].id = (uint32_t) eid;
 	c->npending++;
@@ -1278,7 +1280,7 @@ capn_ptr capn_rpc_new_import_cap(struct capn_rpc_conn *c, struct capn_segment *s
 	p = capn_new_interface(seg, 0, 0);
 	if (p.type == CAPN_NULL)
 		return p;
-	p.len = c->npending;
+	p.cap_idx = (uint32_t) c->npending;
 	c->pending_caps[c->npending].is_import = 1;
 	c->pending_caps[c->npending].id = import_id;
 	c->npending++;
@@ -1294,9 +1296,11 @@ static int cap_lookup(CapDescriptor_list table, capn_ptr cap, int *is_export)
 	capn_resolve(&table.p);
 	if (cap.type != CAPN_INTERFACE || table.p.type == CAPN_NULL)
 		return -1;
-	if (cap.len < 0 || cap.len >= capn_ptr_len(table.p))
+	if (capn_ptr_len(table.p) < 0 ||
+	    cap.cap_idx > (uint32_t) INT_MAX ||
+	    (int) cap.cap_idx >= capn_ptr_len(table.p))
 		return -1;
-	get_CapDescriptor(&cd, table, cap.len);
+	get_CapDescriptor(&cd, table, (int) cap.cap_idx);
 	if (cd.which == CapDescriptor_senderHosted) {
 		if (is_export)
 			*is_export = 0;
@@ -1528,11 +1532,13 @@ int capn_rpc_answer_cap_id(struct capn_rpc_conn *c, uint32_t question_id)
 	 * it names the export. */
 	if (pl.capTable.p.type == CAPN_NULL)
 		goto out;
-	if (pl.content.len < 0 || pl.content.len >= capn_ptr_len(pl.capTable.p))
+	if (capn_ptr_len(pl.capTable.p) < 0 ||
+	    pl.content.cap_idx > (uint32_t) INT_MAX ||
+	    (int) pl.content.cap_idx >= capn_ptr_len(pl.capTable.p))
 		goto out;
 	/* A struct list: read the element through the generated accessor,
 	 * not as a pointer list. */
-	get_CapDescriptor(&cd, pl.capTable, pl.content.len);
+	get_CapDescriptor(&cd, pl.capTable, (int) pl.content.cap_idx);
 	if (cd.which == CapDescriptor_senderHosted)
 		id = (int)cd.senderHosted;
 

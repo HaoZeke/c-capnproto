@@ -683,6 +683,7 @@ TEST_F(RpcClient, PassingBackACapabilityNamesTheReceiversExport)
 	capn_ptr cap = capn_rpc_new_import_cap(&client, cs, 5);
 	ASSERT_EQ(CAPN_INTERFACE, cap.type);
 	ASSERT_EQ(0, cap.len);
+	ASSERT_EQ(0u, cap.cap_idx);
 	EXPECT_EQ(1, client.npending);
 	client.npending = 0;
 	capn_free(&msg);
