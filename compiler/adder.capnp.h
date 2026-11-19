@@ -21,6 +21,8 @@
 extern "C" {
 #endif
 
+struct Adder_borrow_results;
+struct Adder_borrow_params;
 struct Adder_seq_results;
 struct Adder_seq_params;
 struct Adder_echo_results;
@@ -42,6 +44,8 @@ struct CountMid_twice_params;
 struct CountLeaf_dec_results;
 struct CountLeaf_dec_params;
 
+typedef struct {capn_ptr p;} Adder_borrow_results_ptr;
+typedef struct {capn_ptr p;} Adder_borrow_params_ptr;
 typedef struct {capn_ptr p;} Adder_seq_results_ptr;
 typedef struct {capn_ptr p;} Adder_seq_params_ptr;
 typedef struct {capn_ptr p;} Adder_echo_results_ptr;
@@ -63,6 +67,8 @@ typedef struct {capn_ptr p;} CountMid_twice_params_ptr;
 typedef struct {capn_ptr p;} CountLeaf_dec_results_ptr;
 typedef struct {capn_ptr p;} CountLeaf_dec_params_ptr;
 
+typedef struct {capn_ptr p;} Adder_borrow_results_list;
+typedef struct {capn_ptr p;} Adder_borrow_params_list;
 typedef struct {capn_ptr p;} Adder_seq_results_list;
 typedef struct {capn_ptr p;} Adder_seq_params_list;
 typedef struct {capn_ptr p;} Adder_echo_results_list;
@@ -92,6 +98,29 @@ typedef struct {capn_ptr p;} CountMid_ptr;
 typedef struct {capn_ptr p;} CountMid_list;
 typedef struct {capn_ptr p;} CountLeaf_ptr;
 typedef struct {capn_ptr p;} CountLeaf_list;
+
+struct Adder_borrow_results {
+	int32_t n;
+	Adder_ptr cap;
+};
+
+static const size_t Adder_borrow_results_word_count = 1;
+
+static const size_t Adder_borrow_results_pointer_count = 1;
+
+static const size_t Adder_borrow_results_struct_bytes_count = 16;
+
+
+struct Adder_borrow_params {
+	int32_t n;
+};
+
+static const size_t Adder_borrow_params_word_count = 1;
+
+static const size_t Adder_borrow_params_pointer_count = 0;
+
+static const size_t Adder_borrow_params_struct_bytes_count = 8;
+
 
 struct Adder_seq_results {
 	int64_t prev;
@@ -332,6 +361,7 @@ static const struct Adder_method Adder_fulfill_method = {3, 0, 0, 0, 0};
 static const struct Adder_method Adder_watch_method = {4, 0, 1, 0, 0};
 static const struct Adder_method Adder_echo_method = {5, 0, 1, 0, 1};
 static const struct Adder_method Adder_seq_method = {6, 8, 0, 8, 0};
+static const struct Adder_method Adder_borrow_method = {7, 8, 0, 8, 1};
 
 /* RPC stubs for Adder. */
 struct Adder_server {
@@ -343,6 +373,7 @@ struct Adder_server {
 	int (*on_watch)(void *self, const struct Adder_watch_params *in, struct Adder_watch_results *out, struct capn_segment *seg);
 	int (*on_echo)(void *self, const struct Adder_echo_params *in, struct Adder_echo_results *out, struct capn_segment *seg);
 	int (*on_seq)(void *self, const struct Adder_seq_params *in, struct Adder_seq_results *out, struct capn_segment *seg);
+	int (*on_borrow)(void *self, const struct Adder_borrow_params *in, struct Adder_borrow_results *out, struct capn_segment *seg);
 };
 /* Pass these to capn_rpc_set_result_size so results fit. */
 #define Adder_RESULT_DATASZ 8
@@ -369,6 +400,9 @@ int Adder_return_echo(struct capn_rpc_conn *c, uint32_t question, uint32_t gener
 uint32_t Adder_call_seq(struct capn_rpc_conn *c, uint32_t cap, const struct Adder_seq_params *in);
 int Adder_results_seq(struct capn_rpc_conn *c, uint32_t question, struct Adder_seq_results *out, struct capn *msg);
 int Adder_return_seq(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_seq_results *out);
+uint32_t Adder_call_borrow(struct capn_rpc_conn *c, uint32_t cap, const struct Adder_borrow_params *in);
+int Adder_results_borrow(struct capn_rpc_conn *c, uint32_t question, struct Adder_borrow_results *out, struct capn *msg);
+int Adder_return_borrow(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_borrow_results *out);
 
 /* Interface CountBase: id and method descriptors. */
 #define CountBase_INTERFACE_ID 0xdbbc11dde380ab36ULL
@@ -445,6 +479,8 @@ uint32_t CountLeaf_call_dec(struct capn_rpc_conn *c, uint32_t cap, const struct 
 int CountLeaf_results_dec(struct capn_rpc_conn *c, uint32_t question, struct CountLeaf_dec_results *out, struct capn *msg);
 int CountLeaf_return_dec(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct CountLeaf_dec_results *out);
 
+Adder_borrow_results_ptr new_Adder_borrow_results(struct capn_segment*);
+Adder_borrow_params_ptr new_Adder_borrow_params(struct capn_segment*);
 Adder_seq_results_ptr new_Adder_seq_results(struct capn_segment*);
 Adder_seq_params_ptr new_Adder_seq_params(struct capn_segment*);
 Adder_echo_results_ptr new_Adder_echo_results(struct capn_segment*);
@@ -466,6 +502,8 @@ CountMid_twice_params_ptr new_CountMid_twice_params(struct capn_segment*);
 CountLeaf_dec_results_ptr new_CountLeaf_dec_results(struct capn_segment*);
 CountLeaf_dec_params_ptr new_CountLeaf_dec_params(struct capn_segment*);
 
+Adder_borrow_results_list new_Adder_borrow_results_list(struct capn_segment*, int len);
+Adder_borrow_params_list new_Adder_borrow_params_list(struct capn_segment*, int len);
 Adder_seq_results_list new_Adder_seq_results_list(struct capn_segment*, int len);
 Adder_seq_params_list new_Adder_seq_params_list(struct capn_segment*, int len);
 Adder_echo_results_list new_Adder_echo_results_list(struct capn_segment*, int len);
@@ -496,6 +534,8 @@ CountMid_list new_CountMid_list(struct capn_segment*, int len);
 CountLeaf_ptr new_CountLeaf(struct capn_segment*);
 CountLeaf_list new_CountLeaf_list(struct capn_segment*, int len);
 
+void read_Adder_borrow_results(struct Adder_borrow_results*, Adder_borrow_results_ptr);
+void read_Adder_borrow_params(struct Adder_borrow_params*, Adder_borrow_params_ptr);
 void read_Adder_seq_results(struct Adder_seq_results*, Adder_seq_results_ptr);
 void read_Adder_seq_params(struct Adder_seq_params*, Adder_seq_params_ptr);
 void read_Adder_echo_results(struct Adder_echo_results*, Adder_echo_results_ptr);
@@ -517,6 +557,8 @@ void read_CountMid_twice_params(struct CountMid_twice_params*, CountMid_twice_pa
 void read_CountLeaf_dec_results(struct CountLeaf_dec_results*, CountLeaf_dec_results_ptr);
 void read_CountLeaf_dec_params(struct CountLeaf_dec_params*, CountLeaf_dec_params_ptr);
 
+void write_Adder_borrow_results(const struct Adder_borrow_results*, Adder_borrow_results_ptr);
+void write_Adder_borrow_params(const struct Adder_borrow_params*, Adder_borrow_params_ptr);
 void write_Adder_seq_results(const struct Adder_seq_results*, Adder_seq_results_ptr);
 void write_Adder_seq_params(const struct Adder_seq_params*, Adder_seq_params_ptr);
 void write_Adder_echo_results(const struct Adder_echo_results*, Adder_echo_results_ptr);
@@ -538,6 +580,8 @@ void write_CountMid_twice_params(const struct CountMid_twice_params*, CountMid_t
 void write_CountLeaf_dec_results(const struct CountLeaf_dec_results*, CountLeaf_dec_results_ptr);
 void write_CountLeaf_dec_params(const struct CountLeaf_dec_params*, CountLeaf_dec_params_ptr);
 
+void get_Adder_borrow_results(struct Adder_borrow_results*, Adder_borrow_results_list, int i);
+void get_Adder_borrow_params(struct Adder_borrow_params*, Adder_borrow_params_list, int i);
 void get_Adder_seq_results(struct Adder_seq_results*, Adder_seq_results_list, int i);
 void get_Adder_seq_params(struct Adder_seq_params*, Adder_seq_params_list, int i);
 void get_Adder_echo_results(struct Adder_echo_results*, Adder_echo_results_list, int i);
@@ -559,6 +603,8 @@ void get_CountMid_twice_params(struct CountMid_twice_params*, CountMid_twice_par
 void get_CountLeaf_dec_results(struct CountLeaf_dec_results*, CountLeaf_dec_results_list, int i);
 void get_CountLeaf_dec_params(struct CountLeaf_dec_params*, CountLeaf_dec_params_list, int i);
 
+void set_Adder_borrow_results(const struct Adder_borrow_results*, Adder_borrow_results_list, int i);
+void set_Adder_borrow_params(const struct Adder_borrow_params*, Adder_borrow_params_list, int i);
 void set_Adder_seq_results(const struct Adder_seq_results*, Adder_seq_results_list, int i);
 void set_Adder_seq_params(const struct Adder_seq_params*, Adder_seq_params_list, int i);
 void set_Adder_echo_results(const struct Adder_echo_results*, Adder_echo_results_list, int i);

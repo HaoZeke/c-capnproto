@@ -730,6 +730,87 @@ int main(int argc, char **argv)
 		}
 	}
 
+	/* borrow() is answered on a later turn and carries an Adder. */
+	{
+		struct Adder_borrow_params in;
+		struct Adder_borrow_results out;
+		struct capn m;
+		capn_ptr cap;
+		int is_export = 1;
+		int id;
+		int frames;
+		memset(&in, 0, sizeof in);
+		in.n = 7;
+		qcall = Adder_call_borrow(&conn, 0, &in);
+		if (qcall == (uint32_t)-1) {
+			fprintf(stderr, "borrow call not sent\n");
+			return 1;
+		}
+		for (frames = 0; frames < 8 && !capn_rpc_is_answered(&conn, qcall);
+		     frames++) {
+			ssize_t n = read_frame(g_fd, buf, sizeof buf);
+			if (n <= 0 || capn_rpc_handle(&conn, buf, (size_t)n) != 0) {
+				fprintf(stderr, "borrow reply not handled\n");
+				return 1;
+			}
+		}
+		if (!capn_rpc_is_answered(&conn, qcall) ||
+		    capn_rpc_is_failed(&conn, qcall)) {
+			fprintf(stderr, "capnp-C++ did not answer borrow()\n");
+			return 1;
+		}
+		memset(&out, 0, sizeof out);
+		if (Adder_results_borrow(&conn, qcall, &out, &m) != 0 || out.n != 7) {
+			fprintf(stderr, "borrow() results missing (n=%d)\n", out.n);
+			capn_free(&m);
+			return 1;
+		}
+		capn_free(&m);
+		{
+			struct capn am;
+			capn_ptr content;
+			if (capn_rpc_answer_content(&conn, qcall, &am, &content) != 0) {
+				fprintf(stderr, "borrow() content missing\n");
+				return 1;
+			}
+			cap = capn_getp(content, 0, 1);
+			id = capn_rpc_answer_cap(&conn, qcall, cap, &is_export);
+			capn_free(&am);
+		}
+		if (id < 0 || is_export != 0) {
+			fprintf(stderr, "borrow() did not return a capability\n");
+			return 1;
+		}
+		{
+			struct Adder_add_params add;
+			struct Adder_add_results sum;
+			struct capn sm;
+			memset(&add, 0, sizeof add);
+			add.a = 20;
+			add.b = 22;
+			qcall = Adder_call_add(&conn, (uint32_t) id, &add);
+			if (qcall == (uint32_t)-1) {
+				fprintf(stderr, "call on borrowed cap not sent\n");
+				return 1;
+			}
+			{
+				ssize_t n = read_frame(g_fd, buf, sizeof buf);
+				if (n <= 0 || capn_rpc_handle(&conn, buf, (size_t)n) != 0) {
+					fprintf(stderr, "borrowed add reply not handled\n");
+					return 1;
+				}
+			}
+			if (!capn_rpc_is_answered(&conn, qcall) ||
+			    capn_rpc_is_failed(&conn, qcall) ||
+			    Adder_results_add(&conn, qcall, &sum, &sm) != 0 ||
+			    sum.sum != 42) {
+				fprintf(stderr, "borrowed add(20, 22) did not return 42\n");
+				return 1;
+			}
+			capn_free(&sm);
+		}
+	}
+
 	capn_rpc_free(&conn);
 	close(g_fd);
 	printf("All rpc interop assertions passed.\n");
