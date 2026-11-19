@@ -1774,6 +1774,22 @@ static void consider_result_bounds(struct node *iface, int *maxd, int *maxp, int
 	}
 }
 
+static int interface_has_superclass(struct node *n)
+{
+	int i;
+
+	for (i = 0; i < capn_len(n->n._interface.superclasses); i++) {
+		struct Superclass superclass;
+		struct node *parent;
+
+		get_Superclass(&superclass, n->n._interface.superclasses, i);
+		parent = find_node_mayfail(superclass.id);
+		if (parent && parent->n.which == Node__interface)
+			return 1;
+	}
+	return 0;
+}
+
 /* Typed RPC stubs ($C.rpcstubs): for each method a client call helper, a
  * reader for its results, and a slot in a server vtable that
  * <Interface>_dispatch routes to. */
@@ -1783,7 +1799,10 @@ static void define_rpcstubs(struct node *n)
 	const char *I = n->name.str;
 	int maxd = 0, maxp = 0;
 
-	if (count == 0)
+	/* An interface that only inherits still needs a dispatcher and result
+	 * sizes. A further subclass forwards a grandparent id to it, and a
+	 * connection sized from this interface serves those inherited methods. */
+	if (count == 0 && !interface_has_superclass(n))
 		return;
 	consider_result_bounds(n, &maxd, &maxp, 0);
 
