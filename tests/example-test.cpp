@@ -320,13 +320,14 @@ TEST(Examples, TestAllTypesInterfaceField) {
     struct capn_segment *cs = capn_root(&c).seg;
     TestAllTypes_ptr tp = new_TestAllTypes(cs);
     TestInterface_ptr iface = new_TestInterface(cs);
-    iface.p.len = 9;
+    iface.p.cap_idx = 9;
     TestAllTypes_set_interfaceField(tp, iface);
     ASSERT_EQ(0, capn_set_root(&c, tp.p));
 
     TestInterface_ptr got = TestAllTypes_get_interfaceField(tp);
     EXPECT_EQ(CAPN_INTERFACE, got.p.type);
-    EXPECT_EQ(9, got.p.len);
+    EXPECT_EQ(0, got.p.len);
+    EXPECT_EQ(9u, got.p.cap_idx);
 
     sz = capn_write_mem(&c, buf, sizeof(buf), 0);
     ASSERT_GT(sz, 0);
@@ -340,7 +341,8 @@ TEST(Examples, TestAllTypesInterfaceField) {
     rp.p = capn_getp(capn_root(&rc), 0, 1);
     TestInterface_ptr got = TestAllTypes_get_interfaceField(rp);
     EXPECT_EQ(CAPN_INTERFACE, got.p.type);
-    EXPECT_EQ(9, got.p.len);
+    EXPECT_EQ(0, got.p.len);
+    EXPECT_EQ(9u, got.p.cap_idx);
     capn_free(&rc);
   }
 }

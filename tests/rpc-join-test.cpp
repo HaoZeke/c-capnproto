@@ -859,11 +859,14 @@ void send_release(struct capn_rpc_conn *c, uint32_t id, uint32_t count)
 	ASSERT_EQ(0, capn_rpc_handle(c, buf, static_cast<size_t>(sz)));
 }
 
-TEST_F(RpcJoin, ReleasingMoreReferencesThanHeldDropsTheExport)
+TEST_F(RpcJoin, ReleasingMoreReferencesThanHeldAborts)
 {
 	ASSERT_TRUE(conn.exports[live].used);
+	int held = conn.exports[live].refcount;
 	send_release(&conn, live, 0xffffffffu);
-	EXPECT_FALSE(conn.exports[live].used);
+	EXPECT_TRUE(capn_rpc_is_aborted(&conn));
+	EXPECT_TRUE(conn.exports[live].used);
+	EXPECT_EQ(held, conn.exports[live].refcount);
 }
 
 TEST_F(RpcJoin, ReleasingFewerReferencesKeepsTheExport)
