@@ -84,5 +84,43 @@ TEST(Brand, TypedAccessorsRoundTrip) {
   read_Box(&gg, gp);
   EXPECT_EQ(9u, gg.count);
 
+	capn_free(&ctx);
+}
+
+/* Holder(T).Inner is branded with Scope.inherit. Holder(Text) must
+ * name that inner struct with T already replaced. */
+TEST(Brand, InheritUsesTheEnclosingParameter) {
+  struct capn ctx;
+  struct capn_segment *seg;
+  capn_init_malloc(&ctx);
+  seg = capn_root(&ctx).seg;
+
+  Holder_Inner_Text_ptr inner = new_Holder_Inner_Text(seg);
+  struct Holder_Inner_Text iv;
+  memset(&iv, 0, sizeof iv);
+  iv.value.len = 3;
+  iv.value.str = "yes";
+  write_Holder_Inner_Text(&iv, inner);
+
+  Holder_Text_ptr hp = new_Holder_Text(seg);
+  struct Holder_Text holder;
+  memset(&holder, 0, sizeof holder);
+  holder.inherited = inner;
+  holder.rebound = inner;
+  write_Holder_Text(&holder, hp);
+
+  struct Holder_Text got;
+  memset(&got, 0, sizeof got);
+  read_Holder_Text(&got, hp);
+  struct Holder_Inner_Text from_inherit;
+  struct Holder_Inner_Text from_rebind;
+  memset(&from_inherit, 0, sizeof from_inherit);
+  memset(&from_rebind, 0, sizeof from_rebind);
+  read_Holder_Inner_Text(&from_inherit, got.inherited);
+  read_Holder_Inner_Text(&from_rebind, got.rebound);
+  ASSERT_NE(nullptr, from_inherit.value.str);
+  EXPECT_STREQ("yes", from_inherit.value.str);
+  EXPECT_STREQ("yes", from_rebind.value.str);
+
   capn_free(&ctx);
 }
