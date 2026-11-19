@@ -980,6 +980,9 @@ capn_ptr capn_getp(capn_ptr p, int off, int resolve) {
 	capn_resolve(&p);
 	rem = hop_remaining(p);
 
+	if (off < 0)
+		goto err;
+
 	switch (p.type) {
 	case CAPN_LIST:
 		/* Return an inner pointer */
@@ -1675,42 +1678,38 @@ int capn_set1(capn_list1 l, int off, int val) {
 
 int capn_getv1(capn_list1 l, int off, uint8_t *data, int sz) {
 	/* Note we only support aligned reads */
-	int bsz;
+	int n;
 	capn_ptr p;
 	capn_resolve(&l.p);
 	p = l.p;
-	if (p.type != CAPN_BIT_LIST || (off & 7) != 0 || p.is_list_member)
+	if (p.type != CAPN_BIT_LIST || (off & 7) != 0 || p.is_list_member ||
+	    off < 0 || sz < 0 || off > p.len)
 		return -1;
 
-	bsz = (sz + 7) / 8;
-	off /= 8;
-
-	if (off + sz > p.datasz) {
-		memcpy(data, p.data + off, p.datasz - off);
-		return p.len - off*8;
-	} else {
-		memcpy(data, p.data + off, bsz);
-		return sz;
-	}
+	n = sz < p.len - off ? sz : p.len - off;
+	memcpy(data, p.data + off / 8, (size_t) (n + 7) / 8);
+	return n;
 }
 
 int capn_setv1(capn_list1 l, int off, const uint8_t *data, int sz) {
 	/* Note we only support aligned writes */
-	int bsz;
+	int n, whole;
 	capn_ptr p = l.p;
-	if (p.type != CAPN_BIT_LIST || (off & 7) != 0 || p.is_list_member)
+	capn_resolve(&p);
+	if (p.type != CAPN_BIT_LIST || (off & 7) != 0 || p.is_list_member ||
+	    off < 0 || sz < 0 || off > p.len)
 		return -1;
 
-	bsz = (sz + 7) / 8;
-	off /= 8;
-
-	if (off + sz > p.datasz) {
-		memcpy(p.data + off, data, p.datasz - off);
-		return p.len - off*8;
-	} else {
-		memcpy(p.data + off, data, bsz);
-		return sz;
+	n = sz < p.len - off ? sz : p.len - off;
+	whole = n / 8;
+	memcpy(p.data + off / 8, data, (size_t) whole);
+	if (n & 7) {
+		/* Leave the bits past the last element written alone. */
+		uint8_t keep = (uint8_t) (0xff << (n & 7));
+		uint8_t *last = (uint8_t *) p.data + off / 8 + whole;
+		*last = (uint8_t) ((*last & keep) | (data[whole] & ~keep));
 	}
+	return n;
 }
 
 /* pull out whether we add a tag or not as a define so the unit test can
