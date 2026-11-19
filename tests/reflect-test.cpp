@@ -269,3 +269,128 @@ TEST_F(Reflect, SettersWriteWhatTheGettersRead) {
   EXPECT_EQ(-1, capn_dyn_set_which(&Unions_dyn, root.p, before));
   capn_free(&c);
 }
+
+namespace {
+
+std::string canonical_of(struct capn *c) {
+  struct capn d;
+  capn_init_malloc(&d);
+  std::string out;
+  if (capn_canonicalize(c, &d) == 0 && d.seglist != NULL) {
+    out.assign(d.seglist->data, d.seglist->len);
+  }
+  capn_free(&d);
+  return out;
+}
+
+/* Build a message from text or JSON and return its canonical bytes. */
+std::string build(const struct capn_dyn_struct *s, const std::string &in, bool json,
+                  struct capn_dyn_error *err) {
+  struct capn c;
+  capn_init_malloc(&c);
+  capn_ptr st;
+  int rc = json ? capn_dyn_from_json(s, in.data(), in.size(), capn_root(&c).seg, &st, err)
+                : capn_dyn_from_text(s, in.data(), in.size(), capn_root(&c).seg, &st, err);
+  std::string out;
+  if (rc == 0 && capn_set_root(&c, st) == 0) {
+    out = canonical_of(&c);
+  }
+  capn_free(&c);
+  return out;
+}
+
+}  // namespace
+
+TEST_F(Reflect, TextDecoderBuildsWhatCapnpEncodeBuilds) {
+  for (const Case &c : kCases) {
+    std::string bin = encode(c);
+    CmdResult want = capnp_convert("binary:canonical", bin.data(), bin.size());
+    ASSERT_EQ(0, want.status) << want.err;
+    struct capn_dyn_error err;
+    std::string got = build(c.desc, c.text, false, &err);
+    ASSERT_FALSE(got.empty()) << c.text << "\n" << err.message << " at " << err.offset;
+    expect_bytes_eq(got.data(), got.size(), want.out.data(), want.out.size(), c.text);
+  }
+}
+
+TEST_F(Reflect, JsonDecoderRebuildsWhatTheToolPrinted) {
+  for (const Case &c : kCases) {
+    std::string bin = encode(c);
+    CmdResult want = capnp_convert("binary:canonical", bin.data(), bin.size());
+    ASSERT_EQ(0, want.status) << want.err;
+    std::string json = want_json(c, bin);
+    struct capn_dyn_error err;
+    std::string got = build(c.desc, json, true, &err);
+    ASSERT_FALSE(got.empty()) << json << "\n" << err.message << " at " << err.offset;
+    expect_bytes_eq(got.data(), got.size(), want.out.data(), want.out.size(), json.c_str());
+  }
+}
+
+TEST_F(Reflect, OurJsonSurvivesTheOfficialDecoder) {
+  for (const Case &c : kCases) {
+    std::string bin = encode(c);
+    struct capn m;
+    ASSERT_EQ(0, capn_init_mem(&m, (const uint8_t *) bin.data(), bin.size(), 0));
+    char *json = capn_dyn_to_json(c.desc, capn_getp(capn_root(&m), 0, 1), 0);
+    ASSERT_NE(nullptr, json);
+    /* The spaced form is not --short: the tool must take it all the same. */
+    CmdResult back = run_argv(cli("convert", "json:binary", c.type, false), json,
+                              strlen(json));
+    EXPECT_EQ(0, back.status) << json << "\n" << back.err;
+    CmdResult canon = capnp_convert("binary:canonical", back.out.data(), back.out.size());
+    CmdResult want = capnp_convert("binary:canonical", bin.data(), bin.size());
+    expect_bytes_eq(canon.out.data(), canon.out.size(), want.out.data(),
+                    want.out.size(), json);
+    free(json);
+    capn_free(&m);
+  }
+}
+
+TEST_F(Reflect, DecodersRejectWhatIsNotAValueOfTheType) {
+  struct capn_dyn_error err;
+  static const char *const kBadJson[] = {
+    "", "{", "[1]", "{\"nope\": 1}", "{\"i8\": 300}", "{\"i8\": -129}",
+    "{\"u8\": -1}", "{\"b\": 1}", "{\"e\": \"purple\"}", "{\"t\": 5}",
+    "{\"lst\": [\"x\"]}", "{\"i32\": \"1x\"}", "{\"t\": \"\\q\"}", "{} trailing",
+    "{\"i64\": \"18446744073709551616\"}",
+  };
+  for (const char *j : kBadJson) {
+    EXPECT_TRUE(build(&Defaults_dyn, j, true, &err).empty()) << j;
+    EXPECT_NE('\0', err.message[0]) << j;
+  }
+  static const char *const kBadText[] = {
+    "", "(", "(i8 = )", "(nope = 1)", "(i8 = 300)", "(b = 1)", "(e = purple)",
+    "(t = 5)", "(t = \"unterminated)", "(lst = [1, 2)", "(i8 = 1) extra", "[1]",
+  };
+  for (const char *t : kBadText) {
+    EXPECT_TRUE(build(&Defaults_dyn, t, false, &err).empty()) << t;
+    EXPECT_NE('\0', err.message[0]) << t;
+  }
+}
+
+TEST_F(Reflect, DecodersAcceptTheLooseSpellings) {
+  struct capn_dyn_error err;
+  /* Comments, trailing commas, hex, negative numbers without spaces. */
+  std::string a = build(&Defaults_dyn,
+      "( # a comment\n i8 =-5, u16 = 0xff, f32 = inf, f64 = -inf, d = 0x\"de ad\",\n"
+      "  lst = [1, 2,], )", false, &err);
+  ASSERT_FALSE(a.empty()) << err.message;
+  /* JSON escapes, surrogate pairs and big 64-bit values as numbers or strings. */
+  std::string b = build(&Defaults_dyn,
+      "{\"t\": \"\\u00e9\\ud83d\\ude00\\n\", \"i64\": 9007199254740993,"
+      " \"u64\": \"18446744073709551615\", \"f64\": \"-Infinity\", \"v\": null}",
+      true, &err);
+  ASSERT_FALSE(b.empty()) << err.message;
+
+  struct capn c;
+  capn_init_malloc(&c);
+  capn_ptr st;
+  const std::string one = "{\"t\": \"\\u00e9\\ud83d\\ude00\\n\"}";
+  ASSERT_EQ(0, capn_dyn_from_json(&Defaults_dyn, one.data(), one.size(),
+                                  capn_root(&c).seg, &st, &err))
+      << err.message;
+  capn_text t = capn_dyn_get_text(st, capn_dyn_find_field(&Defaults_dyn, "t"));
+  ASSERT_EQ(7, t.len);
+  EXPECT_EQ(0, memcmp(t.str, "\xc3\xa9\xf0\x9f\x98\x80\n", 7));
+  capn_free(&c);
+}
