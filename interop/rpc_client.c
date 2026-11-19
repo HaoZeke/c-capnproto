@@ -21,6 +21,88 @@
 #include "rpc.capnp.h"
 
 static int g_fd = -1;
+static struct capn_rpc_conn *g_conn;
+static int g_local;
+static int g_token;
+static int g_token_id = -1;
+static int g_echoes;
+static int g_echo_id = -1;
+static int g_echo_is_export = -1;
+static int64_t g_seq_last;
+static int64_t g_seq_expect = 1;
+static int g_seq_bad;
+
+static int token_dispatch(void *server, uint64_t interface_id, uint16_t method,
+                          capn_ptr params, capn_ptr results)
+{
+	(void)server;
+	(void)interface_id;
+	(void)method;
+	(void)params;
+	(void)results;
+	return 0;
+}
+
+/* The capability we passed to watch(). Reflected echo() and seq() land
+ * here. echo's parameter has to be our own export, which is what a
+ * swapped cap table looks like on the way back. */
+static int local_dispatch(void *server, uint64_t interface_id, uint16_t method,
+                          capn_ptr params, capn_ptr results)
+{
+	capn_ptr cap, out;
+	int is_export = -1;
+	int id;
+	(void)server;
+	(void)interface_id;
+	if (method == Adder_echo_method.ordinal) {
+		capn_resolve(&params);
+		cap = capn_getp(params, 0, 1);
+		id = capn_rpc_param_cap(g_conn, cap, &is_export);
+		g_echoes++;
+		g_echo_id = id;
+		g_echo_is_export = is_export;
+		if (id < 0 || is_export != 1)
+			return -1;
+		out = capn_rpc_new_export_cap(g_conn, results.seg, &g_token, token_dispatch);
+		if (out.type != CAPN_INTERFACE)
+			return -1;
+		return capn_setp(results, 0, out);
+	}
+	if (method == Adder_seq_method.ordinal) {
+		int64_t n;
+		capn_resolve(&params);
+		n = (int64_t)capn_read64(params, 0);
+		if (n != g_seq_expect)
+			g_seq_bad = 1;
+		capn_write64(results, 0, (uint64_t)g_seq_last);
+		g_seq_last = n;
+		g_seq_expect = n + 1;
+		return 0;
+	}
+	return -1;
+}
+
+static void fill_watch(void *ctx, capn_ptr params)
+{
+	struct capn_rpc_conn *c = (struct capn_rpc_conn *)ctx;
+	capn_ptr cap = capn_rpc_new_export_cap(c, params.seg, &g_local, local_dispatch);
+	capn_setp(params, 0, cap);
+}
+
+static void fill_echo(void *ctx, capn_ptr params)
+{
+	struct capn_rpc_conn *c = (struct capn_rpc_conn *)ctx;
+	capn_ptr cap = capn_rpc_new_export_cap(c, params.seg, &g_token, token_dispatch);
+	if (c->npending > 0)
+		g_token_id = (int)c->pending_caps[c->npending - 1].id;
+	capn_setp(params, 0, cap);
+}
+
+static void fill_seq(void *ctx, capn_ptr params)
+{
+	int64_t n = *(int64_t *)ctx;
+	capn_write64(params, 0, (uint64_t)n);
+}
 
 static int send_fd(void *ctx, const uint8_t *data, size_t len)
 {
@@ -125,6 +207,7 @@ int main(int argc, char **argv)
 	}
 
 	capn_rpc_init(&conn, send_fd, NULL);
+	g_conn = &conn;
 
 	qboot = capn_rpc_send_bootstrap(&conn);
 	if (qboot == (uint32_t)-1) {
@@ -436,6 +519,202 @@ int main(int argc, char **argv)
 			if (!capn_rpc_promise_state(&conn, (uint32_t)prom_id, &broken,
 			                            NULL, NULL) || broken) {
 				fprintf(stderr, "promise was not resolved\n");
+				return 1;
+			}
+		}
+	}
+
+	/* watch() hands capnp-C++ a capability we host. Pipeline echo() and
+	 * seq(1) before fulfill() resolves the promise to that capability.
+	 * seq(2), sent once the promise has resolved, has to stay held until
+	 * the disembargo echo. The cap echo() returns is our export. */
+	{
+		uint16_t path = 0;
+		uint32_t qwatch, qdefer, qecho, qseq, qful, qseq2;
+		int64_t n1 = 1, n2 = 2;
+		int prom_id = -1;
+		int guard;
+		int sent_seq2 = 0;
+
+		g_echoes = 0;
+		g_echo_id = -1;
+		g_echo_is_export = -1;
+		g_seq_last = 0;
+		g_seq_expect = 1;
+		g_seq_bad = 0;
+		g_token_id = -1;
+
+		qwatch = capn_rpc_send_call(&conn, 0, Adder_INTERFACE_ID,
+		                            Adder_watch_method.ordinal,
+		                            Adder_watch_method.params_datasz,
+		                            Adder_watch_method.params_ptrs,
+		                            fill_watch, &conn);
+		if (qwatch == (uint32_t)-1) {
+			fprintf(stderr, "watch not sent\n");
+			return 1;
+		}
+		guard = 0;
+		while (!capn_rpc_is_answered(&conn, qwatch) && guard++ < 16) {
+			ssize_t n = read_frame(g_fd, buf, sizeof buf);
+			if (n <= 0 || capn_rpc_handle(&conn, buf, (size_t)n) != 0) {
+				fprintf(stderr, "watch reply not handled\n");
+				return 1;
+			}
+		}
+		if (!capn_rpc_is_answered(&conn, qwatch) ||
+		    capn_rpc_is_failed(&conn, qwatch)) {
+			fprintf(stderr, "capnp-C++ did not answer watch()\n");
+			return 1;
+		}
+
+		qdefer = capn_rpc_send_call(&conn, 0, Adder_INTERFACE_ID,
+		                            Adder_defer_method.ordinal,
+		                            Adder_defer_method.params_datasz,
+		                            Adder_defer_method.params_ptrs,
+		                            NULL, NULL);
+		qecho = capn_rpc_send_pipelined_call(&conn, qdefer, &path, 1,
+		                                     Adder_INTERFACE_ID,
+		                                     Adder_echo_method.ordinal,
+		                                     Adder_echo_method.params_datasz,
+		                                     Adder_echo_method.params_ptrs,
+		                                     fill_echo, &conn);
+		qseq = capn_rpc_send_pipelined_call(&conn, qdefer, &path, 1,
+		                                    Adder_INTERFACE_ID,
+		                                    Adder_seq_method.ordinal,
+		                                    Adder_seq_method.params_datasz,
+		                                    Adder_seq_method.params_ptrs,
+		                                    fill_seq, &n1);
+		if (qdefer == (uint32_t)-1 || qecho == (uint32_t)-1 ||
+		    qseq == (uint32_t)-1) {
+			fprintf(stderr, "embargo calls not sent\n");
+			return 1;
+		}
+		guard = 0;
+		while (!capn_rpc_is_answered(&conn, qdefer) && guard++ < 16) {
+			ssize_t n = read_frame(g_fd, buf, sizeof buf);
+			if (n <= 0 || capn_rpc_handle(&conn, buf, (size_t)n) != 0) {
+				fprintf(stderr, "second defer reply not handled\n");
+				return 1;
+			}
+		}
+		if (!capn_rpc_is_answered(&conn, qdefer) ||
+		    capn_rpc_is_failed(&conn, qdefer)) {
+			fprintf(stderr, "capnp-C++ did not answer the second defer()\n");
+			return 1;
+		}
+		{
+			struct capn m;
+			capn_ptr content, cap;
+			int is_export = -1;
+			if (capn_rpc_answer_content(&conn, qdefer, &m, &content) != 0) {
+				fprintf(stderr, "second defer() returned no content\n");
+				return 1;
+			}
+			cap = capn_getp(content, 0, 1);
+			prom_id = capn_rpc_answer_cap(&conn, qdefer, cap, &is_export);
+			capn_free(&m);
+			if (prom_id < 0 || is_export != 0) {
+				fprintf(stderr, "second defer() did not return a promise\n");
+				return 1;
+			}
+		}
+
+		qful = capn_rpc_send_call(&conn, 0, Adder_INTERFACE_ID,
+		                          Adder_fulfill_method.ordinal,
+		                          Adder_fulfill_method.params_datasz,
+		                          Adder_fulfill_method.params_ptrs,
+		                          NULL, NULL);
+		if (qful == (uint32_t)-1) {
+			fprintf(stderr, "second fulfill not sent\n");
+			return 1;
+		}
+		qseq2 = (uint32_t)-1;
+		guard = 0;
+		while (guard++ < 32) {
+			int resolved = capn_rpc_promise_state(&conn, (uint32_t)prom_id,
+			                                      NULL, NULL, NULL);
+			if (resolved && !sent_seq2) {
+				qseq2 = capn_rpc_send_call(&conn, (uint32_t)prom_id,
+				                           Adder_INTERFACE_ID,
+				                           Adder_seq_method.ordinal,
+				                           Adder_seq_method.params_datasz,
+				                           Adder_seq_method.params_ptrs,
+				                           fill_seq, &n2);
+				sent_seq2 = 1;
+				if (qseq2 == (uint32_t)-1 ||
+				    capn_rpc_is_answered(&conn, qseq2)) {
+					fprintf(stderr, "seq(2) was not held for the embargo\n");
+					return 1;
+				}
+			}
+			if (sent_seq2 &&
+			    capn_rpc_is_answered(&conn, qecho) &&
+			    capn_rpc_is_answered(&conn, qseq) &&
+			    capn_rpc_is_answered(&conn, qful) &&
+			    capn_rpc_is_answered(&conn, qseq2) &&
+			    resolved)
+				break;
+			{
+				ssize_t n = read_frame(g_fd, buf, sizeof buf);
+				if (n <= 0 || capn_rpc_handle(&conn, buf, (size_t)n) != 0) {
+					fprintf(stderr, "embargo resolution not handled\n");
+					return 1;
+				}
+			}
+		}
+		if (capn_rpc_is_failed(&conn, qecho) || capn_rpc_is_failed(&conn, qseq) ||
+		    capn_rpc_is_failed(&conn, qseq2) || capn_rpc_is_failed(&conn, qful)) {
+			fprintf(stderr, "capnp-C++ failed a reflected call\n");
+			return 1;
+		}
+		if (!capn_rpc_is_answered(&conn, qecho) ||
+		    !capn_rpc_is_answered(&conn, qseq) ||
+		    !capn_rpc_is_answered(&conn, qseq2)) {
+			fprintf(stderr, "reflected calls were not answered\n");
+			return 1;
+		}
+		if (g_seq_bad || g_echoes != 1 || g_echo_is_export != 1 ||
+		    g_echo_id != g_token_id) {
+			fprintf(stderr, "reflected echo/seq mismatch echoes=%d export=%d id=%d token=%d bad=%d\n",
+			        g_echoes, g_echo_is_export, g_echo_id, g_token_id, g_seq_bad);
+			return 1;
+		}
+		{
+			struct capn m;
+			capn_ptr content, cap;
+			int is_export = -1;
+			int id;
+			int64_t prev;
+			if (capn_rpc_answer_content(&conn, qseq, &m, &content) != 0) {
+				fprintf(stderr, "seq(1) returned no content\n");
+				return 1;
+			}
+			prev = (int64_t)capn_read64(content, 0);
+			capn_free(&m);
+			if (prev != 0) {
+				fprintf(stderr, "seq(1) prev %lld, expected 0\n", (long long)prev);
+				return 1;
+			}
+			if (capn_rpc_answer_content(&conn, qseq2, &m, &content) != 0) {
+				fprintf(stderr, "seq(2) returned no content\n");
+				return 1;
+			}
+			prev = (int64_t)capn_read64(content, 0);
+			capn_free(&m);
+			if (prev != 1) {
+				fprintf(stderr, "seq(2) prev %lld, expected 1\n", (long long)prev);
+				return 1;
+			}
+			if (capn_rpc_answer_content(&conn, qecho, &m, &content) != 0) {
+				fprintf(stderr, "echo() returned no content\n");
+				return 1;
+			}
+			cap = capn_getp(content, 0, 1);
+			id = capn_rpc_answer_cap(&conn, qecho, cap, &is_export);
+			capn_free(&m);
+			if (is_export != 1 || id != g_token_id) {
+				fprintf(stderr, "echo() returned cap export=%d id=%d, expected export %d\n",
+				        is_export, id, g_token_id);
 				return 1;
 			}
 		}

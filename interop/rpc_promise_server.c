@@ -20,6 +20,7 @@
 static struct capn_rpc_conn *g_conn;
 static int g_promise = -1;
 static int g_adder;
+static int g_watched = -1;
 
 static int adder_dispatch(void *server, uint64_t interface_id, uint16_t method,
                           capn_ptr params, capn_ptr results)
@@ -48,7 +49,23 @@ static int adder_dispatch(void *server, uint64_t interface_id, uint16_t method,
 	if (method == Adder_fulfill_method.ordinal) {
 		if (g_promise < 0)
 			return -1;
+		/* watch() handed us a capability the caller hosts. Resolve to
+		 * that import so pipelined calls are reflected, not answered
+		 * here. rpc.c++ resolveExportedPromise writes receiverHosted
+		 * for an ImportClient. */
+		if (g_watched >= 0)
+			return capn_rpc_resolve_import(g_conn, g_promise,
+			                               (uint32_t)g_watched);
 		return capn_rpc_resolve(g_conn, g_promise, &g_adder, adder_dispatch);
+	}
+	if (method == Adder_watch_method.ordinal) {
+		int is_export = -1;
+		capn_resolve(&params);
+		cap = capn_getp(params, 0, 1);
+		g_watched = capn_rpc_param_cap(g_conn, cap, &is_export);
+		if (g_watched < 0 || is_export != 0)
+			return -1;
+		return 0;
 	}
 	return -1;
 }
