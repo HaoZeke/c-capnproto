@@ -142,7 +142,9 @@ endif
 EXTRA_DIST += \
 	tests/null-ptr-write-test.c \
 	tests/packed-header-write-test.c \
-	.github/workflows/ci.yml
+	.github/workflows/ci.yml \
+	interop/frame_wrap_test.c \
+	tests/gate-r5-test.cpp
 
 EXTRA_DIST += \
 	compiler/c.capnp \
