@@ -9,6 +9,10 @@ struct FlattenOptions {
   prefix @0 :Text = "";
 }
 
+struct DefaultNest {
+  value @0 :Text;
+}
+
 struct DiscriminatorOptions {
   name @0 :Text;
   valueName @1 :Text;
@@ -62,4 +66,6 @@ struct Doc $discriminator(name = "kind") {
   nest :group {
     city @16 :Text $name("town");
   }
+
+  defaultNest @17 :DefaultNest $flatten() = (value = "default");
 }
