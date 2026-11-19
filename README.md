@@ -276,6 +276,30 @@ The project [`quagga-capnproto`](https://github.com/opensourcerouting/quagga-cap
 * Serialization in function [`bgp_notify_send()`](https://github.com/opensourcerouting/quagga-capnproto/blob/27061648f3418fac0d217b16a46add534343e841/bgpd/bgp_zmq.c#L81-L96) in file `quagga-capnproto/bgpd/bgp_zmq.c`
 * Deserialization in function [`qzc_callback()`](https://github.com/opensourcerouting/quagga-capnproto/blob/27061648f3418fac0d217b16a46add534343e841/lib/qzc.c#L249-L257) in file `quagga-capnproto/lib/qzc.c`
 
+## Reflection, text and JSON (optional)
+
+Add `$C.reflect;` to a schema file and `capnpc-c` also emits a const
+descriptor per struct, group and enum, `<Name>_dyn`. With those,
+[`lib/capn-dyn.h`](lib/capn-dyn.h) reads, prints and builds messages
+without the generated per-type code, the way C++ uses `DynamicStruct`,
+the text format and `JsonCodec`:
+
+```c
+char *text = capn_dyn_to_text(&Person_dyn, root);            /* capnp decode --short */
+char *json = capn_dyn_to_json(&Person_dyn, root, CAPN_DYN_COMPACT); /* binary:json --short */
+capn_dyn_from_json(&Person_dyn, json, strlen(json), seg, &st, &err);  /* json:binary */
+capn_dyn_from_text(&Person_dyn, text, strlen(text), seg, &st, &err);  /* capnp encode */
+```
+
+Output is compared byte for byte with the official tool in
+`tests/reflect-test.cpp`, and the decoders rebuild the same canonical
+message `capnp encode` does. Field access by name
+(`capn_dyn_find_field`, `capn_dyn_get_bits`, `capn_dyn_which`, the
+setters) works on any message. Interface and AnyPointer fields are
+opaque, and defaults of Struct, List and Data fields are not recorded
+(an unset pointer is absent from a message's value). Compile
+`lib/capn-dyn.c` as well as the three runtime files.
+
 ## Linux kernel (optional)
 
 The runtime can be compiled into a kernel module (`__KERNEL__`). This is
