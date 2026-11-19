@@ -9,7 +9,10 @@ noinst_HEADERS =
 include_HEADERS =
 
 
-EXTRA_DIST += README.md KERNEL.md CMakeLists.txt
+EXTRA_DIST += README.md KERNEL.md CMakeLists.txt CHANGELOG.md MAINTAINING.md SECURITY.md COPYING \
+	VERSION.txt meson.build meson_options.txt subprojects/gtest.wrap \
+	cmake/c_capnprotoConfig.cmake.in cmake/consumer_smoke/CMakeLists.txt \
+	cmake/consumer_smoke/smoke.c
 EXTRA_DIST += \
 	examples/kernel/GNUmakefile \
 	examples/kernel/Kbuild \
@@ -105,6 +108,7 @@ capn_test_SOURCES = \
 	tests/bounds-test.cpp \
 	tests/interface-test.cpp \
 	tests/list-c6-upgrade-test.cpp \
+	tests/testunion-union1-test.cpp \
 	tests/addressbook.capnp.c \
 	tests/extraheader.capnp.c \
 	tests/fieldgetset.capnp.c \
@@ -119,6 +123,14 @@ noinst_HEADERS += \
 	tests/extraheader-probe.h \
 	tests/fieldgetset.capnp.h \
 	tests/codegen-defaults.capnp.h
+endif
+
+# Meson builds its tests from a tarball, so the lists below stay
+# outside WITH_GTEST.
+EXTRA_DIST += \
+	tests/null-ptr-write-test.c \
+	tests/packed-header-write-test.c
+
 EXTRA_DIST += \
 	compiler/c.capnp \
 	compiler/c++.capnp \
@@ -136,6 +148,46 @@ EXTRA_DIST += \
 	tests/fieldgetset.capnp \
 	tests/create-min-sz-test.cpp \
 	tests/fortran-golden.md \
+	compiler/adder.capnp \
+	compiler/adder.capnp.c \
+	compiler/adder.capnp.h \
+	compiler/c.capnp.c \
+	compiler/c++.capnp.c \
+	compiler/rpc.capnp \
+	compiler/rpc.capnp.h \
+	compiler/rpc-threeparty.capnp \
+	compiler/rpc-threeparty.capnp.h \
+	compiler/rpc-threeparty-frames.capnp \
+	compiler/rpc-twoparty.capnp \
+	compiler/rpc-twoparty.capnp.c \
+	compiler/rpc-twoparty.capnp.h \
+	compiler/update-notes.md \
+	interop/rpc_client.c \
+	interop/rpc_peer_server.c++ \
+	interop/run_rpc_interop.sh \
+	scripts/gen-rpc-frames.sh \
+	scripts/packaging-smoke.sh \
+	scripts/regen-generated.sh \
+	scripts/smoke-m32.sh \
+	tests/compiler-str-test.c \
+	tests/data-codec.capnp \
+	tests/data-codec.h \
+	tests/data-codec-test.cpp \
+	tests/empty-list.capnp \
+	tests/empty-list.h \
+	tests/empty-list-test.cpp \
+	tests/list-decode-srcdest.capnp \
+	tests/list-decode-srcdest.h \
+	tests/list-decode-srcdest-test.cpp \
+	tests/null-text.capnp \
+	tests/null-text.h \
+	tests/null-text-test.cpp \
+	tests/rpc-client-test.cpp \
+	tests/rpc-handoff-test.cpp \
+	tests/rpc-join-test.cpp \
+	tests/fixtures/rpc-accept.bin \
+	tests/fixtures/rpc-introduce.bin \
+	tests/fixtures/rpc-provide.bin \
 	tests/fixtures/addressbook.bin \
 	tests/fixtures/addressbook.packed.bin \
 	tests/fixtures/addressbook.canonical.bin \
@@ -148,6 +200,8 @@ EXTRA_DIST += \
 	fuzz/in/Person.bin \
 	fuzz/read_mem.c \
 	fuzz/read_fp.c
+
+if WITH_GTEST
 capn_test_CPPFLAGS = $(AM_CPPFLAGS) $(GTEST_CPPFLAGS) \
 	-DEXTRAHEADER_GENERATED_H=\"$(abs_srcdir)/tests/extraheader.capnp.h\" \
 	-DCODEGEN_DEFAULTS_GENERATED_C=\"$(abs_srcdir)/tests/codegen-defaults.capnp.c\" \
