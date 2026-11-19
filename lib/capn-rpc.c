@@ -600,23 +600,43 @@ static int finish_call(struct capn_rpc_conn *c, uint32_t qid, struct capn *msg,
 	return rc;
 }
 
-static struct capn_rpc_pending_call *pending_find(struct capn_rpc_conn *c, uint32_t qid)
+static struct capn_rpc_pending_call *pending_find_gen(struct capn_rpc_conn *c,
+                                                      uint32_t qid,
+                                                      uint32_t generation)
 {
 	int i;
-	for (i = 0; i < CAPN_RPC_MAX_PENDING_CALLS; i++)
-		if (c->pending_calls[i].used && c->pending_calls[i].question_id == qid)
-			return &c->pending_calls[i];
+	for (i = 0; i < CAPN_RPC_MAX_PENDING_CALLS; i++) {
+		struct capn_rpc_pending_call *pc = &c->pending_calls[i];
+		if (pc->used && pc->question_id == qid && pc->generation == generation)
+			return pc;
+	}
 	return NULL;
 }
 
-static void pending_drop(struct capn_rpc_conn *c, uint32_t qid)
+static void pending_release(struct capn_rpc_pending_call *pc)
 {
-	struct capn_rpc_pending_call *pc = pending_find(c, qid);
-	if (pc) {
-		capn_free(pc->msg);
-		free(pc->msg);
-		memset(pc, 0, sizeof *pc);
+	capn_free(pc->msg);
+	free(pc->msg);
+	memset(pc, 0, sizeof *pc);
+}
+
+/* Finish cancels the live answer but keeps its message until return. */
+static void pending_cancel(struct capn_rpc_conn *c, uint32_t qid)
+{
+	int i;
+	for (i = 0; i < CAPN_RPC_MAX_PENDING_CALLS; i++) {
+		struct capn_rpc_pending_call *pc = &c->pending_calls[i];
+		if (pc->used && !pc->cancelled && pc->question_id == qid)
+			pc->cancelled = 1;
 	}
+}
+
+static uint32_t take_generation(struct capn_rpc_conn *c)
+{
+	c->answer_clock++;
+	if (c->answer_clock == 0)
+		c->answer_clock = 1;
+	return c->answer_clock;
 }
 
 uint32_t capn_rpc_current_question(const struct capn_rpc_conn *c)
@@ -624,14 +644,24 @@ uint32_t capn_rpc_current_question(const struct capn_rpc_conn *c)
 	return c->current_question;
 }
 
-int capn_rpc_return(struct capn_rpc_conn *c, uint32_t question_id)
+uint32_t capn_rpc_current_generation(const struct capn_rpc_conn *c)
 {
-	struct capn_rpc_pending_call *pc = pending_find(c, question_id);
+	return c->current_generation;
+}
+
+int capn_rpc_return(struct capn_rpc_conn *c, uint32_t question_id,
+                    uint32_t generation)
+{
+	struct capn_rpc_pending_call *pc = pending_find_gen(c, question_id, generation);
 	struct capn *msg;
 	capn_ptr rstruct;
 
 	if (pc == NULL)
 		return -1;
+	if (pc->cancelled) {
+		pending_release(pc);
+		return -1;
+	}
 	msg = pc->msg;
 	rstruct = pc->results;
 	memset(pc, 0, sizeof *pc);
@@ -639,11 +669,17 @@ int capn_rpc_return(struct capn_rpc_conn *c, uint32_t question_id)
 }
 
 int capn_rpc_return_exception(struct capn_rpc_conn *c, uint32_t question_id,
-                              const char *reason)
+                              uint32_t generation, const char *reason)
 {
-	if (pending_find(c, question_id) == NULL)
+	struct capn_rpc_pending_call *pc = pending_find_gen(c, question_id, generation);
+	int cancelled;
+
+	if (pc == NULL)
 		return -1;
-	pending_drop(c, question_id);
+	cancelled = pc->cancelled;
+	pending_release(pc);
+	if (cancelled)
+		return -1;
 	return send_return_exception(c, question_id, reason ? reason : "call failed");
 }
 
@@ -678,11 +714,14 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp)
 	c->npending = 0;
 	c->in_caps = params.capTable;
 	c->current_question = call.questionId;
+	c->current_generation = take_generation(c);
 
 	/* Sized by capn_rpc_set_result_size: one data word and one pointer is
 	 * enough for the bundled servers, and a richer one asks for more. */
 	rstruct = capn_new_struct(cs, c->results_datasz, c->results_ptrs);
 	if (rstruct.type == CAPN_NULL) {
+		c->current_question = 0;
+		c->current_generation = 0;
 		capn_free(msg);
 		free(msg);
 		return send_return_exception(c, call.questionId, "results too large");
@@ -690,24 +729,30 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp)
 	rc = c->exports[eid].dispatch(c->exports[eid].server, call.interfaceId,
 	                              call.methodId, params.content, rstruct);
 	memset(&c->in_caps, 0, sizeof c->in_caps);
-	c->current_question = 0;
+	{
+		uint32_t gen = c->current_generation;
+		c->current_question = 0;
+		c->current_generation = 0;
 
-	if (rc == CAPN_RPC_PENDING) {
-		int i;
-		for (i = 0; i < CAPN_RPC_MAX_PENDING_CALLS; i++) {
-			if (!c->pending_calls[i].used) {
-				c->pending_calls[i].used = 1;
-				c->pending_calls[i].question_id = call.questionId;
-				c->pending_calls[i].msg = msg;
-				c->pending_calls[i].results = rstruct;
-				c->npending = 0;
-				return 0;
+		if (rc == CAPN_RPC_PENDING) {
+			int i;
+			for (i = 0; i < CAPN_RPC_MAX_PENDING_CALLS; i++) {
+				if (!c->pending_calls[i].used) {
+					c->pending_calls[i].used = 1;
+					c->pending_calls[i].cancelled = 0;
+					c->pending_calls[i].question_id = call.questionId;
+					c->pending_calls[i].generation = gen;
+					c->pending_calls[i].msg = msg;
+					c->pending_calls[i].results = rstruct;
+					c->npending = 0;
+					return 0;
+				}
 			}
+			c->npending = 0;
+			capn_free(msg);
+			free(msg);
+			return send_return_exception(c, call.questionId, "too many pending calls");
 		}
-		c->npending = 0;
-		capn_free(msg);
-		free(msg);
-		return send_return_exception(c, call.questionId, "too many pending calls");
 	}
 	if (rc != 0) {
 		c->npending = 0;
@@ -1990,9 +2035,9 @@ int capn_rpc_handle(struct capn_rpc_conn *c, const uint8_t *data, size_t len)
 		struct Finish fin;
 		read_Finish(&fin, m.finish);
 		answer_drop(c, fin.questionId);
-		/* Finish before the Return is cancellation: nothing is left to
-		 * answer, and a later capn_rpc_return reports it. */
-		pending_drop(c, fin.questionId);
+		/* Finish before the Return cancels it. The message stays until
+		 * the matching return, which then sends nothing. */
+		pending_cancel(c, fin.questionId);
 		break;
 	}
 	case Message_release:
