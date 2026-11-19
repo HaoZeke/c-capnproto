@@ -104,7 +104,8 @@ struct capn_rpc_answer {
 struct capn_rpc_pipe_note {
 	int calls;
 	int npath;
-	uint16_t path[CAPN_RPC_PATH_MAX];
+	/* Heap path. A fixed 8-slot array used to drop the tail. */
+	uint16_t *path;
 };
 
 /* A question this vat asked, from send until its Return arrives. */
@@ -220,7 +221,7 @@ struct capn_rpc_pending_cap {
 	int kind;
 	uint32_t id;
 	uint32_t question_id;
-	uint16_t path[CAPN_RPC_PATH_MAX];
+	uint16_t *path;
 	int npath;
 };
 
@@ -238,7 +239,7 @@ struct capn_rpc_import {
 	uint32_t to_export;
 	int has_question;
 	uint32_t to_question;
-	uint16_t to_path[CAPN_RPC_PATH_MAX];
+	uint16_t *to_path;
 	int to_npath;
 };
 
@@ -268,7 +269,7 @@ struct capn_rpc_held {
 	uint16_t method_id;
 	int datasz;
 	int ptrs;
-	uint16_t path[CAPN_RPC_PATH_MAX];
+	uint16_t *path;
 	int npath;
 	struct capn *msg;
 	capn_ptr params;
