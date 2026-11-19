@@ -890,4 +890,14 @@ TEST(RpcFd, ARefusedFrameIsAnErrorNotAHang)
 	EXPECT_EQ(-1, capn_rpc_fd_read_frame(sv[1], &f, &n));
 	close(sv[0]);
 	close(sv[1]);
+
+	/* 0x20000000 words is 4 GiB. On a 32-bit size_t the byte count wraps
+	 * past the message limit unless the multiply is checked first. */
+	ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_STREAM, 0, sv));
+	const uint8_t wrap[16] = {0, 0, 0, 0, 0, 0, 0, 0x20, 0, 0, 0, 0, 0, 0, 0, 0};
+	ASSERT_EQ(16, write(sv[0], wrap, 16));
+	EXPECT_EQ(-1, capn_rpc_fd_read_frame(sv[1], &f, &n));
+	EXPECT_EQ(nullptr, f);
+	close(sv[0]);
+	close(sv[1]);
 }
