@@ -3,6 +3,7 @@
 
 #include "capn-dyn.h"
 
+#include <errno.h>
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -833,28 +834,1069 @@ char *capn_dyn_to_json(const struct capn_dyn_struct *s, capn_ptr st, int flags)
 	return b.buf ? b.buf : empty_string();
 }
 
-/* decoders are added in follow-up code below */
+/* --- decoding ------------------------------------------------------------
+ *
+ * JSON and the text format are parsed into the same small tree, which one
+ * builder then writes into a message using the descriptors. The two
+ * syntaxes differ only in how leaves are spelled (an enum is a string in
+ * JSON and a bare name in text), and the builder takes either.
+ */
+
+enum { V_NULL, V_BOOL, V_NUM, V_STR, V_IDENT, V_LIST, V_OBJ };
+
+#define MAX_DEPTH 64
+
+struct vnode {
+	int kind;
+	int off;
+	char *s;
+	size_t n;
+	struct vnode **v;
+	char **k;
+	int count, cap;
+	struct vnode *chain;
+};
+
+struct pctx {
+	const char *p;
+	size_t len, pos;
+	struct vnode *all;
+	struct capn_dyn_error *err;
+	int failed;
+	int depth;
+};
+
+static int perr(struct pctx *c, int off, const char *fmt, ...)
+{
+	va_list ap;
+	if (!c->failed) {
+		c->failed = 1;
+		if (c->err) {
+			va_start(ap, fmt);
+			vsnprintf(c->err->message, sizeof c->err->message, fmt, ap);
+			va_end(ap);
+			c->err->offset = off;
+		}
+	}
+	return -1;
+}
+
+static struct vnode *vnew(struct pctx *c, int kind, int off)
+{
+	struct vnode *n = (struct vnode *) calloc(1, sizeof *n);
+	if (n == NULL) {
+		perr(c, off, "out of memory");
+		return NULL;
+	}
+	n->kind = kind;
+	n->off = off;
+	n->chain = c->all;
+	c->all = n;
+	return n;
+}
+
+static void vfree_all(struct pctx *c)
+{
+	struct vnode *n = c->all, *next;
+	int i;
+	for (; n != NULL; n = next) {
+		next = n->chain;
+		free(n->s);
+		free(n->v);
+		for (i = 0; i < n->count && n->k; i++)
+			free(n->k[i]);
+		free(n->k);
+		free(n);
+	}
+	c->all = NULL;
+}
+
+static int vpush(struct pctx *c, struct vnode *parent, struct vnode *child, char *key)
+{
+	if (parent->count == parent->cap) {
+		int cap = parent->cap ? parent->cap * 2 : 4;
+		struct vnode **nv = (struct vnode **) realloc(parent->v, (size_t) cap * sizeof *nv);
+		char **nk;
+		if (nv == NULL)
+			return perr(c, child->off, "out of memory");
+		parent->v = nv;
+		if (parent->kind == V_OBJ) {
+			nk = (char **) realloc(parent->k, (size_t) cap * sizeof *nk);
+			if (nk == NULL)
+				return perr(c, child->off, "out of memory");
+			parent->k = nk;
+		}
+		parent->cap = cap;
+	}
+	parent->v[parent->count] = child;
+	if (parent->kind == V_OBJ)
+		parent->k[parent->count] = key;
+	parent->count++;
+	return 0;
+}
+
+static int append_utf8(char *out, size_t *n, unsigned long cp)
+{
+	if (cp < 0x80) {
+		out[(*n)++] = (char) cp;
+	} else if (cp < 0x800) {
+		out[(*n)++] = (char) (0xc0 | (cp >> 6));
+		out[(*n)++] = (char) (0x80 | (cp & 0x3f));
+	} else if (cp < 0x10000) {
+		out[(*n)++] = (char) (0xe0 | (cp >> 12));
+		out[(*n)++] = (char) (0x80 | ((cp >> 6) & 0x3f));
+		out[(*n)++] = (char) (0x80 | (cp & 0x3f));
+	} else {
+		out[(*n)++] = (char) (0xf0 | (cp >> 18));
+		out[(*n)++] = (char) (0x80 | ((cp >> 12) & 0x3f));
+		out[(*n)++] = (char) (0x80 | ((cp >> 6) & 0x3f));
+		out[(*n)++] = (char) (0x80 | (cp & 0x3f));
+	}
+	return 0;
+}
+
+static int hexval(int ch)
+{
+	if (ch >= '0' && ch <= '9') return ch - '0';
+	if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+	if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+	return -1;
+}
+
+static void skip_ws(struct pctx *c, int allow_comments)
+{
+	while (c->pos < c->len) {
+		char ch = c->p[c->pos];
+		if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
+			c->pos++;
+		} else if (allow_comments && ch == '#') {
+			while (c->pos < c->len && c->p[c->pos] != '\n')
+				c->pos++;
+		} else {
+			break;
+		}
+	}
+}
+
+/* A quoted string, JSON escapes when `json` else the schema language's. */
+static struct vnode *parse_string(struct pctx *c, int json)
+{
+	int start = (int) c->pos;
+	struct vnode *n;
+	char *out;
+	size_t o = 0;
+
+	c->pos++; /* opening quote */
+	out = (char *) malloc(c->len - c->pos + 5);
+	if (out == NULL) {
+		perr(c, start, "out of memory");
+		return NULL;
+	}
+	while (c->pos < c->len && c->p[c->pos] != '"') {
+		unsigned char ch = (unsigned char) c->p[c->pos++];
+		if (ch != '\\') {
+			if (json && ch < 0x20) {
+				free(out);
+				perr(c, (int) c->pos - 1, "control character in string");
+				return NULL;
+			}
+			out[o++] = (char) ch;
+			continue;
+		}
+		if (c->pos >= c->len)
+			break;
+		ch = (unsigned char) c->p[c->pos++];
+		switch (ch) {
+		case '"': out[o++] = '"'; break;
+		case '\\': out[o++] = '\\'; break;
+		case 'b': out[o++] = '\b'; break;
+		case 'f': out[o++] = '\f'; break;
+		case 'n': out[o++] = '\n'; break;
+		case 'r': out[o++] = '\r'; break;
+		case 't': out[o++] = '\t'; break;
+		case '/':
+			if (!json)
+				goto bad;
+			out[o++] = '/';
+			break;
+		case '\'':
+			if (json)
+				goto bad;
+			out[o++] = '\'';
+			break;
+		case 'a':
+			if (json)
+				goto bad;
+			out[o++] = '\a';
+			break;
+		case 'v':
+			if (json)
+				goto bad;
+			out[o++] = '\v';
+			break;
+		case 'u': {
+			unsigned long cp = 0;
+			int k;
+			if (!json)
+				goto bad;
+			for (k = 0; k < 4; k++) {
+				int hv = c->pos < c->len ? hexval(c->p[c->pos]) : -1;
+				if (hv < 0)
+					goto bad;
+				cp = cp * 16 + (unsigned long) hv;
+				c->pos++;
+			}
+			if (cp >= 0xd800 && cp < 0xdc00) {
+				unsigned long lo = 0;
+				if (c->pos + 6 > c->len || c->p[c->pos] != '\\' || c->p[c->pos + 1] != 'u')
+					goto bad;
+				c->pos += 2;
+				for (k = 0; k < 4; k++) {
+					int hv = c->pos < c->len ? hexval(c->p[c->pos]) : -1;
+					if (hv < 0)
+						goto bad;
+					lo = lo * 16 + (unsigned long) hv;
+					c->pos++;
+				}
+				if (lo < 0xdc00 || lo > 0xdfff)
+					goto bad;
+				cp = 0x10000 + ((cp - 0xd800) << 10) + (lo - 0xdc00);
+			} else if (cp >= 0xdc00 && cp < 0xe000) {
+				goto bad;
+			}
+			append_utf8(out, &o, cp);
+			break;
+		}
+		case 'x': {
+			int hv, v = 0, k;
+			if (json)
+				goto bad;
+			for (k = 0; k < 2 && c->pos < c->len && (hv = hexval(c->p[c->pos])) >= 0; k++) {
+				v = v * 16 + hv;
+				c->pos++;
+			}
+			if (k == 0)
+				goto bad;
+			out[o++] = (char) v;
+			break;
+		}
+		default:
+			if (!json && ch >= '0' && ch <= '7') {
+				int v = ch - '0', k;
+				for (k = 0; k < 2 && c->pos < c->len && c->p[c->pos] >= '0' && c->p[c->pos] <= '7'; k++)
+					v = v * 8 + (c->p[c->pos++] - '0');
+				out[o++] = (char) v;
+				break;
+			}
+			goto bad;
+		}
+		continue;
+	bad:
+		free(out);
+		perr(c, (int) c->pos - 1, "bad escape in string");
+		return NULL;
+	}
+	if (c->pos >= c->len) {
+		free(out);
+		perr(c, start, "unterminated string");
+		return NULL;
+	}
+	c->pos++; /* closing quote */
+	n = vnew(c, V_STR, start);
+	if (n == NULL) {
+		free(out);
+		return NULL;
+	}
+	out[o] = '\0';
+	n->s = out;
+	n->n = o;
+	return n;
+}
+
+static struct vnode *token_node(struct pctx *c, int kind, int start, size_t end)
+{
+	struct vnode *n = vnew(c, kind, start);
+	if (n == NULL)
+		return NULL;
+	n->n = end - (size_t) start;
+	n->s = (char *) malloc(n->n + 1);
+	if (n->s == NULL) {
+		perr(c, start, "out of memory");
+		return NULL;
+	}
+	memcpy(n->s, c->p + start, n->n);
+	n->s[n->n] = '\0';
+	return n;
+}
+
+static struct vnode *parse_json(struct pctx *c)
+{
+	struct vnode *n;
+	int start;
+
+	skip_ws(c, 0);
+	if (c->pos >= c->len) {
+		perr(c, (int) c->pos, "unexpected end of JSON");
+		return NULL;
+	}
+	start = (int) c->pos;
+	switch (c->p[c->pos]) {
+	case '{': {
+		if (++c->depth > MAX_DEPTH) {
+			perr(c, start, "JSON nests too deeply");
+			return NULL;
+		}
+		n = vnew(c, V_OBJ, start);
+		if (n == NULL)
+			return NULL;
+		c->pos++;
+		skip_ws(c, 0);
+		if (c->pos < c->len && c->p[c->pos] == '}') {
+			c->pos++;
+			c->depth--;
+			return n;
+		}
+		for (;;) {
+			struct vnode *key, *val;
+			char *kcopy;
+			skip_ws(c, 0);
+			if (c->pos >= c->len || c->p[c->pos] != '"') {
+				perr(c, (int) c->pos, "expected a string key");
+				return NULL;
+			}
+			key = parse_string(c, 1);
+			if (key == NULL)
+				return NULL;
+			skip_ws(c, 0);
+			if (c->pos >= c->len || c->p[c->pos] != ':') {
+				perr(c, (int) c->pos, "expected ':'");
+				return NULL;
+			}
+			c->pos++;
+			val = parse_json(c);
+			if (val == NULL)
+				return NULL;
+			kcopy = (char *) malloc(key->n + 1);
+			if (kcopy == NULL) {
+				perr(c, key->off, "out of memory");
+				return NULL;
+			}
+			memcpy(kcopy, key->s, key->n + 1);
+			if (vpush(c, n, val, kcopy) != 0) {
+				free(kcopy);
+				return NULL;
+			}
+			skip_ws(c, 0);
+			if (c->pos < c->len && c->p[c->pos] == ',') {
+				c->pos++;
+				continue;
+			}
+			if (c->pos < c->len && c->p[c->pos] == '}') {
+				c->pos++;
+				c->depth--;
+				return n;
+			}
+			perr(c, (int) c->pos, "expected ',' or '}'");
+			return NULL;
+		}
+	}
+	case '[': {
+		if (++c->depth > MAX_DEPTH) {
+			perr(c, start, "JSON nests too deeply");
+			return NULL;
+		}
+		n = vnew(c, V_LIST, start);
+		if (n == NULL)
+			return NULL;
+		c->pos++;
+		skip_ws(c, 0);
+		if (c->pos < c->len && c->p[c->pos] == ']') {
+			c->pos++;
+			c->depth--;
+			return n;
+		}
+		for (;;) {
+			struct vnode *val = parse_json(c);
+			if (val == NULL || vpush(c, n, val, NULL) != 0)
+				return NULL;
+			skip_ws(c, 0);
+			if (c->pos < c->len && c->p[c->pos] == ',') {
+				c->pos++;
+				continue;
+			}
+			if (c->pos < c->len && c->p[c->pos] == ']') {
+				c->pos++;
+				c->depth--;
+				return n;
+			}
+			perr(c, (int) c->pos, "expected ',' or ']'");
+			return NULL;
+		}
+	}
+	case '"':
+		return parse_string(c, 1);
+	case 't':
+	case 'f':
+	case 'n': {
+		static const char *const lit[] = {"true", "false", "null"};
+		int k;
+		for (k = 0; k < 3; k++) {
+			size_t l = strlen(lit[k]);
+			if (c->p[c->pos] == lit[k][0] && c->len - c->pos >= l &&
+			    memcmp(c->p + c->pos, lit[k], l) == 0) {
+				c->pos += l;
+				n = token_node(c, k == 2 ? V_NULL : V_BOOL, start, c->pos);
+				return n;
+			}
+		}
+		perr(c, start, "bad JSON literal");
+		return NULL;
+	}
+	default:
+		if (c->p[c->pos] == '-' || (c->p[c->pos] >= '0' && c->p[c->pos] <= '9')) {
+			while (c->pos < c->len && (strchr("+-.eE", c->p[c->pos]) ||
+			       (c->p[c->pos] >= '0' && c->p[c->pos] <= '9')))
+				c->pos++;
+			return token_node(c, V_NUM, start, c->pos);
+		}
+		perr(c, start, "unexpected character in JSON");
+		return NULL;
+	}
+}
+
+/* The schema language's struct literal. */
+static int is_ident_char(int ch)
+{
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+	       (ch >= '0' && ch <= '9') || ch == '_';
+}
+
+static struct vnode *parse_text(struct pctx *c)
+{
+	struct vnode *n;
+	int start;
+	char ch;
+
+	skip_ws(c, 1);
+	if (c->pos >= c->len) {
+		perr(c, (int) c->pos, "unexpected end of input");
+		return NULL;
+	}
+	start = (int) c->pos;
+	ch = c->p[c->pos];
+	if (ch == '(') {
+		if (++c->depth > MAX_DEPTH) {
+			perr(c, start, "value nests too deeply");
+			return NULL;
+		}
+		n = vnew(c, V_OBJ, start);
+		if (n == NULL)
+			return NULL;
+		c->pos++;
+		for (;;) {
+			struct vnode *val;
+			char *key;
+			size_t ks;
+			skip_ws(c, 1);
+			if (c->pos < c->len && c->p[c->pos] == ')') {
+				c->pos++;
+				c->depth--;
+				return n;
+			}
+			ks = c->pos;
+			while (c->pos < c->len && is_ident_char(c->p[c->pos]))
+				c->pos++;
+			if (c->pos == ks) {
+				perr(c, (int) c->pos, "expected a field name");
+				return NULL;
+			}
+			key = (char *) malloc(c->pos - ks + 1);
+			if (key == NULL) {
+				perr(c, (int) ks, "out of memory");
+				return NULL;
+			}
+			memcpy(key, c->p + ks, c->pos - ks);
+			key[c->pos - ks] = '\0';
+			skip_ws(c, 1);
+			if (c->pos >= c->len || c->p[c->pos] != '=') {
+				free(key);
+				perr(c, (int) c->pos, "expected '='");
+				return NULL;
+			}
+			c->pos++;
+			val = parse_text(c);
+			if (val == NULL || vpush(c, n, val, key) != 0) {
+				free(key);
+				return NULL;
+			}
+			skip_ws(c, 1);
+			if (c->pos < c->len && c->p[c->pos] == ',') {
+				c->pos++;
+				continue;
+			}
+			if (c->pos < c->len && c->p[c->pos] == ')') {
+				c->pos++;
+				c->depth--;
+				return n;
+			}
+			perr(c, (int) c->pos, "expected ',' or ')'");
+			return NULL;
+		}
+	}
+	if (ch == '[') {
+		if (++c->depth > MAX_DEPTH) {
+			perr(c, start, "value nests too deeply");
+			return NULL;
+		}
+		n = vnew(c, V_LIST, start);
+		if (n == NULL)
+			return NULL;
+		c->pos++;
+		for (;;) {
+			struct vnode *val;
+			skip_ws(c, 1);
+			if (c->pos < c->len && c->p[c->pos] == ']') {
+				c->pos++;
+				c->depth--;
+				return n;
+			}
+			val = parse_text(c);
+			if (val == NULL || vpush(c, n, val, NULL) != 0)
+				return NULL;
+			skip_ws(c, 1);
+			if (c->pos < c->len && c->p[c->pos] == ',') {
+				c->pos++;
+				continue;
+			}
+			if (c->pos < c->len && c->p[c->pos] == ']') {
+				c->pos++;
+				c->depth--;
+				return n;
+			}
+			perr(c, (int) c->pos, "expected ',' or ']'");
+			return NULL;
+		}
+	}
+	if (ch == '"')
+		return parse_string(c, 0);
+	if (ch == '0' && c->pos + 2 < c->len && (c->p[c->pos + 1] == 'x' || c->p[c->pos + 1] == 'X') &&
+	    c->p[c->pos + 2] == '"') {
+		/* 0x"de ad be ef": bytes as hex pairs. */
+		char *out;
+		size_t o = 0;
+		c->pos += 3;
+		out = (char *) malloc(c->len - c->pos + 1);
+		if (out == NULL) {
+			perr(c, start, "out of memory");
+			return NULL;
+		}
+		while (c->pos < c->len && c->p[c->pos] != '"') {
+			int hi, lo;
+			if (c->p[c->pos] == ' ' || c->p[c->pos] == '\t' || c->p[c->pos] == '\n') {
+				c->pos++;
+				continue;
+			}
+			hi = hexval(c->p[c->pos]);
+			lo = c->pos + 1 < c->len ? hexval(c->p[c->pos + 1]) : -1;
+			if (hi < 0 || lo < 0) {
+				free(out);
+				perr(c, (int) c->pos, "bad hex data literal");
+				return NULL;
+			}
+			out[o++] = (char) (hi * 16 + lo);
+			c->pos += 2;
+		}
+		if (c->pos >= c->len) {
+			free(out);
+			perr(c, start, "unterminated data literal");
+			return NULL;
+		}
+		c->pos++;
+		n = vnew(c, V_STR, start);
+		if (n == NULL) {
+			free(out);
+			return NULL;
+		}
+		out[o] = '\0';
+		n->s = out;
+		n->n = o;
+		return n;
+	}
+	if (ch == '-' || ch == '+' || (ch >= '0' && ch <= '9')) {
+		size_t b = c->pos;
+		c->pos++;
+		if (c->pos < c->len && is_ident_char(c->p[c->pos]) == 0 && c->p[c->pos] != '.')
+			return token_node(c, V_NUM, start, c->pos);
+		while (c->pos < c->len && (is_ident_char(c->p[c->pos]) || c->p[c->pos] == '.' ||
+		       ((c->p[c->pos] == '-' || c->p[c->pos] == '+') &&
+		        (c->p[c->pos - 1] == 'e' || c->p[c->pos - 1] == 'E') && c->p[b] != '0')))
+			c->pos++;
+		/* "-inf" and "inf" are names; every other run is a number. */
+		if (c->pos - b >= 2 && c->p[b] == '-' && is_ident_char(c->p[b + 1]) &&
+		    !(c->p[b + 1] >= '0' && c->p[b + 1] <= '9'))
+			return token_node(c, V_IDENT, start, c->pos);
+		return token_node(c, V_NUM, start, c->pos);
+	}
+	if (is_ident_char(ch)) {
+		while (c->pos < c->len && is_ident_char(c->p[c->pos]))
+			c->pos++;
+		return token_node(c, V_IDENT, start, c->pos);
+	}
+	perr(c, start, "unexpected character");
+	return NULL;
+}
+
+/* --- building a message from the tree ---------------------------------- */
+
+struct bctx {
+	struct capn_dyn_error *err;
+	int failed;
+};
+
+static int berr(struct bctx *b, const struct vnode *at, const char *fmt, ...)
+{
+	va_list ap;
+	if (!b->failed) {
+		b->failed = 1;
+		if (b->err) {
+			va_start(ap, fmt);
+			vsnprintf(b->err->message, sizeof b->err->message, fmt, ap);
+			va_end(ap);
+			b->err->offset = at ? at->off : -1;
+		}
+	}
+	return -1;
+}
+
+static int str_is(const struct vnode *n, const char *lit)
+{
+	return n->s != NULL && strcmp(n->s, lit) == 0;
+}
+
+static int parse_scalar(struct bctx *b, const struct capn_dyn_type *t,
+                        const struct vnode *n, uint64_t *bits)
+{
+	int kind = t->kind;
+	char *end;
+
+	switch (kind) {
+	case CAPN_DYN_BOOL:
+		if (n->kind == V_BOOL || n->kind == V_IDENT) {
+			if (str_is(n, "true")) { *bits = 1; return 0; }
+			if (str_is(n, "false")) { *bits = 0; return 0; }
+		}
+		return berr(b, n, "expected true or false");
+	case CAPN_DYN_INT8: case CAPN_DYN_INT16: case CAPN_DYN_INT32: case CAPN_DYN_INT64:
+	case CAPN_DYN_UINT8: case CAPN_DYN_UINT16: case CAPN_DYN_UINT32: case CAPN_DYN_UINT64: {
+		static const int width[] = {0, 0, 8, 16, 32, 64, 8, 16, 32, 64};
+		int w = width[kind];
+		int sgn = is_signed(kind);
+		int neg;
+		const char *s;
+		unsigned long long mag;
+		unsigned long long limit;
+
+		if ((n->kind != V_NUM && n->kind != V_STR) || n->n == 0)
+			return berr(b, n, "expected an integer");
+		s = n->s;
+		neg = (*s == '-');
+		if (*s == '-' || *s == '+')
+			s++;
+		if (!(*s >= '0' && *s <= '9'))
+			return berr(b, n, "expected an integer");
+		errno = 0;
+		mag = strtoull(s, &end, (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) ? 16 : 10);
+		if (*end != '\0' || errno == ERANGE)
+			return berr(b, n, "integer out of range or malformed");
+		limit = sgn ? (1ull << (w - 1)) : (w == 64 ? ~0ull : (1ull << w) - 1);
+		if (neg) {
+			if (!sgn || mag > limit)
+				return berr(b, n, "integer out of range");
+			*bits = (uint64_t) (0 - mag);
+		} else {
+			if (sgn ? mag > limit - 1 : mag > limit)
+				return berr(b, n, "integer out of range");
+			*bits = mag;
+		}
+		if (w < 64)
+			*bits &= (1ull << w) - 1;
+		return 0;
+	}
+	case CAPN_DYN_FLOAT32:
+	case CAPN_DYN_FLOAT64: {
+		double d;
+		if (n->kind == V_NUM) {
+			errno = 0;
+			d = strtod(n->s, &end);
+			if (*end != '\0')
+				return berr(b, n, "expected a number");
+		} else if (n->kind == V_STR || n->kind == V_IDENT) {
+			if (str_is(n, "NaN") || str_is(n, "nan")) d = NAN;
+			else if (str_is(n, "Infinity") || str_is(n, "inf")) d = INFINITY;
+			else if (str_is(n, "-Infinity") || str_is(n, "-inf")) d = -INFINITY;
+			else return berr(b, n, "expected a number");
+		} else {
+			return berr(b, n, "expected a number");
+		}
+		if (kind == CAPN_DYN_FLOAT32)
+			*bits = capn_from_f32((float) d);
+		else
+			*bits = capn_from_f64(d);
+		return 0;
+	}
+	case CAPN_DYN_ENUM: {
+		int i;
+		if ((n->kind == V_STR || n->kind == V_IDENT) && t->en != NULL) {
+			for (i = 0; i < t->en->n; i++) {
+				if (t->en->names[i] != NULL && strcmp(t->en->names[i], n->s) == 0) {
+					*bits = (uint64_t) i;
+					return 0;
+				}
+			}
+			return berr(b, n, "no such enumerant: %s", n->s);
+		}
+		if (n->kind == V_NUM) {
+			unsigned long v = strtoul(n->s, &end, 10);
+			if (*end == '\0' && v < 65536) {
+				*bits = v;
+				return 0;
+			}
+		}
+		return berr(b, n, "expected an enumerant name");
+	}
+	default:
+		return berr(b, n, "not a scalar");
+	}
+}
+
+static int fill_struct(struct bctx *b, const struct capn_dyn_struct *s,
+                       const struct frame *fr, capn_ptr st, const struct vnode *obj);
+
+static int build_data(struct bctx *b, struct capn_segment *seg, const struct vnode *n, capn_ptr *out)
+{
+	capn_list8 l;
+	int i;
+
+	if (n->kind == V_STR) {
+		if (n->n > 0x1fffffffu)
+			return berr(b, n, "data too long");
+		l = capn_new_list8(seg, (int) n->n);
+		if (l.p.type == CAPN_NULL)
+			return berr(b, n, "out of memory");
+		if (n->n)
+			capn_setv8(l, 0, (const uint8_t *) n->s, (int) n->n);
+		*out = l.p;
+		return 0;
+	}
+	if (n->kind == V_LIST) {
+		l = capn_new_list8(seg, n->count);
+		if (l.p.type == CAPN_NULL)
+			return berr(b, n, "out of memory");
+		for (i = 0; i < n->count; i++) {
+			uint64_t v;
+			struct capn_dyn_type t = {CAPN_DYN_UINT8, NULL, NULL, NULL, NULL, 0, 0};
+			if (parse_scalar(b, &t, n->v[i], &v) != 0)
+				return -1;
+			capn_set8(l, i, (uint8_t) v);
+		}
+		*out = l.p;
+		return 0;
+	}
+	return berr(b, n, "expected data");
+}
+
+static int set_text_at(struct bctx *b, capn_ptr container, int off, const struct vnode *n)
+{
+	capn_text t;
+	if (n->kind != V_STR)
+		return berr(b, n, "expected text");
+	t.str = n->s;
+	t.len = (int) n->n;
+	t.seg = NULL;
+	if (capn_set_text(container, off, t) != 0)
+		return berr(b, n, "could not store text");
+	return 0;
+}
+
+static int build_list(struct bctx *b, struct capn_segment *seg, const struct capn_dyn_type *lt,
+                      const struct frame *fr, const struct vnode *n, capn_ptr *out)
+{
+	const struct frame *efr = fr;
+	const struct capn_dyn_type *et = resolve(lt->elem, &efr);
+	int i, cnt = n->count;
+	capn_ptr list;
+
+	if (n->kind != V_LIST)
+		return berr(b, n, "expected a list");
+
+	switch (et->kind) {
+	case CAPN_DYN_VOID:
+		list = capn_new_list(seg, cnt, 0, 0);
+		break;
+	case CAPN_DYN_BOOL: {
+		capn_list1 l = capn_new_list1(seg, cnt);
+		list = l.p;
+		break;
+	}
+	case CAPN_DYN_INT8: case CAPN_DYN_UINT8: {
+		capn_list8 l = capn_new_list8(seg, cnt);
+		list = l.p;
+		break;
+	}
+	case CAPN_DYN_INT16: case CAPN_DYN_UINT16: case CAPN_DYN_ENUM: {
+		capn_list16 l = capn_new_list16(seg, cnt);
+		list = l.p;
+		break;
+	}
+	case CAPN_DYN_INT32: case CAPN_DYN_UINT32: case CAPN_DYN_FLOAT32: {
+		capn_list32 l = capn_new_list32(seg, cnt);
+		list = l.p;
+		break;
+	}
+	case CAPN_DYN_INT64: case CAPN_DYN_UINT64: case CAPN_DYN_FLOAT64: {
+		capn_list64 l = capn_new_list64(seg, cnt);
+		list = l.p;
+		break;
+	}
+	case CAPN_DYN_STRUCT:
+		if (et->st == NULL)
+			return berr(b, n, "list of a type without a descriptor");
+		list = capn_new_struct_list(seg, cnt, et->st->data_words * 8, et->st->pointers);
+		break;
+	case CAPN_DYN_TEXT: case CAPN_DYN_DATA: case CAPN_DYN_LIST:
+		list = capn_new_ptr_list(seg, cnt);
+		break;
+	default:
+		return berr(b, n, "cannot build a list of this type");
+	}
+	if (list.type == CAPN_NULL)
+		return berr(b, n, "could not allocate the list");
+
+	for (i = 0; i < cnt; i++) {
+		const struct vnode *el = n->v[i];
+		uint64_t bits;
+		switch (et->kind) {
+		case CAPN_DYN_VOID:
+			break;
+		case CAPN_DYN_BOOL: {
+			capn_list1 l;
+			l.p = list;
+			if (parse_scalar(b, et, el, &bits) != 0)
+				return -1;
+			capn_set1(l, i, (int) bits);
+			break;
+		}
+		case CAPN_DYN_INT8: case CAPN_DYN_UINT8: {
+			capn_list8 l;
+			l.p = list;
+			if (parse_scalar(b, et, el, &bits) != 0)
+				return -1;
+			capn_set8(l, i, (uint8_t) bits);
+			break;
+		}
+		case CAPN_DYN_INT16: case CAPN_DYN_UINT16: case CAPN_DYN_ENUM: {
+			capn_list16 l;
+			l.p = list;
+			if (parse_scalar(b, et, el, &bits) != 0)
+				return -1;
+			capn_set16(l, i, (uint16_t) bits);
+			break;
+		}
+		case CAPN_DYN_INT32: case CAPN_DYN_UINT32: case CAPN_DYN_FLOAT32: {
+			capn_list32 l;
+			l.p = list;
+			if (parse_scalar(b, et, el, &bits) != 0)
+				return -1;
+			capn_set32(l, i, (uint32_t) bits);
+			break;
+		}
+		case CAPN_DYN_INT64: case CAPN_DYN_UINT64: case CAPN_DYN_FLOAT64: {
+			capn_list64 l;
+			l.p = list;
+			if (parse_scalar(b, et, el, &bits) != 0)
+				return -1;
+			capn_set64(l, i, bits);
+			break;
+		}
+		case CAPN_DYN_TEXT:
+			if (set_text_at(b, list, i, el) != 0)
+				return -1;
+			break;
+		case CAPN_DYN_DATA: {
+			capn_ptr d;
+			if (build_data(b, seg, el, &d) != 0)
+				return -1;
+			capn_setp(list, i, d);
+			break;
+		}
+		case CAPN_DYN_LIST: {
+			capn_ptr sub;
+			if (build_list(b, seg, et, efr, el, &sub) != 0)
+				return -1;
+			capn_setp(list, i, sub);
+			break;
+		}
+		case CAPN_DYN_STRUCT: {
+			struct frame nf;
+			capn_ptr elt = capn_getp(list, i, 0);
+			enter_struct(&nf, et, efr);
+			if (fill_struct(b, et->st, &nf, elt, el) != 0)
+				return -1;
+			break;
+		}
+		}
+	}
+	*out = list;
+	return 0;
+}
+
+static int assign_field(struct bctx *b, const struct capn_dyn_struct *s, const struct frame *fr,
+                        capn_ptr st, const struct capn_dyn_field *f,
+                        const struct capn_dyn_type *rt, const struct frame *ffr,
+                        const struct vnode *val)
+{
+	uint64_t bits;
+	(void) s;
+
+	switch (rt->kind) {
+	case CAPN_DYN_VOID:
+		return 0;
+	case CAPN_DYN_TEXT:
+		if (val->kind == V_NULL)
+			return 0;
+		return set_text_at(b, st, (int) f->offset, val);
+	case CAPN_DYN_DATA: {
+		capn_ptr d;
+		if (val->kind == V_NULL)
+			return 0;
+		if (build_data(b, st.seg, val, &d) != 0)
+			return -1;
+		return capn_setp(st, (int) f->offset, d) ? berr(b, val, "could not store data") : 0;
+	}
+	case CAPN_DYN_LIST: {
+		capn_ptr l;
+		if (val->kind == V_NULL)
+			return 0;
+		if (build_list(b, st.seg, rt, ffr, val, &l) != 0)
+			return -1;
+		return capn_setp(st, (int) f->offset, l) ? berr(b, val, "could not store list") : 0;
+	}
+	case CAPN_DYN_STRUCT: {
+		struct frame nf;
+		capn_ptr sub;
+		if (val->kind == V_NULL)
+			return 0;
+		if (rt->st == NULL)
+			return berr(b, val, "field %s has no descriptor", f->name);
+		sub = capn_new_struct(st.seg, rt->st->data_words * 8, rt->st->pointers);
+		if (sub.type == CAPN_NULL)
+			return berr(b, val, "could not allocate the struct");
+		enter_struct(&nf, rt, ffr);
+		if (fill_struct(b, rt->st, &nf, sub, val) != 0)
+			return -1;
+		return capn_setp(st, (int) f->offset, sub) ? berr(b, val, "could not store struct") : 0;
+	}
+	case CAPN_DYN_INTERFACE:
+	case CAPN_DYN_ANYPOINTER:
+	case CAPN_DYN_PARAM:
+		return berr(b, val, "field %s cannot be set from text or JSON", f->name);
+	default:
+		if (parse_scalar(b, rt, val, &bits) != 0)
+			return -1;
+		(void) fr;
+		return capn_dyn_set_bits(st, f, bits) ? berr(b, val, "field %s does not fit the struct", f->name) : 0;
+	}
+}
+
+static int fill_struct(struct bctx *b, const struct capn_dyn_struct *s,
+                       const struct frame *fr, capn_ptr st, const struct vnode *obj)
+{
+	int i;
+
+	if (obj->kind != V_OBJ)
+		return berr(b, obj, "expected an object for %s", s->name);
+	for (i = 0; i < obj->count; i++) {
+		const struct capn_dyn_field *f = capn_dyn_find_field(s, obj->k[i]);
+		const struct frame *ffr = fr;
+		const struct capn_dyn_type *rt;
+
+		if (f == NULL)
+			return berr(b, obj->v[i], "no field named %s in %s", obj->k[i], s->name);
+		if (f->discriminant != CAPN_DYN_NO_DISCRIMINANT &&
+		    capn_dyn_set_which(s, st, f) != 0)
+			return berr(b, obj->v[i], "cannot select %s", f->name);
+		rt = resolve(&f->type, &ffr);
+		if (f->is_group) {
+			if (rt->st == NULL)
+				return berr(b, obj->v[i], "group %s has no descriptor", f->name);
+			if (fill_struct(b, rt->st, fr, st, obj->v[i]) != 0)
+				return -1;
+		} else if (assign_field(b, s, fr, st, f, rt, ffr, obj->v[i]) != 0) {
+			return -1;
+		}
+	}
+	return 0;
+}
+
+static int decode(const struct capn_dyn_struct *s, const char *in, size_t len, int json,
+                  struct capn_segment *seg, capn_ptr *out, struct capn_dyn_error *err)
+{
+	struct pctx c;
+	struct bctx b;
+	struct vnode *root;
+	capn_ptr st;
+	int rc = -1;
+
+	memset(&c, 0, sizeof c);
+	memset(&b, 0, sizeof b);
+	c.p = in;
+	c.len = len;
+	c.err = err;
+	b.err = err;
+	if (err) {
+		err->message[0] = '\0';
+		err->offset = -1;
+	}
+	if (s == NULL || seg == NULL || out == NULL) {
+		perr(&c, -1, "bad arguments");
+		return -1;
+	}
+
+	root = json ? parse_json(&c) : parse_text(&c);
+	if (root != NULL) {
+		skip_ws(&c, !json);
+		if (c.pos != c.len) {
+			perr(&c, (int) c.pos, "trailing characters after the value");
+			root = NULL;
+		}
+	}
+	if (root == NULL)
+		goto done;
+
+	st = capn_new_struct(seg, s->data_words * 8, s->pointers);
+	if (st.type == CAPN_NULL) {
+		berr(&b, root, "could not allocate the struct");
+		goto done;
+	}
+	if (fill_struct(&b, s, NULL, st, root) != 0)
+		goto done;
+	*out = st;
+	rc = 0;
+done:
+	vfree_all(&c);
+	return rc;
+}
 
 int capn_dyn_from_json(const struct capn_dyn_struct *s, const char *json,
                        size_t len, struct capn_segment *seg, capn_ptr *out,
                        struct capn_dyn_error *err)
 {
-	(void) s; (void) json; (void) len; (void) seg; (void) out;
-	if (err) {
-		snprintf(err->message, sizeof err->message, "not implemented");
-		err->offset = -1;
-	}
-	return -1;
+	return decode(s, json, len, 1, seg, out, err);
 }
 
 int capn_dyn_from_text(const struct capn_dyn_struct *s, const char *text,
                        size_t len, struct capn_segment *seg, capn_ptr *out,
                        struct capn_dyn_error *err)
 {
-	(void) s; (void) text; (void) len; (void) seg; (void) out;
-	if (err) {
-		snprintf(err->message, sizeof err->message, "not implemented");
-		err->offset = -1;
-	}
-	return -1;
+	return decode(s, text, len, 0, seg, out, err);
 }
