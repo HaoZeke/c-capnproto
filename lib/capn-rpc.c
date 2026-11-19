@@ -233,7 +233,7 @@ static uint8_t *frame_alloc(struct capn *msg, size_t *len_out)
 	uint8_t *buf;
 	int64_t sz;
 
-	if (need <= 0)
+	if (need <= 0 || (uint64_t) need > SIZE_MAX)
 		return NULL;
 	buf = (uint8_t *) malloc((size_t) need);
 	if (buf == NULL)
