@@ -192,6 +192,117 @@ void Greeting_set_plain(Greeting_ptr p, capn_text plain)
 	capn_set_text(p.p, 1, (plain.str != capn_val0.str) ? plain : capn_text_null);
 }
 
+Names_ptr new_Names(struct capn_segment *s) {
+	Names_ptr p;
+	p.p = capn_new_struct(s, 8, 1);
+	return p;
+}
+Names_list new_Names_list(struct capn_segment *s, int len) {
+	Names_list p;
+	p.p = capn_new_struct_list(s, len, 8, 1);
+	return p;
+}
+void read_Names(struct Names *s capnp_unused, Names_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	s->_which = capn_read8(p.p, 0);
+	s->_errno = capn_read32(p.p, 4);
+	s->_linux = (capn_read8(p.p, 1) & 1) != 0;
+	s->_stdin = capn_get_text(p.p, 0, capn_val0);
+	s->voids_which = (enum Names_voids_which)(int) capn_read16(p.p, 2);
+	switch (s->voids_which) {
+	default:
+		break;
+	}
+}
+void write_Names(const struct Names *s capnp_unused, Names_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	capn_write8(p.p, 0, s->_which);
+	capn_write32(p.p, 4, s->_errno);
+	capn_write1(p.p, 8, s->_linux != 0);
+	capn_set_text(p.p, 0, (s->_stdin.str != capn_val0.str) ? s->_stdin : capn_text_null);
+	capn_write16(p.p, 2, s->voids_which);
+	switch (s->voids_which) {
+	default:
+		break;
+	}
+}
+void get_Names(struct Names *s, Names_list l, int i) {
+	Names_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_Names(s, p);
+}
+void set_Names(const struct Names *s, Names_list l, int i) {
+	Names_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_Names(s, p);
+}
+
+uint8_t Names_get__which(Names_ptr p)
+{
+	capn_resolve(&p.p);
+	uint8_t _which;
+	_which = capn_read8(p.p, 0);
+	return _which;
+}
+
+uint32_t Names_get__errno(Names_ptr p)
+{
+	capn_resolve(&p.p);
+	uint32_t _errno;
+	_errno = capn_read32(p.p, 4);
+	return _errno;
+}
+
+unsigned Names_get__linux(Names_ptr p)
+{
+	capn_resolve(&p.p);
+	unsigned _linux;
+	_linux = (capn_read8(p.p, 1) & 1) != 0;
+	return _linux;
+}
+
+capn_text Names_get__stdin(Names_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_text _stdin;
+	_stdin = capn_get_text(p.p, 0, capn_val0);
+	return _stdin;
+}
+
+int Names_has__stdin(Names_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr _stdin;
+	_stdin = capn_getp(p.p, 0, 1);
+	return _stdin.type != CAPN_NULL;
+}
+
+void Names_set__which(Names_ptr p, uint8_t _which)
+{
+	capn_resolve(&p.p);
+	capn_write8(p.p, 0, _which);
+}
+
+void Names_set__errno(Names_ptr p, uint32_t _errno)
+{
+	capn_resolve(&p.p);
+	capn_write32(p.p, 4, _errno);
+}
+
+void Names_set__linux(Names_ptr p, unsigned _linux)
+{
+	capn_resolve(&p.p);
+	capn_write1(p.p, 8, _linux != 0);
+}
+
+void Names_set__stdin(Names_ptr p, capn_text _stdin)
+{
+	capn_resolve(&p.p);
+	capn_set_text(p.p, 0, (_stdin.str != capn_val0.str) ? _stdin : capn_text_null);
+}
+
 Event_ptr new_Event(struct capn_segment *s) {
 	Event_ptr p;
 	p.p = capn_new_struct(s, 0, 1);

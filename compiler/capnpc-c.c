@@ -843,6 +843,12 @@ static const char *field_name(struct field *f) {
 		"_Thread_local",
 		/* capn reserved for parameter names */
 		"p",
+		/* the discriminant member of a struct with a union */
+		"which",
+		/* object-like macros from libc and the compiler that would
+		 * expand inside a member declaration */
+		"errno", "stdin", "stdout", "stderr", "unix", "linux", "i386",
+		"noreturn", "complex", "imaginary",
 	};
 
 	size_t i;
@@ -943,6 +949,7 @@ static void do_union(struct strings *s, struct node *n, struct field *first_fiel
 	struct field *f;
 	static struct str tag = STR_INIT;
 	struct str enums = STR_INIT;
+	int union_start, union_body;
 
 	str_reset(&tag);
 
@@ -994,7 +1001,9 @@ static void do_union(struct strings *s, struct node *n, struct field *first_fiel
 	union_cases(s, n, first_field, (1 << Type_data));
 	union_cases(s, n, first_field, (1 << Type__struct) | (1 << Type__interface) | (1 << Type_anyPointer) | (1 << Type__list));
 
+	union_start = s->decl.len;
 	str_addf(&s->decl, "%scapnp_nowarn union {\n", s->dtab.str);
+	union_body = s->decl.len;
 	str_add(&s->dtab, "\t", -1);
 
 	/* when we have defaults or groups we have to emit each case separately */
@@ -1052,7 +1061,11 @@ static void do_union(struct strings *s, struct node *n, struct field *first_fiel
 
 	str_setlen(&s->dtab, s->dtab.len - 1);
 
-	if (union_name) {
+	/* A union whose members are all Void has nothing to store, and an
+	 * empty union is not valid ISO C. */
+	if (s->decl.len == union_body) {
+		str_setlen(&s->decl, union_start);
+	} else if (union_name) {
 		str_addf(&s->decl, "%s} %s;\n", s->dtab.str, union_name);
 	} else {
 		str_addf(&s->decl, "%s};\n", s->dtab.str);
