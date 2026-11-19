@@ -348,6 +348,27 @@ static void brand_mark(const char *name) {
 	g_brand_done = d;
 }
 
+static int scope_param_count(uint64_t scope_id)
+{
+	struct node *n = find_node_mayfail(scope_id);
+	if (n == NULL)
+		return 0;
+	return capn_len(n->n.parameters);
+}
+
+/* A binding already pushed by the brand outside this one. */
+static int subst_at(uint64_t scope, uint16_t index, int limit, Type_ptr *out)
+{
+	int i;
+	for (i = limit - 1; i >= 0; i--) {
+		if (g_subst[i].scope == scope && g_subst[i].index == index) {
+			*out = g_subst[i].type;
+			return 1;
+		}
+	}
+	return 0;
+}
+
 static int push_brand(Brand_ptr brand) {
 	struct Brand b;
 	int i, j, saved = g_nsubst;
@@ -355,8 +376,29 @@ static int push_brand(Brand_ptr brand) {
 	read_Brand(&b, brand);
 	for (i = 0; i < capn_len(b.scopes); i++) {
 		struct Brand_Scope sc;
+		int p, pc;
 		memset(&sc, 0, sizeof sc);
 		get_Brand_Scope(&sc, b.scopes, i);
+		/* inherit is the pass-through: each parameter of this scope
+		 * is bound to whatever the enclosing brand already bound it
+		 * to. schema.capnp Brand.Scope.inherit. */
+		if (sc.which == Brand_Scope_inherit) {
+			pc = scope_param_count(sc.scopeId);
+			for (p = 0; p < pc; p++) {
+				Type_ptr tp;
+				if (!subst_at(sc.scopeId, (uint16_t) p, saved, &tp))
+					continue;
+				if (g_nsubst >= BRAND_SUBST_MAX) {
+					fprintf(stderr, "too many brand bindings\n");
+					exit(2);
+				}
+				g_subst[g_nsubst].scope = sc.scopeId;
+				g_subst[g_nsubst].index = (uint16_t) p;
+				g_subst[g_nsubst].type = tp;
+				g_nsubst++;
+			}
+			continue;
+		}
 		if (sc.which != Brand_Scope_bind)
 			continue;
 		for (j = 0; j < capn_len(sc.bind); j++) {
@@ -392,6 +434,29 @@ static int append_brand_binds(struct str *o, Brand_ptr brand) {
 		struct Brand_Scope sc;
 		memset(&sc, 0, sizeof sc);
 		get_Brand_Scope(&sc, b.scopes, i);
+		if (sc.which == Brand_Scope_inherit) {
+			int p, pc = scope_param_count(sc.scopeId);
+			int concrete = 0;
+			for (p = 0; p < pc; p++) {
+				Type_ptr tp;
+				if (subst_at(sc.scopeId, (uint16_t) p, g_nsubst, &tp))
+					concrete = 1;
+			}
+			/* No enclosing binding: the parameters stay themselves,
+			 * which is the unbound generic, not a new name. */
+			if (!concrete)
+				continue;
+			for (p = 0; p < pc; p++) {
+				Type_ptr tp;
+				str_add(o, "_", 1);
+				if (subst_at(sc.scopeId, (uint16_t) p, g_nsubst, &tp))
+					append_type_token(o, tp, 0);
+				else
+					str_add(o, "AnyPointer", -1);
+				any = 1;
+			}
+			continue;
+		}
 		if (sc.which != Brand_Scope_bind)
 			continue;
 		for (j = 0; j < capn_len(sc.bind); j++) {
@@ -1808,6 +1873,11 @@ static void emit_branded(struct node *n, Brand_ptr brand, const char *name) {
 	inst.name = nm;
 	flen = capn_len(n->n._struct.fields);
 	inst.fields = calloc(flen > 0 ? (size_t) flen : 1, sizeof(inst.fields[0]));
+	if (inst.fields == NULL) {
+		str_release(&nm);
+		g_nsubst = saved;
+		return;
+	}
 	for (j = 0; j < flen; j++)
 		decode_field(inst.fields, n->n._struct.fields, j);
 	define_struct(&inst, "", "");

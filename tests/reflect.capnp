@@ -89,6 +89,20 @@ struct Box(T) {
 
 struct Pair(A, B) { first @0 :A; second @1 :B; }
 
+# Inner's brand on `inherited` is Scope.inherit. The parameter comes
+# from Holder, not from a bind list on Inner.
+struct Holder(T) {
+  struct Inner {
+    value @0 :T;
+  }
+  inherited @0 :Inner;
+  rebound @1 :Holder(T).Inner;
+}
+
+struct UsesInherit {
+  h @0 :Holder(Text);
+}
+
 struct UsesGenerics {
   ib @0 :Box(List(Int32));
   tb @1 :Box(Text);
