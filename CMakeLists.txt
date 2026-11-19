@@ -52,6 +52,7 @@ add_library(capnp_c
   lib/capn-malloc.c
   lib/capn-stream.c
   lib/capn-rpc.c
+  lib/capn-dyn.c
   compiler/rpc.capnp.c
   compiler/rpc-threeparty.capnp.c
 )
@@ -84,6 +85,7 @@ set(capnpc_c_sources
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/compiler/codecgen.c")
   list(APPEND capnpc_c_sources compiler/codecgen.c)
 endif()
+list(APPEND capnpc_c_sources compiler/reflectgen.c)
 
 add_executable(capnpc-c ${capnpc_c_sources})
 target_link_libraries(capnpc-c PRIVATE capnp_c)
@@ -103,7 +105,7 @@ install(TARGETS capnp_c capnpc-c
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
-install(FILES lib/capnp_c.h lib/capn-rpc.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES lib/capnp_c.h lib/capn-rpc.h lib/capn-dyn.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 # Generated user headers #include "c.capnp.h"; ship it beside capnp_c.h.
 install(FILES compiler/c.capnp.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES compiler/c.capnp DESTINATION ${CMAKE_INSTALL_DATADIR}/c-capnproto)

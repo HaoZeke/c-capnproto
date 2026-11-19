@@ -37,6 +37,7 @@ libcapnp_c_la_SOURCES = \
 	lib/capn-stream.c \
 	lib/capn.c \
 	lib/capn-rpc.c \
+	lib/capn-dyn.c \
 	compiler/rpc.capnp.c \
 	compiler/rpc-threeparty.capnp.c
 EXTRA_DIST += \
@@ -46,18 +47,21 @@ bin_PROGRAMS += capnpc-c
 capnpc_c_SOURCES = \
 	compiler/capnpc-c.c \
 	compiler/codecgen.c \
+	compiler/reflectgen.c \
 	compiler/schema.capnp.c \
 	compiler/str.c
 capnpc_c_LDADD = libcapnp_c.la
 include_HEADERS += \
 	lib/capnp_c.h \
 	lib/capn-rpc.h \
+	lib/capn-dyn.h \
 	compiler/c.capnp.h
 
 noinst_HEADERS += \
 	lib/capnp_priv.h \
 	compiler/str.h \
 	compiler/codecgen.h \
+	compiler/reflectgen.h \
 	compiler/schema.capnp.h \
 	compiler/c++.capnp.h
 
@@ -164,6 +168,10 @@ EXTRA_DIST += \
 	tests/fixtures/addressbook.txt \
 	tests/fixtures/testalltypes.txt \
 	tests/capnp-cli-interop-test.cpp \
+	tests/capnp-cli.h \
+	tests/reflect-test.cpp \
+	tests/reflect.capnp \
+	tests/reflect-other.capnp \
 	tests/interface-field.capnp \
 	tests/interface-field-test.cpp \
 	fuzz/Person.txt \

@@ -10,6 +10,7 @@
 #include "schema.capnp.h"
 #include "str.h"
 #include "codecgen.h"
+#include "reflectgen.h"
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -44,6 +45,7 @@ static int g_val0used, g_nullused, g_textnullused;
 
 static int g_fieldgetset = 0;
 static int g_codecgen = 0;
+static int g_reflect = 0;
 static capnp_ctx_t g_ctx;
 
 static void bind_codec_ctx(void) {
@@ -1904,6 +1906,7 @@ int main() {
 		g_nullused = 0;
 		g_textnullused = 0;
 		g_codecgen = 0;
+		g_reflect = 0;
 		capn_init_malloc(&g_valcapn);
 		capn_append_segment(&g_valcapn, &g_valseg);
 
@@ -1937,6 +1940,9 @@ int main() {
 				break;
 			case ANNOTATION_CODECGEN:	/* $C::codecgen */
 				g_codecgen = 1;
+				break;
+			case ANNOTATION_REFLECT:	/* $C::reflect */
+				g_reflect = 1;
 				break;
 			case 0x8c99797357b357e9UL:	/* $C::donotinclude */
 				if (v.which != Value_uint64)
@@ -1983,6 +1989,8 @@ int main() {
 		str_addf(&HDR, "#define CAPN_%X%X\n", (uint32_t) (file_node->n.id >> 32), (uint32_t) file_node->n.id);
 		str_addf(&HDR, "/* AUTO GENERATED - DO NOT EDIT */\n");
 		str_addf(&HDR, "#include <capnp_c.h>\n");
+		if (g_reflect)
+			str_addf(&HDR, "#include <capn-dyn.h>\n");
 		/* Do [extraheader] in declaration order. */
 		{
 			struct string_list ** current = &extraheader_strings;
@@ -2094,6 +2102,10 @@ int main() {
 
 		if (g_codecgen)
 			declare_codec(&g_ctx, file_node);
+		if (g_reflect) {
+			declare_reflect(&g_ctx, file_node);
+			define_reflect(&g_ctx, file_node);
+		}
 
 		str_addf(&HDR, "\n#ifdef __cplusplus\n}\n#endif\n#endif\n");
 

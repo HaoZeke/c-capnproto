@@ -21,6 +21,7 @@ libcapnp_src = [
   'lib' / 'capn-stream.c',
   'lib' / 'capn.c',
   'lib' / 'capn-rpc.c',
+  'lib' / 'capn-dyn.c',
   # RPC needs the rpc.capnp / rpc-twoparty.capnp readers; they are checked
   # in beside the other generated schema code.
   'compiler' / 'rpc.capnp.c',
@@ -51,6 +52,7 @@ libcapnp_c = library(
 install_headers(
   'lib' / 'capnp_c.h',
   'lib' / 'capn-rpc.h',
+  'lib' / 'capn-dyn.h',
   'compiler' / 'c.capnp.h',
 )
 
@@ -80,6 +82,7 @@ capnpc_src = [
   'compiler' / 'codecgen.c',
   'compiler' / 'schema.capnp.c',
   'compiler' / 'str.c',
+  'compiler' / 'reflectgen.c',
 ]
 
 capnpc_c = executable(
@@ -241,14 +244,35 @@ if get_option('enable_tests') and not meson.is_subproject()
     # Official `capnp` CLI interop. Skip these tests only when the
     # binary is missing (this branch is not taken). Do not GTEST_SKIP
     # when meson found capnp.
+    # Schemas compiled with $C.reflect, for the reflection, text and JSON
+    # tests that compare capn-dyn output with the official tool.
+    reflect_gen = custom_target(
+      'reflect-capnp',
+      input: ['tests' / 'reflect.capnp', 'tests' / 'reflect-other.capnp'],
+      output: [
+        'reflect.capnp.c', 'reflect.capnp.h',
+        'reflect-other.capnp.c', 'reflect-other.capnp.h',
+      ],
+      command: [
+        capnp, 'compile',
+        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-I', meson.current_source_dir() / 'compiler',
+        '--src-prefix', meson.current_source_dir() / 'tests',
+        '@INPUT@',
+      ],
+      depends: [capnpc_c],
+    )
+
     cli_interop_test = executable(
       'capnp-cli-interop-test',
       [
         'tests' / 'capnp-cli-interop-test.cpp',
+        'tests' / 'reflect-test.cpp',
         'tests' / 'addressbook.capnp.c',
         'compiler' / 'test.capnp.c',
+        reflect_gen,
       ],
-      include_directories: include_directories(['lib', 'tests', 'compiler']),
+      include_directories: include_directories(['.', 'lib', 'tests', 'compiler']),
       dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
       cpp_args: common_cpp_args + [
         '-DCAPNP_CLI="' + capnp.full_path() + '"',
