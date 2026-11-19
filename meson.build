@@ -585,6 +585,15 @@ if get_option('fuzz')
     install: false,
     implicit_include_directories: false,
   )
+  fuzz_rpc = executable(
+    'fuzz-rpc-frame',
+    'fuzz' / 'rpc_frame.c',
+    include_directories: fuzz_inc,
+    dependencies: [libcapnp_dep],
+    c_args: common_c_args,
+    install: false,
+    implicit_include_directories: false,
+  )
 
   # One-shot smoke on the seed corpus. Prefer a freshly encoded Person.bin
   # when capnp is on PATH (same as the autotools fuzz/in/Person.bin rule);
@@ -612,8 +621,12 @@ if get_option('fuzz')
     )
     test('fuzz-mem-smoke', fuzz_mem, args: [fuzz_person_bin])
     test('fuzz-fp-smoke', fuzz_fp, args: [fuzz_person_bin])
+    test('fuzz-rpc-frame-smoke', fuzz_rpc,
+         args: [meson.project_source_root() / 'tests' / 'fixtures' / 'rpc-accept.bin'])
   elif fs.exists(fuzz_seed)
     test('fuzz-mem-smoke', fuzz_mem, args: [fuzz_seed])
     test('fuzz-fp-smoke', fuzz_fp, args: [fuzz_seed])
+    test('fuzz-rpc-frame-smoke', fuzz_rpc,
+         args: [meson.project_source_root() / 'tests' / 'fixtures' / 'rpc-accept.bin'])
   endif
 endif
