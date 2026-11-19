@@ -382,7 +382,7 @@ static void get_field_value(capn_ptr st, const struct capn_dyn_field *f,
 		break;
 	case CAPN_DYN_DATA:
 		v->p = capn_dyn_get_ptr(st, f);
-		v->data = capn_get_data(st, (int) f->offset);
+		v->data.p = v->p;
 		break;
 	case CAPN_DYN_STRUCT:
 		if (f->is_group)
@@ -1156,7 +1156,11 @@ static int json_emit_field(struct jctx *j, const struct capn_dyn_struct *s, capn
 	if (f->json_flatten && rt->kind == CAPN_DYN_STRUCT && rt->st != NULL) {
 		const char *pre = f->json_prefix != NULL ? f->json_prefix : "";
 		const char *outer = prefix != NULL ? prefix : "";
-		snprintf(nested, sizeof nested, "%s%s", outer, pre);
+		int nw = snprintf(nested, sizeof nested, "%s%s", outer, pre);
+		if (nw < 0 || (size_t) nw >= sizeof nested) {
+			j->b->err = 1;
+			return first;
+		}
 		if (f->is_group)
 			return json_fields(j, rt->st, st, fr, nested, first);
 		{
@@ -2183,14 +2187,28 @@ static int decode_base64(const char *s, size_t n, uint8_t **out, int *outn)
 	uint8_t *buf;
 	if (n % 4 != 0)
 		return -1;
+	/* Output is a data list. A length past the list limit, or one
+	 * that does not fit in the int the caller stores, is rejected. */
+	if (n / 4 > (0x1fffffffu / 3) || n / 4 * 3 > (size_t) INT_MAX)
+		return -1;
 	buf = (uint8_t *) malloc(n / 4 * 3 + 1);
 	if (buf == NULL)
 		return -1;
 	while (i < n) {
-		int a = b64_digit(s[i]);
-		int b = b64_digit(s[i + 1]);
-		int c = s[i + 2] == '=' ? 0 : b64_digit(s[i + 2]);
-		int d = s[i + 3] == '=' ? 0 : b64_digit(s[i + 3]);
+		int last = (i + 4 == n);
+		int a, b, c, d;
+		/* Padding is only `=` at the end of the last quartet, as
+		 * `xx==` or `xxx=`. An earlier `=` or `AA=A` is not base64. */
+		if (s[i] == '=' || s[i + 1] == '=' ||
+		    (s[i + 2] == '=' && s[i + 3] != '=') ||
+		    ((s[i + 2] == '=' || s[i + 3] == '=') && !last)) {
+			free(buf);
+			return -1;
+		}
+		a = b64_digit(s[i]);
+		b = b64_digit(s[i + 1]);
+		c = s[i + 2] == '=' ? 0 : b64_digit(s[i + 2]);
+		d = s[i + 3] == '=' ? 0 : b64_digit(s[i + 3]);
 		if (a < 0 || b < 0 || c < 0 || d < 0) {
 			free(buf);
 			return -1;
@@ -2220,6 +2238,8 @@ static int decode_hex(const char *s, size_t n, uint8_t **out, int *outn)
 	size_t i;
 	uint8_t *buf;
 	if (n % 2 != 0)
+		return -1;
+	if (n / 2 > 0x1fffffffu || n / 2 > (size_t) INT_MAX)
 		return -1;
 	buf = (uint8_t *) malloc(n / 2 + 1);
 	if (buf == NULL)
@@ -2426,7 +2446,7 @@ static int jwalk(struct bctx *b, const struct vnode *at,
 		if (rt->st == NULL)
 			return berr(b, at, "field %s has no descriptor", step->f->name);
 		{
-			capn_ptr sub = capn_dyn_get_ptr(*cur, step->f);
+			capn_ptr sub = wire_ptr(*cur, step->f);
 			if (sub.type == CAPN_NULL) {
 				sub = capn_new_struct((*cur).seg, rt->st->data_words * 8, rt->st->pointers);
 				if (sub.type == CAPN_NULL)
