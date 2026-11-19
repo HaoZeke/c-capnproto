@@ -321,3 +321,137 @@ TEST(RpcStubShapes, NamedParamsAndMixedSizes) {
   capn_rpc_free(&client);
   capn_rpc_free(&vat);
 }
+
+static_assert(SubCalc_RESULT_PTRS >= 1,
+              "subclass result must fit the inherited text");
+static_assert(TextLeaf_RESULT_PTRS >= 1,
+              "grandchild result must fit a grandparent pointer");
+static_assert(WideLeaf_RESULT_DATASZ >= 24,
+              "grandchild result must fit a grandparent data section");
+
+TEST(RpcStubShapes, SubclassResultHoldsInheritedText) {
+  Wire wire;
+  struct capn_rpc_conn client, vat;
+  struct Calc_server base;
+  struct SubCalc_server sub;
+  Calc calc;
+  struct Calc_join_params in;
+  struct Calc_join_results out;
+  struct capn msg;
+
+  g_wire = &wire;
+  calc = Calc();
+  memset(&base, 0, sizeof base);
+  memset(&sub, 0, sizeof sub);
+  base.self = &calc;
+  base.on_join = on_join;
+  sub.super_Calc = &base;
+  capn_rpc_init(&client, to_vat, NULL);
+  capn_rpc_init(&vat, to_client, NULL);
+  capn_rpc_set_bootstrap(&vat, &sub, SubCalc_dispatch);
+  capn_rpc_set_result_size(&vat, SubCalc_RESULT_DATASZ, SubCalc_RESULT_PTRS);
+  capn_rpc_send_bootstrap(&client);
+  pump(&vat, wire.to_vat);
+  pump(&client, wire.to_client);
+
+  memset(&in, 0, sizeof in);
+  in.left.str = "foo";
+  in.left.len = 3;
+  in.right.str = "bar";
+  in.right.len = 3;
+  uint32_t q = Calc_call_join(&client, 0, &in);
+  pump(&vat, wire.to_vat);
+  pump(&client, wire.to_client);
+  memset(&out, 0, sizeof out);
+  ASSERT_EQ(0, Calc_results_join(&client, q, &out, &msg));
+  ASSERT_EQ(6, out.joined.len);
+  EXPECT_EQ(0, memcmp(out.joined.str, "foobar", 6));
+  capn_free(&msg);
+  capn_rpc_free(&client);
+  capn_rpc_free(&vat);
+}
+
+static int on_span(void *, const struct WideRoot_span_params *,
+                   struct WideRoot_span_results *out, struct capn_segment *) {
+  out->a = 11;
+  out->b = 22;
+  out->c = 33;
+  return 0;
+}
+
+static int on_text_name(void *, const struct TextRoot_name_params *,
+                        struct TextRoot_name_results *out, struct capn_segment *) {
+  g_keep = "leaf";
+  out->t.str = g_keep.c_str();
+  out->t.len = (int) g_keep.size();
+  out->t.seg = NULL;
+  return 0;
+}
+
+TEST(RpcStubShapes, GrandchildResultFitsAncestorMethods) {
+  Wire wire;
+  struct capn_rpc_conn client, vat;
+  struct WideRoot_server wide_root;
+  struct WideMid_server wide_mid;
+  struct TextRoot_server text_root;
+  struct TextMid_server text_mid;
+  struct WideRoot_span_params span_in;
+  struct WideRoot_span_results span_out;
+  struct TextRoot_name_params name_in;
+  struct TextRoot_name_results name_out;
+  struct capn msg;
+
+  g_wire = &wire;
+  memset(&wide_root, 0, sizeof wide_root);
+  memset(&wide_mid, 0, sizeof wide_mid);
+  memset(&text_root, 0, sizeof text_root);
+  memset(&text_mid, 0, sizeof text_mid);
+  wide_root.on_span = on_span;
+  wide_mid.super_WideRoot = &wide_root;
+  text_root.on_name = on_text_name;
+  text_mid.super_TextRoot = &text_root;
+
+  /* The grandchild macros size the struct. The middle server already
+   * forwards its direct parent, so this checks the sizes rather than
+   * grandchild dispatch. */
+  capn_rpc_init(&client, to_vat, NULL);
+  capn_rpc_init(&vat, to_client, NULL);
+  capn_rpc_set_bootstrap(&vat, &wide_mid, WideMid_dispatch);
+  capn_rpc_set_result_size(&vat, WideLeaf_RESULT_DATASZ, WideLeaf_RESULT_PTRS);
+  capn_rpc_send_bootstrap(&client);
+  pump(&vat, wire.to_vat);
+  pump(&client, wire.to_client);
+  memset(&span_in, 0, sizeof span_in);
+  uint32_t q = WideRoot_call_span(&client, 0, &span_in);
+  pump(&vat, wire.to_vat);
+  pump(&client, wire.to_client);
+  memset(&span_out, 0, sizeof span_out);
+  ASSERT_EQ(0, WideRoot_results_span(&client, q, &span_out, &msg));
+  EXPECT_EQ(11, span_out.a);
+  EXPECT_EQ(22, span_out.b);
+  EXPECT_EQ(33, span_out.c);
+  capn_free(&msg);
+  capn_rpc_free(&client);
+  capn_rpc_free(&vat);
+
+  wire = Wire();
+  g_wire = &wire;
+  capn_rpc_init(&client, to_vat, NULL);
+  capn_rpc_init(&vat, to_client, NULL);
+  capn_rpc_set_bootstrap(&vat, &text_mid, TextMid_dispatch);
+  capn_rpc_set_result_size(&vat, TextLeaf_RESULT_DATASZ, TextLeaf_RESULT_PTRS);
+  capn_rpc_send_bootstrap(&client);
+  pump(&vat, wire.to_vat);
+  pump(&client, wire.to_client);
+  memset(&name_in, 0, sizeof name_in);
+  q = TextRoot_call_name(&client, 0, &name_in);
+  pump(&vat, wire.to_vat);
+  pump(&client, wire.to_client);
+  memset(&name_out, 0, sizeof name_out);
+  ASSERT_EQ(0, TextRoot_results_name(&client, q, &name_out, &msg));
+  ASSERT_EQ(4, name_out.t.len);
+  EXPECT_EQ(0, memcmp(name_out.t.str, "leaf", 4));
+  capn_free(&msg);
+  capn_rpc_free(&client);
+  capn_rpc_free(&vat);
+}
