@@ -72,6 +72,45 @@ void fill_u32(void *ctx, capn_ptr params)
 	capn_write32(params, 0, *static_cast<uint32_t *>(ctx));
 }
 
+
+/* Echo the Data in parameter pointer 0 into result pointer 0, and report
+ * its length in the first result word. */
+int echo_dispatch(void *, uint64_t, uint16_t, capn_ptr params, capn_ptr results)
+{
+	capn_resolve(&params);
+	if (params.type != CAPN_STRUCT)
+		return -1;
+	capn_data in = capn_get_data(params, 0);
+	int n = capn_len(in);
+	capn_list8 out = capn_new_list8(results.seg, n);
+	if (n > 0 && out.p.type == CAPN_NULL)
+		return -1;
+	std::vector<uint8_t> tmp(static_cast<size_t>(n));
+	if (n > 0) {
+		capn_getv8(in.p.type == CAPN_NULL ? capn_list8{} : capn_list8{in.p}, 0, tmp.data(), n);
+		capn_setv8(out, 0, tmp.data(), n);
+	}
+	capn_setp(results, 0, out.p);
+	capn_write32(results, 0, static_cast<uint32_t>(n));
+	capn_write32(results, 8, 0xfeedbeefu);
+	return 0;
+}
+
+struct Blob {
+	size_t n;
+};
+
+void fill_blob(void *ctx, capn_ptr params)
+{
+	size_t n = static_cast<Blob *>(ctx)->n;
+	capn_list8 l = capn_new_list8(params.seg, static_cast<int>(n));
+	std::vector<uint8_t> bytes(n);
+	for (size_t i = 0; i < n; i++)
+		bytes[i] = static_cast<uint8_t>(i * 31 + 7);
+	capn_setv8(l, 0, bytes.data(), static_cast<int>(n));
+	capn_setp(params, 0, l.p);
+}
+
 class RpcClient : public ::testing::Test {
  protected:
 	void SetUp() override
@@ -83,6 +122,12 @@ class RpcClient : public ::testing::Test {
 		capn_rpc_init(&client, send_to_vat, NULL);
 		capn_rpc_init(&vat, send_to_client, NULL);
 		capn_rpc_set_bootstrap(&vat, &doubler_calls, doubler_dispatch);
+	}
+
+	void TearDown() override
+	{
+		capn_rpc_free(&client);
+		capn_rpc_free(&vat);
 	}
 
 	void settle()
@@ -235,6 +280,30 @@ TEST_F(RpcClient, OnceFailedALaterSendIsRefused)
 	/* The window is empty, so this refusal can only come from the stream
 	 * remembering it failed. */
 	EXPECT_NE(0, capn_rpc_stream_send(&client, &s, 0, 0, 0, 8, 1, fill_u32, &v));
+}
+
+TEST_F(RpcClient, PayloadsLargerThanEightKilobytesRoundTrip)
+{
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, echo_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	Blob blob = {40000};
+	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 0, 0, 1, fill_blob, &blob);
+	ASSERT_NE((uint32_t)-1, q);
+	settle();
+
+	ASSERT_TRUE(capn_rpc_is_answered(&client, q));
+	ASSERT_FALSE(capn_rpc_is_failed(&client, q));
+	struct capn m;
+	capn_ptr content;
+	ASSERT_EQ(0, capn_rpc_answer_content(&client, q, &m, &content));
+	EXPECT_EQ(40000u, capn_read32(content, 0));
+	capn_list8 echoed;
+	echoed.p = capn_getp(content, 0, 1);
+	ASSERT_EQ(40000, capn_len(echoed));
+	EXPECT_EQ(static_cast<uint8_t>(39999 * 31 + 7), capn_get8(echoed, 39999));
+	capn_free(&m);
 }
 
 } // namespace

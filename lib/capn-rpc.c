@@ -2,6 +2,7 @@
 
 #include "capn-rpc.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "rpc.capnp.h"
@@ -21,6 +22,18 @@ void capn_rpc_init(struct capn_rpc_conn *c, capn_rpc_send_fn send,
 	c->send = send;
 	c->send_ctx = send_ctx;
 	c->vat = &c->own_vat;
+}
+
+void capn_rpc_free(struct capn_rpc_conn *c)
+{
+	int i;
+
+	for (i = 0; i < CAPN_RPC_MAX_ANSWERS; i++)
+		free(c->answers[i].frame);
+	for (i = 0; i < CAPN_RPC_MAX_QUESTIONS; i++)
+		free(c->questions[i].reply);
+	memset(c->answers, 0, sizeof c->answers);
+	memset(c->questions, 0, sizeof c->questions);
 }
 
 void capn_rpc_set_vat(struct capn_rpc_conn *c, struct capn_rpc_vat *vat)
@@ -149,34 +162,65 @@ out:
 	return eid;
 }
 
+/* Serialise `msg` into a buffer sized to it. The size is the message's own,
+ * so a large payload goes out whole instead of failing against a fixed
+ * ceiling the peer would never learn about. */
+static uint8_t *frame_alloc(struct capn *msg, size_t *len_out)
+{
+	int64_t need = capn_size(msg);
+	uint8_t *buf;
+	int64_t sz;
+
+	if (need <= 0)
+		return NULL;
+	buf = (uint8_t *) malloc((size_t) need);
+	if (buf == NULL)
+		return NULL;
+	sz = capn_write_mem(msg, buf, (size_t) need, 0);
+	if (sz < 0) {
+		free(buf);
+		return NULL;
+	}
+	*len_out = (size_t) sz;
+	return buf;
+}
+
 static int send_message(struct capn_rpc_conn *c, struct capn *msg)
 {
-	uint8_t buf[CAPN_RPC_MAX_ANSWER_BYTES];
-	ssize_t sz = capn_write_mem(msg, buf, sizeof buf, 0);
-	if (sz < 0)
+	size_t len;
+	uint8_t *buf = frame_alloc(msg, &len);
+	int rc;
+
+	if (buf == NULL)
 		return -1;
-	return c->send(c->send_ctx, buf, (size_t)sz);
+	rc = c->send(c->send_ctx, buf, len);
+	free(buf);
+	return rc;
 }
 
 /* Send a Return and keep it until `Finish`, so a call pipelined against
  * this answer can still find the capability it names. */
 static int send_answer(struct capn_rpc_conn *c, uint32_t qid, struct capn *msg)
 {
-	uint8_t buf[CAPN_RPC_MAX_ANSWER_BYTES];
-	ssize_t sz = capn_write_mem(msg, buf, sizeof buf, 0);
-	int i;
-	if (sz < 0)
+	size_t len;
+	uint8_t *buf = frame_alloc(msg, &len);
+	int i, rc;
+
+	if (buf == NULL)
 		return -1;
+	rc = c->send(c->send_ctx, buf, len);
 	for (i = 0; i < CAPN_RPC_MAX_ANSWERS; i++) {
 		if (!c->answers[i].used) {
 			c->answers[i].used = 1;
 			c->answers[i].question_id = qid;
-			memcpy(c->answers[i].frame, buf, (size_t)sz);
-			c->answers[i].len = (size_t)sz;
-			break;
+			c->answers[i].frame = buf;
+			c->answers[i].len = len;
+			return rc;
 		}
 	}
-	return c->send(c->send_ctx, buf, (size_t)sz);
+	/* No slot to keep it in: it was still sent, but cannot be pipelined. */
+	free(buf);
+	return rc;
 }
 
 static struct capn_rpc_answer *answer_find(struct capn_rpc_conn *c, uint32_t qid)
@@ -191,8 +235,10 @@ static struct capn_rpc_answer *answer_find(struct capn_rpc_conn *c, uint32_t qid
 static void answer_drop(struct capn_rpc_conn *c, uint32_t qid)
 {
 	struct capn_rpc_answer *a = answer_find(c, qid);
-	if (a)
-		a->used = 0;
+	if (a) {
+		free(a->frame);
+		memset(a, 0, sizeof *a);
+	}
 }
 
 /* Write a one-entry capTable naming a senderHosted export, and point
@@ -747,13 +793,19 @@ static int send_unimplemented(struct capn_rpc_conn *c, Message_ptr orig)
 
 /* --- client side -------------------------------------------------- */
 
+static void question_clear(struct capn_rpc_question *q)
+{
+	free(q->reply);
+	memset(q, 0, sizeof *q);
+}
+
 static struct capn_rpc_question *question_claim(struct capn_rpc_conn *c,
                                                 uint32_t *qid_out)
 {
 	int i;
 	for (i = 0; i < CAPN_RPC_MAX_QUESTIONS; i++) {
 		if (!c->questions[i].used) {
-			memset(&c->questions[i], 0, sizeof c->questions[i]);
+			question_clear(&c->questions[i]);
 			c->questions[i].used = 1;
 			c->questions[i].question_id = c->next_question_id++;
 			*qid_out = c->questions[i].question_id;
@@ -836,7 +888,7 @@ uint32_t capn_rpc_send_provide(struct capn_rpc_conn *c, uint32_t imported_cap,
 	write_Message(&m, mp);
 	capn_setp(capn_root(&msg), 0, mp.p);
 	if (send_message(c, &msg) != 0) {
-		q->used = 0;
+		question_clear(q);
 		qid = (uint32_t)-1;
 	}
 	capn_free(&msg);
@@ -882,7 +934,7 @@ uint32_t capn_rpc_send_accept(struct capn_rpc_conn *c, uint64_t nonce, int embar
 	write_Message(&m, mp);
 	capn_setp(capn_root(&msg), 0, mp.p);
 	if (send_message(c, &msg) != 0) {
-		q->used = 0;
+		question_clear(q);
 		qid = (uint32_t)-1;
 	}
 	capn_free(&msg);
@@ -945,7 +997,7 @@ uint32_t capn_rpc_send_bootstrap(struct capn_rpc_conn *c)
 	write_Message(&m, mp);
 	capn_setp(capn_root(&msg), 0, mp.p);
 	if (send_message(c, &msg) != 0) {
-		q->used = 0;
+		question_clear(q);
 		qid = (uint32_t)-1;
 	}
 	capn_free(&msg);
@@ -1006,7 +1058,7 @@ uint32_t capn_rpc_send_call(struct capn_rpc_conn *c, uint32_t imported_cap,
 	write_Message(&m, mp);
 	capn_setp(capn_root(&msg), 0, mp.p);
 	if (send_message(c, &msg) != 0) {
-		q->used = 0;
+		question_clear(q);
 		qid = (uint32_t)-1;
 	}
 	capn_free(&msg);
@@ -1026,7 +1078,7 @@ int capn_rpc_send_finish(struct capn_rpc_conn *c, uint32_t question_id)
 
 	q = question_find(c, question_id);
 	if (q)
-		q->used = 0;
+		question_clear(q);
 
 	capn_init_malloc(&msg);
 	cs = capn_root(&msg).seg;
@@ -1172,8 +1224,16 @@ static void handle_return(struct capn_rpc_conn *c, Return_ptr rp,
 
 	read_Return(&r, rp);
 	q = question_find(c, r.answerId);
-	if (q == NULL || len > CAPN_RPC_MAX_ANSWER_BYTES)
+	if (q == NULL || q->answered)
 		return;
+	{
+		uint8_t *copy = (uint8_t *) malloc(len ? len : 1);
+		if (copy == NULL)
+			return;
+		memcpy(copy, frame, len);
+		q->reply = copy;
+		q->reply_len = len;
+	}
 	q->answered = 1;
 	q->failed = (r.which != Return_results);
 	if (r.which == Return_results && r.results.p.type != CAPN_NULL) {
@@ -1181,8 +1241,6 @@ static void handle_return(struct capn_rpc_conn *c, Return_ptr rp,
 		read_Payload(&pl, r.results);
 		note_introductions(c, &pl);
 	}
-	memcpy(q->reply, frame, len);
-	q->reply_len = len;
 }
 
 /* --- stream flow control ------------------------------------------- */
