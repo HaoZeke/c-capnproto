@@ -62,7 +62,11 @@ static const size_t Rec_struct_bytes_count = 16;
 
 capn_data Rec_get_info(Rec_ptr p);
 
+int Rec_has_info(Rec_ptr p);
+
 capn_ptr_list Rec_get_tags(Rec_ptr p);
+
+int Rec_has_tags(Rec_ptr p);
 
 void Rec_set_info(Rec_ptr p, capn_data info);
 
@@ -80,6 +84,8 @@ static const size_t Event_struct_bytes_count = 8;
 
 
 capn_ptr_list Event_get_args(Event_ptr p);
+
+int Event_has_args(Event_ptr p);
 
 void Event_set_args(Event_ptr p, capn_ptr_list args);
 

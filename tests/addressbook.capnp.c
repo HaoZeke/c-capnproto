@@ -31,6 +31,8 @@ void read_Person(struct Person *s capnp_unused, Person_ptr p) {
 	s->employment_which = (enum Person_employment_which)(int) capn_read16(p.p, 4);
 	switch (s->employment_which) {
 	case Person_employment_employer:
+		s->employment.employer = capn_get_text(p.p, 3, capn_val0);
+		break;
 	case Person_employment_school:
 		s->employment.school = capn_get_text(p.p, 3, capn_val0);
 		break;
@@ -48,6 +50,8 @@ void write_Person(const struct Person *s capnp_unused, Person_ptr p) {
 	capn_write16(p.p, 4, s->employment_which);
 	switch (s->employment_which) {
 	case Person_employment_employer:
+		capn_set_text(p.p, 3, s->employment.employer);
+		break;
 	case Person_employment_school:
 		capn_set_text(p.p, 3, s->employment.school);
 		break;
@@ -82,6 +86,14 @@ capn_text Person_get_name(Person_ptr p)
 	return name;
 }
 
+int Person_has_name(Person_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr name;
+	name = capn_getp(p.p, 0, 1);
+	return name.type != CAPN_NULL;
+}
+
 capn_text Person_get_email(Person_ptr p)
 {
 	capn_resolve(&p.p);
@@ -90,12 +102,28 @@ capn_text Person_get_email(Person_ptr p)
 	return email;
 }
 
+int Person_has_email(Person_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr email;
+	email = capn_getp(p.p, 1, 1);
+	return email.type != CAPN_NULL;
+}
+
 Person_PhoneNumber_list Person_get_phones(Person_ptr p)
 {
 	capn_resolve(&p.p);
 	Person_PhoneNumber_list phones;
 	phones.p = capn_getp(p.p, 2, 1);
 	return phones;
+}
+
+int Person_has_phones(Person_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr phones;
+	phones = capn_getp(p.p, 2, 1);
+	return phones.type != CAPN_NULL;
 }
 
 void Person_set_id(Person_ptr p, uint32_t id)
@@ -163,6 +191,14 @@ capn_text Person_PhoneNumber_get_number(Person_PhoneNumber_ptr p)
 	return number;
 }
 
+int Person_PhoneNumber_has_number(Person_PhoneNumber_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr number;
+	number = capn_getp(p.p, 0, 1);
+	return number.type != CAPN_NULL;
+}
+
 enum Person_PhoneNumber_Type Person_PhoneNumber_get_type(Person_PhoneNumber_ptr p)
 {
 	capn_resolve(&p.p);
@@ -220,6 +256,14 @@ Person_list AddressBook_get_people(AddressBook_ptr p)
 	Person_list people;
 	people.p = capn_getp(p.p, 0, 1);
 	return people;
+}
+
+int AddressBook_has_people(AddressBook_ptr p)
+{
+	capn_resolve(&p.p);
+	capn_ptr people;
+	people = capn_getp(p.p, 0, 1);
+	return people.type != CAPN_NULL;
 }
 
 void AddressBook_set_people(AddressBook_ptr p, Person_list people)
