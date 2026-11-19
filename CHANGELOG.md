@@ -88,7 +88,8 @@ Pre-1.0 minor releases may include breaking wire or API changes.
   reason is the Call text from C++ 1.4.0: `expected !answer.active;
   questionId is already in use`. That covers an answer still waiting for
   Finish, a call that has not returned, a queued frame, and an unfinished
-  Join. A Bootstrap reuses that same text.
+  Join. A Bootstrap appends `; answerId = N`, which is the extra
+  argument on that check.
 - `capn_getv`/`capn_setv` for 16, 32 and 64 bit lists treated the element
   offset as bytes; `getv1`/`setv1` mixed bits and bytes; negative offsets
   and counts are rejected, as are negative indices to `capn_get*`,

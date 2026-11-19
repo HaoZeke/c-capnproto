@@ -3,6 +3,7 @@
 #include "capn-rpc.h"
 
 #include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -19,7 +20,7 @@ static void release_unsent_caps(struct capn_rpc_conn *c,
                                 struct capn_rpc_pending_cap *caps, int n);
 static int frame_question_id(const uint8_t *data, size_t len, uint32_t *qid);
 static int question_id_in_use(struct capn_rpc_conn *c, uint32_t qid);
-static int abort_live_question(struct capn_rpc_conn *c);
+static int abort_live_question(struct capn_rpc_conn *c, const uint32_t *answer_id);
 static struct capn_rpc_answer *answer_find(struct capn_rpc_conn *c,
                                            uint32_t qid);
 
@@ -639,14 +640,21 @@ static int question_id_in_use(struct capn_rpc_conn *c, uint32_t qid)
 	return 0;
 }
 
-static int abort_live_question(struct capn_rpc_conn *c)
+static int abort_live_question(struct capn_rpc_conn *c, const uint32_t *answer_id)
 {
+	char buf[96];
+	const char *reason =
+		"expected !answer.active; questionId is already in use";
+
 	if (c->aborted)
 		return -1;
-	/* rpc.c++ handleCall, KJ_REQUIRE(!answer.active, "questionId is
-	 * already in use"). Bootstrap's check also appends answerId; this
-	 * vat sends the Call text for every live id. */
-	capn_rpc_send_abort(c, "expected !answer.active; questionId is already in use");
+	/* rpc.c++ handleCall omits the extra argument. handleBootstrap
+	 * passes answerId, which KJ prints as "; answerId = N". */
+	if (answer_id != NULL) {
+		snprintf(buf, sizeof buf, "%s; answerId = %u", reason, *answer_id);
+		reason = buf;
+	}
+	capn_rpc_send_abort(c, reason);
 	return -1;
 }
 
@@ -665,7 +673,7 @@ static int handle_bootstrap(struct capn_rpc_conn *c, Bootstrap_ptr bp)
 
 	read_Bootstrap(&b, bp);
 	if (question_id_in_use(c, b.questionId))
-		return abort_live_question(c);
+		return abort_live_question(c, &b.questionId);
 	if (c->bootstrap == NULL)
 		return send_return_exception(c, b.questionId,
 		                             "no bootstrap capability");
@@ -1024,7 +1032,7 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp,
 
 	read_Call(&call, cp);
 	if (question_id_in_use(c, call.questionId))
-		return abort_live_question(c);
+		return abort_live_question(c, NULL);
 	memset(&params, 0, sizeof params);
 	/* The cap table describes the message, not the dispatch: a call this
 	 * vat cannot route still told us where a third party's capability
@@ -1323,7 +1331,7 @@ static int handle_join(struct capn_rpc_conn *c, Join_ptr jp)
 
 	read_Join(&j, jp);
 	if (question_id_in_use(c, j.questionId))
-		return abort_live_question(c);
+		return abort_live_question(c, NULL);
 	if (j.keyPart.type == CAPN_NULL)
 		/* Without a JoinKeyPart there is no way to tell which set this
 		 * belongs to, so it can only fail on its own. */
@@ -4297,7 +4305,7 @@ static int handle_provide(struct capn_rpc_conn *c, Provide_ptr pp)
 
 	read_Provide(&pv, pp);
 	if (question_id_in_use(c, pv.questionId))
-		return abort_live_question(c);
+		return abort_live_question(c, NULL);
 	eid = resolve_target(c, pv.target);
 	if (eid < 0)
 		return send_return_exception(c, pv.questionId,
@@ -4346,7 +4354,7 @@ static int handle_accept(struct capn_rpc_conn *c, Accept_ptr ap)
 
 	read_Accept(&ac, ap);
 	if (question_id_in_use(c, ac.questionId))
-		return abort_live_question(c);
+		return abort_live_question(c, NULL);
 	if (ac.provision.type == CAPN_NULL)
 		return send_return_exception(c, ac.questionId,
 		                             "accept: no provision");
