@@ -141,7 +141,7 @@ First feature release on the HaoZeke fork after the v0.1.0 baseline.
 HaoZeke fork baseline of the unmaintained
 opensourcerouting/c-capnproto tree.
 
-[Unreleased]: https://github.com/HaoZeke/c-capnproto/compare/v0.4.0...main
+[Unreleased]: https://github.com/HaoZeke/c-capnproto/compare/v0.4.1...main
 [0.4.1]: https://github.com/HaoZeke/c-capnproto/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/HaoZeke/c-capnproto/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HaoZeke/c-capnproto/compare/v0.2.0...v0.3.0
