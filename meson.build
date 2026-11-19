@@ -418,6 +418,27 @@ if get_option('enable_tests') and not meson.is_subproject()
         depends: [rpc_peer_server, rpc_client_c, rpc_server_c, rpc_peer_client],
         timeout: 60,
       )
+
+      rpc_promise_server = executable(
+        'rpc_promise_server',
+        ['interop' / 'rpc_promise_server.c', 'compiler' / 'adder.capnp.c'],
+        include_directories: include_directories(['lib', 'compiler']),
+        dependencies: [libcapnp_dep],
+        c_args: ['-D_POSIX_C_SOURCE=200809L'],
+        implicit_include_directories: false,
+      )
+
+      test(
+        'rpc_interop_cpp_promise',
+        bash,
+        args: [
+          meson.current_source_dir() / 'interop' / 'run_rpc_promise.sh',
+          rpc_promise_server.full_path(),
+          rpc_peer_server.full_path(),
+        ],
+        depends: [rpc_promise_server, rpc_peer_server],
+        timeout: 60,
+      )
     else
       message('interop/rpc: skipped (needs a C++ toolchain, capnp-rpc, and the capnp tools).')
     endif

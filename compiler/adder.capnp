@@ -11,6 +11,9 @@ interface Adder @0xea01e10cbc414411 {
   # One data word and one pointer, so a stub that counts pointer bytes
   # as data shifts the text on the wire.
   tag @1 (n :Int32, label :Text) -> (n :Int32, label :Text);
+  # A promise of an Adder. fulfill() resolves it to a working Adder.
+  defer @2 () -> (cap :Adder);
+  fulfill @3 () -> ();
 }
 
 # Three interfaces. A call on the leaf carries the root's interface id.
