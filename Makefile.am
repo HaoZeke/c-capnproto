@@ -184,6 +184,7 @@ capn_test_CPPFLAGS = $(AM_CPPFLAGS) $(GTEST_CPPFLAGS) \
 	-DEXTRAHEADER_GENERATED_H=\"$(abs_srcdir)/tests/extraheader.capnp.h\" \
 	-DCODEGEN_DEFAULTS_GENERATED_C=\"$(abs_srcdir)/tests/codegen-defaults.capnp.c\" \
 	-DCODEGEN_DEFAULTS_GENERATED_H=\"$(abs_srcdir)/tests/codegen-defaults.capnp.h\" \
+	-DTEST_CAPNP_GENERATED_C=\"$(abs_srcdir)/compiler/test.capnp.c\" \
 	-DFORTRAN_GOLDEN_DIR=\"$(abs_srcdir)/tests/fixtures\"
 capn_test_CXXFLAGS = -std=gnu++11 -pthread
 capn_test_LDADD = libcapnp_c.la $(GTEST_LDADD)
