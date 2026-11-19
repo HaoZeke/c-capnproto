@@ -4,8 +4,10 @@
 #include "capn-dyn.h"
 
 #include <errno.h>
+#include <limits.h>
 #include <math.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -163,21 +165,35 @@ struct sb {
 
 static void sb_reserve(struct sb *b, size_t n)
 {
+	size_t need, cap;
+	char *p;
+
 	if (b->err)
 		return;
-	if (b->len + n + 1 > b->cap) {
-		size_t cap = b->cap ? b->cap : 256;
-		char *p;
-		while (b->len + n + 1 > cap)
-			cap *= 2;
-		p = (char *) realloc(b->buf, cap);
-		if (p == NULL) {
+	/* len + n + 1 can wrap. A wrapped need makes the doubling loop
+	 * run until cap itself wraps to 0 and then never stop. */
+	if (n > SIZE_MAX - 1 || b->len > SIZE_MAX - 1 - n) {
+		b->err = 1;
+		return;
+	}
+	need = b->len + n + 1;
+	if (need <= b->cap)
+		return;
+	cap = b->cap ? b->cap : 256;
+	while (need > cap) {
+		if (cap > SIZE_MAX / 2) {
 			b->err = 1;
 			return;
 		}
-		b->buf = p;
-		b->cap = cap;
+		cap *= 2;
 	}
+	p = (char *) realloc(b->buf, cap);
+	if (p == NULL) {
+		b->err = 1;
+		return;
+	}
+	b->buf = p;
+	b->cap = cap;
 }
 
 static void sb_add(struct sb *b, const char *s, size_t n)
@@ -553,11 +569,14 @@ static void text_value(struct sb *b, const struct capn_dyn_type *t,
 		capn_list8 l;
 		int i, n = capn_len(v->data);
 		char *tmp = (char *) malloc(n > 0 ? (size_t) n : 1);
+		if (tmp == NULL) {
+			b->err = 1;
+			break;
+		}
 		l.p = v->data.p;
-		for (i = 0; tmp && i < n; i++)
+		for (i = 0; i < n; i++)
 			tmp[i] = (char) capn_get8(l, i);
-		if (tmp)
-			text_escape(b, tmp, n, 1);
+		text_escape(b, tmp, n, 1);
 		free(tmp);
 		break;
 	}
@@ -914,9 +933,15 @@ static void vfree_all(struct pctx *c)
 static int vpush(struct pctx *c, struct vnode *parent, struct vnode *child, char *key)
 {
 	if (parent->count == parent->cap) {
-		int cap = parent->cap ? parent->cap * 2 : 4;
-		struct vnode **nv = (struct vnode **) realloc(parent->v, (size_t) cap * sizeof *nv);
+		int cap;
+		struct vnode **nv;
 		char **nk;
+		if (parent->cap > INT_MAX / 2)
+			return perr(c, child->off, "out of memory");
+		cap = parent->cap ? parent->cap * 2 : 4;
+		if ((size_t) cap > SIZE_MAX / sizeof *nv)
+			return perr(c, child->off, "out of memory");
+		nv = (struct vnode **) realloc(parent->v, (size_t) cap * sizeof *nv);
 		if (nv == NULL)
 			return perr(c, child->off, "out of memory");
 		parent->v = nv;
@@ -1593,7 +1618,7 @@ static int build_data(struct bctx *b, struct capn_segment *seg, const struct vno
 		if (l.p.type == CAPN_NULL)
 			return berr(b, n, "out of memory");
 		for (i = 0; i < n->count; i++) {
-			uint64_t v;
+			uint64_t v = 0;
 			struct capn_dyn_type t = {CAPN_DYN_UINT8, NULL, NULL, NULL, NULL, 0, 0};
 			if (parse_scalar(b, &t, n->v[i], &v) != 0)
 				return -1;
@@ -1610,6 +1635,8 @@ static int set_text_at(struct bctx *b, capn_ptr container, int off, const struct
 	capn_text t;
 	if (n->kind != V_STR)
 		return berr(b, n, "expected text");
+	if (n->n > (size_t) INT_MAX)
+		return berr(b, n, "text too long");
 	t.str = n->s;
 	t.len = (int) n->n;
 	t.seg = NULL;
@@ -1674,7 +1701,7 @@ static int build_list(struct bctx *b, struct capn_segment *seg, const struct cap
 
 	for (i = 0; i < cnt; i++) {
 		const struct vnode *el = n->v[i];
-		uint64_t bits;
+		uint64_t bits = 0;
 		switch (et->kind) {
 		case CAPN_DYN_VOID:
 			break;
@@ -1755,7 +1782,7 @@ static int assign_field(struct bctx *b, const struct capn_dyn_struct *s, const s
                         const struct capn_dyn_type *rt, const struct frame *ffr,
                         const struct vnode *val)
 {
-	uint64_t bits;
+	uint64_t bits = 0;
 	(void) s;
 
 	switch (rt->kind) {
@@ -1849,18 +1876,20 @@ static int decode(const struct capn_dyn_struct *s, const char *in, size_t len, i
 
 	memset(&c, 0, sizeof c);
 	memset(&b, 0, sizeof b);
-	c.p = in;
-	c.len = len;
 	c.err = err;
 	b.err = err;
 	if (err) {
 		err->message[0] = '\0';
 		err->offset = -1;
 	}
-	if (s == NULL || seg == NULL || out == NULL) {
+	if (s == NULL || seg == NULL || out == NULL || (in == NULL && len > 0)) {
 		perr(&c, -1, "bad arguments");
 		return -1;
 	}
+	if (in == NULL)
+		in = "";
+	c.p = in;
+	c.len = len;
 
 	root = json ? parse_json(&c) : parse_text(&c);
 	if (root != NULL) {
