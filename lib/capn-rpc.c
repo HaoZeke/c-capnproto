@@ -1430,6 +1430,7 @@ static int park_echo(struct capn_rpc_conn *c, int export_id,
 	c->echoes[i].export_id = (uint32_t) export_id;
 	c->echoes[i].frame = copy;
 	c->echoes[i].len = frame_len;
+	c->echoes[i].seq = ++c->queue_clock;
 	return 0;
 }
 
@@ -2649,27 +2650,105 @@ static int queue_on_question(struct capn_rpc_conn *c, uint32_t question_id,
 	return 0;
 }
 
-/* Oldest frame waiting on this export, or on this question when
- * `on_question` is set. Slot index is not arrival order: a resolve can
- * free a low slot that a later call then takes. */
+/* Oldest matching slot. A resolve frees a slot, and the next arrival
+ * may take that low index, so the index is not the arrival order. */
+struct order_ctx {
+	struct capn_rpc_conn *c;
+	int on_question;
+	int export_id;
+	uint32_t question_id;
+	uint32_t import_id;
+};
+
+static int oldest_slot(int n,
+                       int (*match)(const struct order_ctx *, int),
+                       uint64_t (*seq_at)(const struct order_ctx *, int),
+                       const struct order_ctx *ctx)
+{
+	int i, best = -1;
+	uint64_t best_seq = 0;
+
+	for (i = 0; i < n; i++) {
+		uint64_t seq;
+		if (!match(ctx, i))
+			continue;
+		seq = seq_at(ctx, i);
+		if (best < 0 || seq < best_seq) {
+			best = i;
+			best_seq = seq;
+		}
+	}
+	return best;
+}
+
+static int queued_match(const struct order_ctx *o, int i)
+{
+	struct capn_rpc_queued *q = &o->c->queued[i];
+	if (!q->used || q->on_question != o->on_question)
+		return 0;
+	if (o->on_question)
+		return q->question_id == o->question_id;
+	return q->export_id == o->export_id;
+}
+
+static uint64_t queued_seq(const struct order_ctx *o, int i)
+{
+	return o->c->queued[i].seq;
+}
+
 static int oldest_queued(struct capn_rpc_conn *c, int on_question,
                          int export_id, uint32_t question_id)
 {
-	int i, best = -1;
+	struct order_ctx o;
+	o.c = c;
+	o.on_question = on_question;
+	o.export_id = export_id;
+	o.question_id = question_id;
+	o.import_id = 0;
+	return oldest_slot(CAPN_RPC_MAX_QUEUED, queued_match, queued_seq, &o);
+}
 
-	for (i = 0; i < CAPN_RPC_MAX_QUEUED; i++) {
-		if (!c->queued[i].used || c->queued[i].on_question != on_question)
-			continue;
-		if (on_question) {
-			if (c->queued[i].question_id != question_id)
-				continue;
-		} else if (c->queued[i].export_id != export_id) {
-			continue;
-		}
-		if (best < 0 || c->queued[i].seq < c->queued[best].seq)
-			best = i;
-	}
-	return best;
+static int held_match(const struct order_ctx *o, int i)
+{
+	return o->c->held[i].used && o->c->held[i].import_id == o->import_id;
+}
+
+static uint64_t held_seq(const struct order_ctx *o, int i)
+{
+	return o->c->held[i].seq;
+}
+
+static int oldest_held(struct capn_rpc_conn *c, uint32_t import_id)
+{
+	struct order_ctx o;
+	o.c = c;
+	o.on_question = 0;
+	o.export_id = 0;
+	o.question_id = 0;
+	o.import_id = import_id;
+	return oldest_slot(CAPN_RPC_MAX_HELD, held_match, held_seq, &o);
+}
+
+static int echo_match(const struct order_ctx *o, int i)
+{
+	return o->c->echoes[i].used &&
+	       o->c->echoes[i].export_id == (uint32_t) o->export_id;
+}
+
+static uint64_t echo_seq(const struct order_ctx *o, int i)
+{
+	return o->c->echoes[i].seq;
+}
+
+static int oldest_echo(struct capn_rpc_conn *c, int export_id)
+{
+	struct order_ctx o;
+	o.c = c;
+	o.on_question = 0;
+	o.export_id = export_id;
+	o.question_id = 0;
+	o.import_id = 0;
+	return oldest_slot(CAPN_RPC_MAX_ECHOES, echo_match, echo_seq, &o);
 }
 
 static void flush_questions(struct capn_rpc_conn *c, uint32_t question_id)
@@ -2703,14 +2782,9 @@ static void flush_echoes(struct capn_rpc_conn *c, int export_id)
 {
 	int i;
 
-	for (i = 0; i < CAPN_RPC_MAX_ECHOES; i++) {
-		uint8_t *frame;
-		size_t len;
-		if (!c->echoes[i].used ||
-		    c->echoes[i].export_id != (uint32_t) export_id)
-			continue;
-		frame = c->echoes[i].frame;
-		len = c->echoes[i].len;
+	while ((i = oldest_echo(c, export_id)) >= 0) {
+		uint8_t *frame = c->echoes[i].frame;
+		size_t len = c->echoes[i].len;
 		memset(&c->echoes[i], 0, sizeof c->echoes[i]);
 		capn_rpc_handle(c, frame, len);
 		free(frame);
@@ -3171,6 +3245,7 @@ static uint32_t hold_call(struct capn_rpc_conn *c, int mode, uint32_t import_id,
 		c->held[i].path = copy;
 		c->held[i].npath = npath;
 	}
+	c->held[i].seq = ++c->queue_clock;
 	if (c->npending > 0) {
 		int n = c->npending;
 		if (n > CAPN_RPC_MAX_PENDING_CAPS)
@@ -3242,12 +3317,10 @@ static void install_held_caps(struct capn_rpc_conn *c, struct capn_rpc_held *h)
 static void fire_held(struct capn_rpc_conn *c, uint32_t import_id)
 {
 	int i;
-	for (i = 0; i < CAPN_RPC_MAX_HELD; i++) {
+	while ((i = oldest_held(c, import_id)) >= 0) {
 		struct capn_rpc_held h;
 		struct capn_rpc_copy src;
 		struct capn_rpc_question *q;
-		if (!c->held[i].used || c->held[i].import_id != import_id)
-			continue;
 		h = c->held[i];
 		c->held[i].used = 0;
 		c->held[i].msg = NULL;
