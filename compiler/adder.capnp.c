@@ -806,6 +806,18 @@ int Adder_results_add(struct capn_rpc_conn *c, uint32_t question, struct Adder_a
 	read_Adder_add_results(out, rp);
 	return 0;
 }
+int Adder_return_add(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_add_results *out) {
+	capn_ptr results;
+	Adder_add_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_Adder_add_results(out, rp);
+	return capn_rpc_return(c, question, generation);
+}
 
 static void Adder_tag_fill(void *ctx, capn_ptr params) {
 	Adder_tag_params_ptr pp;
@@ -823,6 +835,18 @@ int Adder_results_tag(struct capn_rpc_conn *c, uint32_t question, struct Adder_t
 	rp.p = content;
 	read_Adder_tag_results(out, rp);
 	return 0;
+}
+int Adder_return_tag(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_tag_results *out) {
+	capn_ptr results;
+	Adder_tag_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_Adder_tag_results(out, rp);
+	return capn_rpc_return(c, question, generation);
 }
 
 static void Adder_defer_fill(void *ctx, capn_ptr params) {
@@ -842,6 +866,18 @@ int Adder_results_defer(struct capn_rpc_conn *c, uint32_t question, struct Adder
 	read_Adder_defer_results(out, rp);
 	return 0;
 }
+int Adder_return_defer(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_defer_results *out) {
+	capn_ptr results;
+	Adder_defer_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_Adder_defer_results(out, rp);
+	return capn_rpc_return(c, question, generation);
+}
 
 static void Adder_fulfill_fill(void *ctx, capn_ptr params) {
 	Adder_fulfill_params_ptr pp;
@@ -859,6 +895,18 @@ int Adder_results_fulfill(struct capn_rpc_conn *c, uint32_t question, struct Add
 	rp.p = content;
 	read_Adder_fulfill_results(out, rp);
 	return 0;
+}
+int Adder_return_fulfill(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_fulfill_results *out) {
+	capn_ptr results;
+	Adder_fulfill_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_Adder_fulfill_results(out, rp);
+	return capn_rpc_return(c, question, generation);
 }
 
 static void Adder_watch_fill(void *ctx, capn_ptr params) {
@@ -878,6 +926,18 @@ int Adder_results_watch(struct capn_rpc_conn *c, uint32_t question, struct Adder
 	read_Adder_watch_results(out, rp);
 	return 0;
 }
+int Adder_return_watch(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_watch_results *out) {
+	capn_ptr results;
+	Adder_watch_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_Adder_watch_results(out, rp);
+	return capn_rpc_return(c, question, generation);
+}
 
 static void Adder_echo_fill(void *ctx, capn_ptr params) {
 	Adder_echo_params_ptr pp;
@@ -896,6 +956,18 @@ int Adder_results_echo(struct capn_rpc_conn *c, uint32_t question, struct Adder_
 	read_Adder_echo_results(out, rp);
 	return 0;
 }
+int Adder_return_echo(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_echo_results *out) {
+	capn_ptr results;
+	Adder_echo_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_Adder_echo_results(out, rp);
+	return capn_rpc_return(c, question, generation);
+}
 
 static void Adder_seq_fill(void *ctx, capn_ptr params) {
 	Adder_seq_params_ptr pp;
@@ -913,6 +985,18 @@ int Adder_results_seq(struct capn_rpc_conn *c, uint32_t question, struct Adder_s
 	rp.p = content;
 	read_Adder_seq_results(out, rp);
 	return 0;
+}
+int Adder_return_seq(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_seq_results *out) {
+	capn_ptr results;
+	Adder_seq_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_Adder_seq_results(out, rp);
+	return capn_rpc_return(c, question, generation);
 }
 
 CountBase_ptr new_CountBase(struct capn_segment *s) {
@@ -974,6 +1058,18 @@ int CountBase_results_inc(struct capn_rpc_conn *c, uint32_t question, struct Cou
 	rp.p = content;
 	read_CountBase_inc_results(out, rp);
 	return 0;
+}
+int CountBase_return_inc(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct CountBase_inc_results *out) {
+	capn_ptr results;
+	CountBase_inc_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_CountBase_inc_results(out, rp);
+	return capn_rpc_return(c, question, generation);
 }
 
 CountMid_ptr new_CountMid(struct capn_segment *s) {
@@ -1037,6 +1133,18 @@ int CountMid_results_twice(struct capn_rpc_conn *c, uint32_t question, struct Co
 	rp.p = content;
 	read_CountMid_twice_results(out, rp);
 	return 0;
+}
+int CountMid_return_twice(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct CountMid_twice_results *out) {
+	capn_ptr results;
+	CountMid_twice_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_CountMid_twice_results(out, rp);
+	return capn_rpc_return(c, question, generation);
 }
 
 CountLeaf_ptr new_CountLeaf(struct capn_segment *s) {
@@ -1102,4 +1210,16 @@ int CountLeaf_results_dec(struct capn_rpc_conn *c, uint32_t question, struct Cou
 	rp.p = content;
 	read_CountLeaf_dec_results(out, rp);
 	return 0;
+}
+int CountLeaf_return_dec(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct CountLeaf_dec_results *out) {
+	capn_ptr results;
+	CountLeaf_dec_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_CountLeaf_dec_results(out, rp);
+	return capn_rpc_return(c, question, generation);
 }
