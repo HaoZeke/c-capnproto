@@ -185,3 +185,29 @@ TEST_F(RpcStubs, MissingHandlerOrWrongInterfaceFails) {
   settle();
   EXPECT_TRUE(capn_rpc_is_failed(&client, q2));
 }
+
+TEST_F(RpcStubs, SubclassRoutesSuperclassMethods) {
+  struct SubCalc_server subclass;
+  struct Calc_add_params in;
+  Calc_add_params_ptr ip;
+  struct Calc_add_results out;
+  Calc_add_results_ptr op;
+  struct capn msg;
+
+  memset(&subclass, 0, sizeof subclass);
+  subclass.super_Calc = &server;
+  capn_init_malloc(&msg);
+  memset(&in, 0, sizeof in);
+  in.a = 19;
+  in.b = 23;
+  ip = new_Calc_add_params(capn_root(&msg).seg);
+  write_Calc_add_params(&in, ip);
+  op = new_Calc_add_results(capn_root(&msg).seg);
+
+  ASSERT_EQ(0, SubCalc_dispatch(&subclass, Calc_INTERFACE_ID, 0, ip.p, op.p));
+  memset(&out, 0, sizeof out);
+  read_Calc_add_results(&out, op);
+  EXPECT_EQ(42, out.sum);
+  EXPECT_EQ(1, calc.adds);
+  capn_free(&msg);
+}

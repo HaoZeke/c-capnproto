@@ -16,3 +16,7 @@ interface Calc {
 interface Echo {
   echo @0 (data :Data, times :UInt16 = 2) -> (data :Data, times :UInt16);
 }
+
+interface SubCalc extends(Calc) {
+  multiply @0 (a :Int32, b :Int32) -> (product :Int32);
+}
