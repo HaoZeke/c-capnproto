@@ -939,4 +939,50 @@ TEST_F(RpcJoin, TwoProvisionsOfTheSameCapabilityAreIndependent)
 	EXPECT_EQ(1, capn_rpc_pending_provisions(&conn, NULL, 0));
 }
 
+void send_release(struct capn_rpc_conn *c, uint32_t id, uint32_t count)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+
+	struct Release rel;
+	memset(&rel, 0, sizeof rel);
+	rel.id = id;
+	rel.referenceCount = count;
+	Release_ptr rp = new_Release(cs);
+	write_Release(&rel, rp);
+
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_release;
+	m.release = rp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+
+	uint8_t buf[512];
+	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
+	capn_free(&msg);
+	ASSERT_GT(sz, 0);
+	ASSERT_EQ(0, capn_rpc_handle(c, buf, static_cast<size_t>(sz)));
+}
+
+TEST_F(RpcJoin, ReleasingMoreReferencesThanHeldDropsTheExport)
+{
+	ASSERT_TRUE(conn.exports[live].used);
+	send_release(&conn, live, 0xffffffffu);
+	EXPECT_FALSE(conn.exports[live].used);
+}
+
+TEST_F(RpcJoin, ReleasingFewerReferencesKeepsTheExport)
+{
+	ASSERT_GE(conn.exports[live].refcount, 1);
+	conn.exports[live].refcount = 3;
+	send_release(&conn, live, 2);
+	EXPECT_TRUE(conn.exports[live].used);
+	EXPECT_EQ(1, conn.exports[live].refcount);
+	send_release(&conn, live, 1);
+	EXPECT_FALSE(conn.exports[live].used);
+}
+
 } // namespace

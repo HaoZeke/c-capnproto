@@ -518,9 +518,13 @@ static void handle_release(struct capn_rpc_conn *c, Release_ptr rp)
 	read_Release(&rel, rp);
 	if (rel.id >= CAPN_RPC_MAX_EXPORTS || !c->exports[rel.id].used)
 		return;
-	c->exports[rel.id].refcount -= (int)rel.referenceCount;
-	if (c->exports[rel.id].refcount <= 0)
+	/* Releasing more references than were handed out drops the export;
+	 * the count is peer-controlled, so compare before subtracting. */
+	if (c->exports[rel.id].refcount <= 0 ||
+	    rel.referenceCount >= (uint32_t) c->exports[rel.id].refcount)
 		memset(&c->exports[rel.id], 0, sizeof c->exports[rel.id]);
+	else
+		c->exports[rel.id].refcount -= (int) rel.referenceCount;
 }
 
 /* Answer one Join question with a JoinResult payload. */
