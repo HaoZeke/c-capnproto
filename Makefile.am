@@ -23,7 +23,7 @@ EXTRA_DIST += c-capnproto.pc.in
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = c-capnproto.pc
 
-EXTRA_DIST += compiler/c.capnp
+EXTRA_DIST += compiler/c.capnp compiler/capnp/stream.capnp
 capnp_DATA = compiler/c.capnp
 AM_CPPFLAGS = \
 	-I${srcdir}/compiler \
@@ -113,7 +113,9 @@ noinst_HEADERS += \
 	tests/codegen-defaults.capnp.h
 EXTRA_DIST += \
 	compiler/c.capnp \
+	compiler/capnp/stream.capnp \
 	compiler/c++.capnp \
+	scripts/check-stream-schema.sh \
 	compiler/schema.capnp \
 	compiler/test.capnp \
 	tests/addressbook.capnp \
