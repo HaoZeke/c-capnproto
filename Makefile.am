@@ -146,7 +146,8 @@ EXTRA_DIST += \
 	tests/packed-header-write-test.c \
 	.github/workflows/ci.yml \
 	interop/frame_wrap_test.c \
-	tests/gate-r5-test.cpp
+	tests/gate-r5-test.cpp \
+	cross/s390x.ini
 
 EXTRA_DIST += \
 	compiler/c.capnp \
