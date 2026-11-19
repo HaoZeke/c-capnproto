@@ -2147,10 +2147,12 @@ int capn_rpc_fd_read_frame(int fd, uint8_t **frame, size_t *len)
 	rc = fd_read_all(fd, head, 4, 1);
 	if (rc != 0)
 		return rc;
-	nsegs = ((uint32_t) head[0] | (uint32_t) head[1] << 8 | (uint32_t) head[2] << 16 |
-	         (uint32_t) head[3] << 24) + 1u;
-	if (nsegs > 1024u)
+	/* Adding one to a count of 2^32-1 would wrap to zero segments. */
+	nsegs = (uint32_t) head[0] | (uint32_t) head[1] << 8 | (uint32_t) head[2] << 16 |
+	        (uint32_t) head[3] << 24;
+	if (nsegs >= 1024u)
 		return -1;
+	nsegs += 1u;
 	/* [count-1][size x count][padding to a word] */
 	table = 4 + 4 * (size_t) nsegs;
 	table = (table + 7) & ~(size_t) 7;
@@ -2164,10 +2166,16 @@ int capn_rpc_fd_read_frame(int fd, uint8_t **frame, size_t *len)
 		const uint8_t *e = buf + 4 + 4 * (size_t) i;
 		uint32_t words = (uint32_t) e[0] | (uint32_t) e[1] << 8 | (uint32_t) e[2] << 16 |
 		                 (uint32_t) e[3] << 24;
+		if ((size_t) words > SIZE_MAX / 8)
+			goto fail;
+		if ((size_t) words * 8 > SIZE_MAX - total)
+			goto fail;
 		total += (size_t) words * 8;
 		if (total > 64u * 1024u * 1024u)
 			goto fail;
 	}
+	if (total > SIZE_MAX - table)
+		goto fail;
 	{
 		uint8_t *grown = (uint8_t *) realloc(buf, table + total);
 		if (grown == NULL)
