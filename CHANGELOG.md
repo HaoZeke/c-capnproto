@@ -40,6 +40,10 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ### Changed
 
+- The shared library soname is 1 (meson `soversion: 1`, libtool
+  `-version-info 1:0:0`, CMake `SOVERSION 1`). `capn-rpc.h` and
+  `capn-dyn.h` are new public headers. A later growth of those structs,
+  before this soname is released, bumps it again in that change.
 - `CAPN_RPC_MAX_ANSWER_BYTES` is gone: RPC frames are sized from the
   message, and `capn_rpc_answer` / `capn_rpc_question` hold heap frames
   that `capn_rpc_free` releases.
