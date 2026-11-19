@@ -343,10 +343,12 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
     # tests that compare capn-dyn output with the official tool.
     reflect_gen = custom_target(
       'reflect-capnp',
-      input: ['tests' / 'reflect.capnp', 'tests' / 'reflect-other.capnp'],
+      input: ['tests' / 'reflect.capnp', 'tests' / 'reflect-other.capnp',
+              'tests' / 'jsonann.capnp'],
       output: [
         'reflect.capnp.c', 'reflect.capnp.h',
         'reflect-other.capnp.c', 'reflect-other.capnp.h',
+        'jsonann.capnp.c', 'jsonann.capnp.h',
       ],
       command: [
         capnp, 'compile',
@@ -363,6 +365,7 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
       [
         'tests' / 'capnp-cli-interop-test.cpp',
         'tests' / 'reflect-test.cpp',
+        'tests' / 'json-ann-test.cpp',
         'tests' / 'addressbook.capnp.c',
         'compiler' / 'test.capnp.c',
         reflect_gen,
