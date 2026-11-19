@@ -7,6 +7,7 @@
  */
 
 #include "schema.capnp.h"
+#include <cstring>
 #include <gtest/gtest.h>
 
 static const uint8_t simple_schema[] = {
@@ -197,7 +198,36 @@ TEST(Schema, ReadSimple) {
 
   struct CodeGeneratorRequest req;
   read_CodeGeneratorRequest(&req, root);
-  for (int i = 0; i < capn_len(req.nodes); i++) {
+  /* nodes is a far pointer. The raw length is zero until resolved. */
+  ASSERT_EQ(2, capn_len(req.nodes));
+  struct Node file;
+  memset(&file, 0, sizeof file);
+  get_Node(&file, req.nodes, 0);
+  EXPECT_EQ(13754555573969505651ull, file.id);
+  ASSERT_NE(nullptr, file.displayName.str);
+  EXPECT_STREQ("compiler/simple.capnp", file.displayName.str);
+
+  struct Node foo;
+  memset(&foo, 0, sizeof foo);
+  get_Node(&foo, req.nodes, 1);
+  EXPECT_EQ(18431039506069174025ull, foo.id);
+  ASSERT_NE(nullptr, foo.displayName.str);
+  EXPECT_STREQ("compiler/simple.capnp:Foo", foo.displayName.str);
+  EXPECT_EQ(Node_file, file.which);
+  /* Foo's discriminant in this blob is not the struct arm. Walk fields
+   * of whichever node actually is a struct. */
+  for (int n = 0; n < capn_len(req.nodes); n++) {
+    struct Node node;
+    memset(&node, 0, sizeof node);
+    get_Node(&node, req.nodes, n);
+    if (node.which != Node__struct)
+      continue;
+    for (int i = 0; i < capn_len(node._struct.fields); i++) {
+      struct Field field;
+      memset(&field, 0, sizeof field);
+      get_Field(&field, node._struct.fields, i);
+      EXPECT_NE(nullptr, field.name.str);
+    }
   }
 
   capn_free(&ctx);
