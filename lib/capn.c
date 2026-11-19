@@ -1179,8 +1179,6 @@ static int write_ptr(struct capn_segment *s, char *d, capn_ptr p) {
 	if (p.type == CAPN_INTERFACE)
 		return write_ptr_tag(d, p, 0);
 
-	pdata = p.data - 8*p.is_composite_list;
-
 	/* CAPN_NULL or data == NULL encode as a null pointer (all-zero).
 	 * Zero-init C structs (`= {0}` / memset) omit optional pointer
 	 * fields. A STRUCT with datasz==0 && ptrs==0 and allocated data
@@ -1194,8 +1192,10 @@ static int write_ptr(struct capn_segment *s, char *d, capn_ptr p) {
 
 	} else if (!p.seg || p.seg->capn != s->capn || p.is_list_member) {
 		return NEED_TO_COPY;
+	}
 
-	} else if (p.seg == s) {
+	pdata = p.data - 8*p.is_composite_list;
+	if (p.seg == s) {
 		return write_ptr_tag(d, p, pdata - d - 8);
 
 	} else if (p.has_ptr_tag) {
