@@ -22,6 +22,16 @@ void capn_rpc_init(struct capn_rpc_conn *c, capn_rpc_send_fn send,
 	c->send = send;
 	c->send_ctx = send_ctx;
 	c->vat = &c->own_vat;
+	c->results_datasz = 8;
+	c->results_ptrs = 1;
+}
+
+void capn_rpc_set_result_size(struct capn_rpc_conn *c, int datasz, int ptrs)
+{
+	if (datasz < 0 || ptrs < 0)
+		return;
+	c->results_datasz = datasz;
+	c->results_ptrs = ptrs;
 }
 
 void capn_rpc_free(struct capn_rpc_conn *c)
@@ -527,9 +537,13 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp)
 	memset(&r, 0, sizeof r);
 	memset(&results, 0, sizeof results);
 
-	/* One data word and one pointer word is enough for the replies the
-	 * bundled servers make; a richer server allocates inside dispatch. */
-	rstruct = capn_new_struct(cs, 8, 1);
+	/* Sized by capn_rpc_set_result_size: one data word and one pointer is
+	 * enough for the bundled servers, and a richer one asks for more. */
+	rstruct = capn_new_struct(cs, c->results_datasz, c->results_ptrs);
+	if (rstruct.type == CAPN_NULL) {
+		capn_free(&msg);
+		return send_return_exception(c, call.questionId, "results too large");
+	}
 	rc = c->exports[eid].dispatch(c->exports[eid].server, call.interfaceId,
 	                              call.methodId, params.content, rstruct);
 	if (rc != 0) {
