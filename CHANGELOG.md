@@ -40,9 +40,10 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ### Changed
 
-- The shared library soname stays 1 (meson `soversion: 1`, libtool
-  `-version-info 1:0:0`, CMake `SOVERSION 1`). It moved from 0 for this
-  unreleased series and is not raised again.
+- The shared library soname is 2 (meson `soversion: 2`, libtool
+  `-version-info 2:0:0`, CMake `SOVERSION 2`). Public RPC structs grew,
+  including `capn_rpc_queued` and `capn_rpc_conn`, so a binary built
+  against soname 1 cannot use this library.
 - `struct capn_rpc_pending_call` carries `caps` and `ncaps` until
   `capn_rpc_return`. `struct capn_rpc_conn` carries `cap_dest` and
   `cap_dest_n`, which name that table during dispatch.

@@ -447,7 +447,7 @@ are not the same set.
 
 | Piece | Meson | CMake | Autotools |
 |-------|-------|-------|-----------|
-| Library | `lib/<triplet>/libcapnp_c.so`, `lib/<triplet>/libcapnp_c.so.1`, `lib/<triplet>/libcapnp_c.so.0.4.2` | static: `lib/libcapnp_c.a`. shared: `lib/libcapnp_c.so`, `lib/libcapnp_c.so.1`, `lib/libcapnp_c.so.0.4.2` | `lib/libcapnp_c.a`, `lib/libcapnp_c.la`, `lib/libcapnp_c.so`, `lib/libcapnp_c.so.1`, `lib/libcapnp_c.so.1.0.0` |
+| Library | `lib/<triplet>/libcapnp_c.so`, `lib/<triplet>/libcapnp_c.so.2`, `lib/<triplet>/libcapnp_c.so.0.4.2` | static: `lib/libcapnp_c.a`. shared: `lib/libcapnp_c.so`, `lib/libcapnp_c.so.2`, `lib/libcapnp_c.so.0.4.2` | `lib/libcapnp_c.a`, `lib/libcapnp_c.la`, `lib/libcapnp_c.so`, `lib/libcapnp_c.so.2`, `lib/libcapnp_c.so.2.0.0` |
 | pkg-config | `lib/<triplet>/pkgconfig/c-capnproto.pc` | `lib/pkgconfig/c-capnproto.pc` | `lib/pkgconfig/c-capnproto.pc` |
 | Schema | `share/c-capnproto/c.capnp` | `share/c-capnproto/c.capnp` | `include/capnp/c.capnp` |
 | CMake package | not installed | `lib/cmake/c_capnproto/c_capnprotoConfig.cmake`, `lib/cmake/c_capnproto/c_capnprotoConfigVersion.cmake`, `lib/cmake/c_capnproto/c_capnprotoTargets.cmake`, `lib/cmake/c_capnproto/c_capnprotoTargets-release.cmake` | not installed |
