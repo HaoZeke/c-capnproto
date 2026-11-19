@@ -185,6 +185,9 @@ struct capn_rpc_conn {
 	capn_rpc_dispatch_fn bootstrap_dispatch;
 	capn_rpc_send_fn send;
 	void *send_ctx;
+	/* Set once the peer sent Abort, or this side called capn_rpc_send_abort.
+	 * A connection in this state accepts no more messages. */
+	int aborted;
 	/* Size of the results struct handed to dispatch, in bytes of data and
 	 * pointer slots. capn_rpc_init sets 8 and 1. */
 	int results_datasz;
@@ -224,6 +227,13 @@ uint32_t capn_rpc_send_accept(struct capn_rpc_conn *c, uint64_t nonce, int embar
 
 /* Lift the embargo on the Accept this vat arranged with Provide. */
 int capn_rpc_send_disembargo_provide(struct capn_rpc_conn *c, uint32_t provide_qid);
+
+/* Tell the peer this connection is being torn down because of `reason`,
+ * and refuse further messages on it. Returns the send callback's result. */
+int capn_rpc_send_abort(struct capn_rpc_conn *c, const char *reason);
+
+/* 1 once the connection has aborted, from either side. */
+int capn_rpc_is_aborted(const struct capn_rpc_conn *c);
 
 /* Set the capability answered to `Bootstrap`. */
 void capn_rpc_set_bootstrap(struct capn_rpc_conn *c, void *server,

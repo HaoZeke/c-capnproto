@@ -1553,6 +1553,87 @@ int capn_rpc_pending_provisions(struct capn_rpc_conn *c, uint64_t *out, int cap)
 	return n;
 }
 
+/* Fail every question still waiting for a Return. */
+static void connection_abort(struct capn_rpc_conn *c)
+{
+	int i;
+
+	c->aborted = 1;
+	for (i = 0; i < CAPN_RPC_MAX_QUESTIONS; i++) {
+		struct capn_rpc_question *q = &c->questions[i];
+		if (q->used && !q->answered) {
+			q->answered = 1;
+			q->failed = 1;
+		}
+	}
+}
+
+/* An Unimplemented that echoes one of our Calls or Bootstraps answers that
+ * question: it will never get a Return, so it fails now rather than
+ * waiting for ever. Echoes of other messages need no action. */
+static void handle_unimplemented(struct capn_rpc_conn *c, Message_ptr orig)
+{
+	struct Message m;
+	struct capn_rpc_question *q = NULL;
+
+	if (orig.p.type == CAPN_NULL)
+		return;
+	read_Message(&m, orig);
+	if (m.which == Message_call) {
+		struct Call call;
+		read_Call(&call, m.call);
+		q = question_find(c, call.questionId);
+	} else if (m.which == Message_bootstrap) {
+		struct Bootstrap b;
+		read_Bootstrap(&b, m.bootstrap);
+		q = question_find(c, b.questionId);
+	}
+	if (q != NULL && !q->answered) {
+		q->answered = 1;
+		q->failed = 1;
+	}
+}
+
+int capn_rpc_send_abort(struct capn_rpc_conn *c, const char *reason)
+{
+	struct capn msg;
+	struct Message m;
+	struct Exception ex;
+	Message_ptr mp;
+	Exception_ptr ep;
+	struct capn_segment *cs;
+	int rc;
+
+	if (reason == NULL)
+		reason = "aborted";
+	capn_init_malloc(&msg);
+	cs = capn_root(&msg).seg;
+	memset(&m, 0, sizeof m);
+	memset(&ex, 0, sizeof ex);
+
+	ep = new_Exception(cs);
+	ex.reason.str = reason;
+	ex.reason.len = (int)strlen(reason);
+	ex.type = Exception_Type_failed;
+	write_Exception(&ex, ep);
+
+	mp = new_Message(cs);
+	m.which = Message_abort;
+	m.abort = ep;
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+
+	rc = send_message(c, &msg);
+	capn_free(&msg);
+	connection_abort(c);
+	return rc;
+}
+
+int capn_rpc_is_aborted(const struct capn_rpc_conn *c)
+{
+	return c->aborted;
+}
+
 int capn_rpc_handle(struct capn_rpc_conn *c, const uint8_t *data, size_t len)
 {
 	struct capn msg;
@@ -1561,6 +1642,8 @@ int capn_rpc_handle(struct capn_rpc_conn *c, const uint8_t *data, size_t len)
 	capn_ptr root;
 	int rc = 0;
 
+	if (c->aborted)
+		return -1;
 	if (capn_init_mem(&msg, data, len, 0) != 0)
 		return -1;
 	root = capn_getp(capn_root(&msg), 0, 1);
@@ -1610,6 +1693,17 @@ int capn_rpc_handle(struct capn_rpc_conn *c, const uint8_t *data, size_t len)
 		break;
 	case Message_accept:
 		rc = handle_accept(c, m.accept);
+		break;
+	case Message_unimplemented:
+		/* The peer did not understand something we sent. Never answer
+		 * with Unimplemented ourselves: two vats doing that to each
+		 * other would loop for ever. */
+		handle_unimplemented(c, m.unimplemented);
+		break;
+	case Message_abort:
+		/* The peer is giving up on the connection: nothing it asked is
+		 * coming back, and nothing more will be accepted from it. */
+		connection_abort(c);
 		break;
 	default:
 		/* The obsolete save/delete messages. */
