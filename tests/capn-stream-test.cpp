@@ -854,6 +854,23 @@ TEST(Stream, PackingSpecVectorZeroRun) {
   EXPECT_EQ(0, memcmp(round, unpacked.bytes, sizeof(round)));
 }
 
+TEST(Stream, PackedZerosFromAnUnalignedAddress) {
+  /* Three zero words starting one byte into the buffer. A word load
+   * at that address is unaligned. */
+  uint8_t raw[1 + 24];
+  uint8_t packed[8];
+  uint8_t back[24];
+  size_t n = 0;
+  memset(raw, 0xab, sizeof(raw));
+  memset(raw + 1, 0, 24);
+  ASSERT_EQ(0, deflate_all(raw + 1, 24, packed, sizeof(packed), &n));
+  ASSERT_EQ(2u, n);
+  EXPECT_EQ(0x00, packed[0]);
+  EXPECT_EQ(0x02, packed[1]);
+  ASSERT_EQ(0, inflate_all(packed, n, back, sizeof(back)));
+  EXPECT_EQ(0, memcmp(back, raw + 1, 24));
+}
+
 TEST(Stream, PackingSpecVectorUncompressedSpan) {
   /* encoding.html: 32 bytes of 0x8a -> ff 8a{8} 03 8a{24}. */
   AlignedData<4> unpacked;
