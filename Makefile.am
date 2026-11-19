@@ -129,6 +129,7 @@ endif
 # Meson builds its tests from a tarball, so the lists below stay
 # outside WITH_GTEST.
 EXTRA_DIST += \
+	tests/capnp-cli.h \
 	tests/null-ptr-write-test.c \
 	tests/packed-header-write-test.c
 
