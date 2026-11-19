@@ -180,6 +180,11 @@ class RpcJoin : public ::testing::Test {
 	Outbox out;
 	int calls;
 	uint32_t live;
+
+	void TearDown() override
+	{
+		capn_rpc_free(&conn);
+	}
 };
 
 TEST_F(RpcJoin, SameCapabilityJoinsAndOneResultCarriesTheCap)

@@ -192,6 +192,7 @@ int main(int argc, char **argv)
 		}
 	}
 
+	capn_rpc_free(&conn);
 	close(g_fd);
 	printf("All rpc interop assertions passed.\n");
 	return 0;
