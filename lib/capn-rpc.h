@@ -1,11 +1,11 @@
 /* Two-party Cap'n Proto RPC vat.
  *
  * Answers the level 1 messages a peer sends to a capability this vat
- * hosts, plus level 4 `Join`. Level 3 is absent by construction rather
- * than by omission: `Provide` and `Accept` introduce a capability to a
- * third vat, and a two-party connection has no way to name one --
- * rpc-twoparty.capnp declares `ThirdPartyCapId` and `RecipientId` empty,
- * "never used, because there is no third party".
+ * hosts (Bootstrap, Call, Finish, Release, pipelined calls, and the
+ * echo half of the Disembargo handshake), level 3 Provide and Accept for
+ * handing a capability to a third vat, and level 4 Join. Level 3 needs a network layer that can
+ * name a third vat, which rpc-twoparty.capnp cannot, so the vat speaks
+ * the one in rpc-threeparty.capnp instead.
  *
  * The vat owns no transport. A caller feeds it whole framed messages and
  * receives whole framed messages back through the callbacks below, so it

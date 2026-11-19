@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Orchestrates the RPC interop test: start the C++ peer, run the Fortran
-# client against it, tear down. Usage: run_rpc_interop.sh <server> <client>
+# Orchestrates the RPC interop test: start the C++ peer, run the C client
+# against it, tear down. Usage: run_rpc_interop.sh <server> <client>
 set -u
 SERVER=$1
 CLIENT=$2
