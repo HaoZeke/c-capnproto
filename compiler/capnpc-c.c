@@ -2108,7 +2108,11 @@ int main() {
 		}
 
 		if (g_val0used)
-			fprintf(srcf, "static const capn_text capn_val0 = {0,\"\",0};\n");
+			/* A named object, not a string literal: the compiler may merge
+			 * equal literals across translation units, and the writer
+			 * tells this placeholder from a caller's own "" by address. */
+			fprintf(srcf, "static const char capn_val0_str[1] = {0};\n"
+					"static const capn_text capn_val0 = {0,capn_val0_str,0};\n");
 		if (g_nullused)
 			fprintf(srcf, "static const capn_ptr capn_null = {CAPN_NULL};\n");
 

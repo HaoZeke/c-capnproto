@@ -67,9 +67,15 @@ uint32_t Person_get_id(Person_ptr p);
 
 capn_text Person_get_name(Person_ptr p);
 
+int Person_has_name(Person_ptr p);
+
 capn_text Person_get_email(Person_ptr p);
 
+int Person_has_email(Person_ptr p);
+
 Person_PhoneNumber_list Person_get_phones(Person_ptr p);
+
+int Person_has_phones(Person_ptr p);
 
 void Person_set_id(Person_ptr p, uint32_t id);
 
@@ -93,6 +99,8 @@ static const size_t Person_PhoneNumber_struct_bytes_count = 16;
 
 capn_text Person_PhoneNumber_get_number(Person_PhoneNumber_ptr p);
 
+int Person_PhoneNumber_has_number(Person_PhoneNumber_ptr p);
+
 enum Person_PhoneNumber_Type Person_PhoneNumber_get_type(Person_PhoneNumber_ptr p);
 
 void Person_PhoneNumber_set_number(Person_PhoneNumber_ptr p, capn_text number);
@@ -111,6 +119,8 @@ static const size_t AddressBook_struct_bytes_count = 8;
 
 
 Person_list AddressBook_get_people(AddressBook_ptr p);
+
+int AddressBook_has_people(AddressBook_ptr p);
 
 void AddressBook_set_people(AddressBook_ptr p, Person_list people);
 

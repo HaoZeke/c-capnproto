@@ -81,7 +81,8 @@ enum ElementSize {
 	ElementSize_pointer = 6,
 	ElementSize_inlineComposite = 7
 };
-extern uint16_t Field_noDiscriminant;
+#define FIELD_NO_DISCRIMINANT (65535)
+extern const uint16_t Field_noDiscriminant;
 enum Node_which {
 	Node_file = 0,
 	Node__struct = 1,
@@ -151,17 +152,25 @@ uint64_t Node_get_id(Node_ptr p);
 
 capn_text Node_get_displayName(Node_ptr p);
 
+int Node_has_displayName(Node_ptr p);
+
 uint32_t Node_get_displayNamePrefixLength(Node_ptr p);
 
 uint64_t Node_get_scopeId(Node_ptr p);
 
 Node_Parameter_list Node_get_parameters(Node_ptr p);
 
+int Node_has_parameters(Node_ptr p);
+
 unsigned Node_get_isGeneric(Node_ptr p);
 
 Node_NestedNode_list Node_get_nestedNodes(Node_ptr p);
 
+int Node_has_nestedNodes(Node_ptr p);
+
 Annotation_list Node_get_annotations(Node_ptr p);
+
+int Node_has_annotations(Node_ptr p);
 
 void Node_set_id(Node_ptr p, uint64_t id);
 
@@ -192,6 +201,8 @@ static const size_t Node_Parameter_struct_bytes_count = 8;
 
 capn_text Node_Parameter_get_name(Node_Parameter_ptr p);
 
+int Node_Parameter_has_name(Node_Parameter_ptr p);
+
 void Node_Parameter_set_name(Node_Parameter_ptr p, capn_text name);
 
 struct Node_NestedNode {
@@ -207,6 +218,8 @@ static const size_t Node_NestedNode_struct_bytes_count = 16;
 
 
 capn_text Node_NestedNode_get_name(Node_NestedNode_ptr p);
+
+int Node_NestedNode_has_name(Node_NestedNode_ptr p);
 
 uint64_t Node_NestedNode_get_id(Node_NestedNode_ptr p);
 
@@ -254,9 +267,13 @@ static const size_t Field_struct_bytes_count = 56;
 
 capn_text Field_get_name(Field_ptr p);
 
+int Field_has_name(Field_ptr p);
+
 uint16_t Field_get_codeOrder(Field_ptr p);
 
 Annotation_list Field_get_annotations(Field_ptr p);
+
+int Field_has_annotations(Field_ptr p);
 
 uint16_t Field_get_discriminantValue(Field_ptr p);
 
@@ -283,9 +300,13 @@ static const size_t Enumerant_struct_bytes_count = 24;
 
 capn_text Enumerant_get_name(Enumerant_ptr p);
 
+int Enumerant_has_name(Enumerant_ptr p);
+
 uint16_t Enumerant_get_codeOrder(Enumerant_ptr p);
 
 Annotation_list Enumerant_get_annotations(Enumerant_ptr p);
+
+int Enumerant_has_annotations(Enumerant_ptr p);
 
 void Enumerant_set_name(Enumerant_ptr p, capn_text name);
 
@@ -308,6 +329,8 @@ static const size_t Superclass_struct_bytes_count = 16;
 uint64_t Superclass_get_id(Superclass_ptr p);
 
 Brand_ptr Superclass_get_brand(Superclass_ptr p);
+
+int Superclass_has_brand(Superclass_ptr p);
 
 void Superclass_set_id(Superclass_ptr p, uint64_t id);
 
@@ -333,19 +356,29 @@ static const size_t Method_struct_bytes_count = 64;
 
 capn_text Method_get_name(Method_ptr p);
 
+int Method_has_name(Method_ptr p);
+
 uint16_t Method_get_codeOrder(Method_ptr p);
 
 Node_Parameter_list Method_get_implicitParameters(Method_ptr p);
+
+int Method_has_implicitParameters(Method_ptr p);
 
 uint64_t Method_get_paramStructType(Method_ptr p);
 
 Brand_ptr Method_get_paramBrand(Method_ptr p);
 
+int Method_has_paramBrand(Method_ptr p);
+
 uint64_t Method_get_resultStructType(Method_ptr p);
 
 Brand_ptr Method_get_resultBrand(Method_ptr p);
 
+int Method_has_resultBrand(Method_ptr p);
+
 Annotation_list Method_get_annotations(Method_ptr p);
+
+int Method_has_annotations(Method_ptr p);
 
 void Method_set_name(Method_ptr p, capn_text name);
 
@@ -441,6 +474,8 @@ static const size_t Brand_struct_bytes_count = 8;
 
 
 Brand_Scope_list Brand_get_scopes(Brand_ptr p);
+
+int Brand_has_scopes(Brand_ptr p);
 
 void Brand_set_scopes(Brand_ptr p, Brand_Scope_list scopes);
 enum Brand_Scope_which {
@@ -553,7 +588,11 @@ uint64_t Annotation_get_id(Annotation_ptr p);
 
 Brand_ptr Annotation_get_brand(Annotation_ptr p);
 
+int Annotation_has_brand(Annotation_ptr p);
+
 Value_ptr Annotation_get_value(Annotation_ptr p);
+
+int Annotation_has_value(Annotation_ptr p);
 
 void Annotation_set_id(Annotation_ptr p, uint64_t id);
 
@@ -575,7 +614,11 @@ static const size_t CodeGeneratorRequest_struct_bytes_count = 16;
 
 Node_list CodeGeneratorRequest_get_nodes(CodeGeneratorRequest_ptr p);
 
+int CodeGeneratorRequest_has_nodes(CodeGeneratorRequest_ptr p);
+
 CodeGeneratorRequest_RequestedFile_list CodeGeneratorRequest_get_requestedFiles(CodeGeneratorRequest_ptr p);
+
+int CodeGeneratorRequest_has_requestedFiles(CodeGeneratorRequest_ptr p);
 
 void CodeGeneratorRequest_set_nodes(CodeGeneratorRequest_ptr p, Node_list nodes);
 
@@ -598,7 +641,11 @@ uint64_t CodeGeneratorRequest_RequestedFile_get_id(CodeGeneratorRequest_Requeste
 
 capn_text CodeGeneratorRequest_RequestedFile_get_filename(CodeGeneratorRequest_RequestedFile_ptr p);
 
+int CodeGeneratorRequest_RequestedFile_has_filename(CodeGeneratorRequest_RequestedFile_ptr p);
+
 CodeGeneratorRequest_RequestedFile_Import_list CodeGeneratorRequest_RequestedFile_get_imports(CodeGeneratorRequest_RequestedFile_ptr p);
+
+int CodeGeneratorRequest_RequestedFile_has_imports(CodeGeneratorRequest_RequestedFile_ptr p);
 
 void CodeGeneratorRequest_RequestedFile_set_id(CodeGeneratorRequest_RequestedFile_ptr p, uint64_t id);
 
@@ -621,6 +668,8 @@ static const size_t CodeGeneratorRequest_RequestedFile_Import_struct_bytes_count
 uint64_t CodeGeneratorRequest_RequestedFile_Import_get_id(CodeGeneratorRequest_RequestedFile_Import_ptr p);
 
 capn_text CodeGeneratorRequest_RequestedFile_Import_get_name(CodeGeneratorRequest_RequestedFile_Import_ptr p);
+
+int CodeGeneratorRequest_RequestedFile_Import_has_name(CodeGeneratorRequest_RequestedFile_Import_ptr p);
 
 void CodeGeneratorRequest_RequestedFile_Import_set_id(CodeGeneratorRequest_RequestedFile_Import_ptr p, uint64_t id);
 

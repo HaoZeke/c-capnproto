@@ -43,6 +43,8 @@ EXTRAHEADER_EXTATTR uint32_t Widget_get_id(Widget_ptr p);
 
 EXTRAHEADER_EXTATTR capn_text Widget_get_name(Widget_ptr p);
 
+EXTRAHEADER_EXTATTR int Widget_has_name(Widget_ptr p);
+
 EXTRAHEADER_EXTATTR void Widget_set_id(Widget_ptr p, uint32_t id);
 
 EXTRAHEADER_EXTATTR void Widget_set_name(Widget_ptr p, capn_text name);
