@@ -287,3 +287,18 @@ TEST(CodegenDefaults, ConstantInitializersNameEveryField) {
   }
   EXPECT_GT(checked, 0u);
 }
+
+TEST(CodegenDefaults, EmptyPlaceholderIsNotAMergeableStringLiteral) {
+  const char *candidates[] = {
+    CODEGEN_DEFAULTS_GENERATED_C,
+    "codegen-defaults.capnp.c",
+    "tests/codegen-defaults.capnp.c",
+    "../tests/codegen-defaults.capnp.c",
+  };
+  std::string body = read_generated(candidates, sizeof(candidates) / sizeof(candidates[0]));
+  ASSERT_FALSE(body.empty()) << "could not read generated codegen-defaults.capnp.c";
+  EXPECT_NE(std::string::npos, body.find("capn_val0_str[1]"));
+  EXPECT_EQ(std::string::npos, body.find("capn_val0 = {0,\"\""))
+      << "write_ compares text pointers with the placeholder, so it must "
+         "not share an address with a caller's literal \"\" at -O2";
+}
