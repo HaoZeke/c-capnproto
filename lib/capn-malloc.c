@@ -323,6 +323,14 @@ static void header_calc(struct capn *c, uint32_t *headerlen, size_t *headersz)
 	*headersz = 4 * *headerlen;
 }
 
+static int add_size(size_t *sum, size_t n)
+{
+	if (*sum > (size_t) -1 - n)
+		return -1;
+	*sum += n;
+	return 0;
+}
+
 static int header_render(struct capn *c, struct capn_segment *seg, uint8_t *header, uint32_t headerlen, size_t *datasz)
 {
 	size_t i;
@@ -335,8 +343,11 @@ static int header_render(struct capn *c, struct capn_segment *seg, uint8_t *head
 	for (i = 0; i < c->segnum; i++, seg = seg->next) {
 		if (0 == seg)
 			return -1;
-		*datasz += seg->len;
-		val = capn_flip32(seg->len / 8);
+		if (seg->len / 8 > 0xffffffffu)
+			return -1;
+		if (add_size(datasz, seg->len))
+			return -1;
+		val = capn_flip32((uint32_t) (seg->len / 8));
 		memcpy(header + (1 + i) * sizeof(val), &val, sizeof(val));
 	}
 	if (0 != seg)
@@ -423,7 +434,7 @@ capn_write_mem(struct capn *c, uint8_t *p, size_t sz, int packed)
 	if (ret != 0)
 		return -1;
 
-	if (sz < headersz + datasz)
+	if (datasz > (size_t) -1 - headersz || sz < headersz + datasz)
 		return -1;
 
 	p += headersz;
@@ -568,7 +579,8 @@ int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, siz
 			ret = _write_fd(write_fd, fd, (uint8_t *)seg->data, seg->len);
 			if (ret < 0)
 				return -1;
-			datasz += seg->len;
+			if (add_size(&datasz, seg->len))
+				return -1;
 		}
 	}
 
@@ -656,7 +668,8 @@ int capn_write_fp(struct capn *c, FILE *f, int packed)
 			ret = _write_fp(f, seg->data, seg->len);
 			if (ret < 0)
 				return -1;
-			datasz += seg->len;
+			if (add_size(&datasz, seg->len))
+				return -1;
 		}
 	}
 
@@ -690,9 +703,12 @@ int64_t capn_size(struct capn *c)
 	for (i = 0; i < c->segnum; i++, seg = seg->next) {
 		if (0 == seg)
 			return -1;
-		datasz += seg->len;
+		if (add_size(&datasz, seg->len))
+			return -1;
 	}
 	if (0 != seg)
+		return -1;
+	if (datasz > (size_t) -1 - headersz)
 		return -1;
 
 	return (int64_t)(headersz + datasz);
