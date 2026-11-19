@@ -7,6 +7,8 @@
  */
 
 #include <gtest/gtest.h>
+#include <errno.h>
+#include <stdio.h>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -225,5 +227,30 @@ TEST(CodegenDefaults, ExplicitEmptyTextOverridesDefault) {
   memset(&back, 0, sizeof(back));
   read_Greeting(&back, g);
   EXPECT_EQ(back.hello.len, 0);
+  capn_free(&c);
+}
+
+TEST(CodegenDefaults, ReservedNamesAndVoidOnlyUnionCompile) {
+  struct capn c;
+  capn_init_malloc(&c);
+  Names_ptr p = new_Names(capn_root(&c).seg);
+
+  struct Names in;
+  memset(&in, 0, sizeof(in));
+  in._which = 7;
+  in._errno = 42;
+  in._linux = 1;
+  in._stdin = chars_to_text("in");
+  in.voids_which = Names_voids_b;
+  write_Names(&in, p);
+
+  struct Names out;
+  memset(&out, 0, sizeof(out));
+  read_Names(&out, p);
+  EXPECT_EQ(7, out._which);
+  EXPECT_EQ(42u, out._errno);
+  EXPECT_EQ(1u, out._linux);
+  EXPECT_STREQ("in", out._stdin.str);
+  EXPECT_EQ(Names_voids_b, out.voids_which);
   capn_free(&c);
 }

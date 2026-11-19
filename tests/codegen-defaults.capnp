@@ -22,6 +22,19 @@ struct Greeting {
   plain @1 :Text;
 }
 
+# Field names that collide with libc macros or with the discriminant
+# member, and a union with nothing but Void members.
+struct Names {
+  which @0 :UInt8;
+  errno @1 :UInt32;
+  linux @2 :Bool;
+  stdin @3 :Text;
+  voids :union {
+    a @4 :Void;
+    b @5 :Void;
+  }
+}
+
 struct Event {
   args @0 :List(Text);
 }
