@@ -1196,8 +1196,10 @@ static int write_ptr(struct capn_segment *s, char *d, capn_ptr p) {
 
 	} else if (!p.seg || p.seg->capn != s->capn || p.is_list_member) {
 		return NEED_TO_COPY;
+	}
 
-	} else if (p.seg == s) {
+	pdata = p.data - 8*p.is_composite_list;
+	if (p.seg == s) {
 		return write_ptr_tag(d, p, pdata - d - 8);
 
 	} else if (p.has_ptr_tag) {
