@@ -11,6 +11,7 @@
 
 #include <climits>
 #include <cstring>
+#include <string>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <deque>
@@ -40,6 +41,42 @@ int send_to_client(void *, const uint8_t *d, size_t n)
 {
 	g_wire->to_client.push_back(std::vector<uint8_t>(d, d + n));
 	return 0;
+}
+
+/* rpc.c++ handleCall: KJ_REQUIRE(!answer.active, "questionId is already in use"). */
+const char kLiveQuestionReason[] =
+	"expected !answer.active; questionId is already in use";
+
+std::string frame_abort_reason(const std::vector<uint8_t> &f)
+{
+	struct capn m;
+	if (capn_init_mem(&m, f.data(), f.size(), 0) != 0)
+		return "";
+	Message_ptr mp;
+	mp.p = capn_getp(capn_root(&m), 0, 1);
+	struct Message msg;
+	read_Message(&msg, mp);
+	if (msg.which != Message_abort || msg.abort.p.type == CAPN_NULL) {
+		capn_free(&m);
+		return "";
+	}
+	struct Exception ex;
+	memset(&ex, 0, sizeof ex);
+	read_Exception(&ex, msg.abort);
+	std::string reason;
+	if (ex.reason.str != NULL && ex.reason.len > 0)
+		reason.assign(ex.reason.str, static_cast<size_t>(ex.reason.len));
+	capn_free(&m);
+	return reason;
+}
+
+bool wire_has_abort_reason(const std::deque<std::vector<uint8_t> > &q, const char *reason)
+{
+	for (size_t i = 0; i < q.size(); i++) {
+		if (frame_abort_reason(q[i]) == reason)
+			return true;
+	}
+	return false;
 }
 
 /* Deliver everything queued for one side. */
@@ -1042,7 +1079,7 @@ TEST_F(RpcClient, ReusedQuestionIdDoesNotCompleteTheWrongCall)
 	settle();
 	uint32_t gen1 = g_parked.generation;
 	/* The id stays live until the cancelled call is returned. Finish
-	 * alone does not free it, so return before the id is reused. */
+	 * alone does not free it. */
 	capn_rpc_send_finish(&client, q);
 	settle();
 	EXPECT_EQ(-1, capn_rpc_return(&vat, q, gen1));
@@ -1067,6 +1104,84 @@ TEST_F(RpcClient, ReusedQuestionIdDoesNotCompleteTheWrongCall)
 	settle();
 	ASSERT_TRUE(capn_rpc_is_answered(&client, q2));
 	ASSERT_FALSE(capn_rpc_is_failed(&client, q2));
+	struct capn m;
+	capn_ptr content;
+	ASSERT_EQ(0, capn_rpc_answer_content(&client, q2, &m, &content));
+	EXPECT_EQ(222u, capn_read32(content, 0));
+	capn_free(&m);
+}
+
+TEST_F(RpcClient, ReusedLiveQuestionIdAbortsTheConnection)
+{
+	g_vat = &vat;
+	g_parked = Parked();
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, parking_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 0, 8, 1, NULL, NULL);
+	settle();
+	ASSERT_EQ(1, g_parked.calls);
+
+	/* The answer is still running. Reusing its questionId is a protocol
+	 * error even after Finish, until the server has returned. */
+	capn_rpc_send_finish(&client, q);
+	settle();
+	client.next_question_id = q;
+	uint32_t q2 = capn_rpc_send_call(&client, 0, 0x1234, 0, 8, 1, NULL, NULL);
+	ASSERT_EQ(q, q2);
+	pump(&vat, wire.to_vat);
+	EXPECT_TRUE(wire_has_abort_reason(wire.to_client, kLiveQuestionReason));
+	pump(&client, wire.to_client);
+	EXPECT_TRUE(capn_rpc_is_aborted(&vat));
+
+	/* An answer that has been sent and not finished is live too. */
+	struct capn_rpc_conn client2, vat2;
+	capn_rpc_init(&client2, send_to_vat, NULL);
+	capn_rpc_init(&vat2, send_to_client, NULL);
+	capn_rpc_set_bootstrap(&vat2, &doubler_calls, doubler_dispatch);
+	wire = Wire();
+	g_wire = &wire;
+	uint32_t b = capn_rpc_send_bootstrap(&client2);
+	pump(&vat2, wire.to_vat);
+	pump(&client2, wire.to_client);
+	ASSERT_TRUE(capn_rpc_is_answered(&client2, b));
+	client2.next_question_id = b;
+	capn_rpc_send_bootstrap(&client2);
+	pump(&vat2, wire.to_vat);
+	EXPECT_TRUE(wire_has_abort_reason(wire.to_client, kLiveQuestionReason));
+	EXPECT_TRUE(capn_rpc_is_aborted(&vat2));
+	capn_rpc_free(&client2);
+	capn_rpc_free(&vat2);
+}
+
+TEST_F(RpcClient, QuestionIdMayBeReusedAfterTheCallIsFullyDone)
+{
+	g_vat = &vat;
+	g_parked = Parked();
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, parking_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	uint32_t arg = 1;
+	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 0, 8, 1, fill_u32, &arg);
+	settle();
+	uint32_t gen1 = g_parked.generation;
+	capn_rpc_send_finish(&client, q);
+	settle();
+	EXPECT_EQ(-1, capn_rpc_return(&vat, q, gen1));
+	EXPECT_FALSE(capn_rpc_is_aborted(&vat));
+
+	client.next_question_id = q;
+	arg = 4;
+	uint32_t q2 = capn_rpc_send_call(&client, 0, 0x1234, 0, 8, 1, fill_u32, &arg);
+	settle();
+	ASSERT_EQ(q, q2);
+	EXPECT_FALSE(capn_rpc_is_aborted(&vat));
+	EXPECT_NE(gen1, g_parked.generation);
+	capn_write32(g_parked.results, 0, 222);
+	ASSERT_EQ(0, capn_rpc_return(&vat, q, g_parked.generation));
+	settle();
 	struct capn m;
 	capn_ptr content;
 	ASSERT_EQ(0, capn_rpc_answer_content(&client, q2, &m, &content));

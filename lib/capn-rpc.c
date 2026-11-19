@@ -17,6 +17,9 @@ static void attach_cap_table(struct capn_segment *cs, struct Payload *pl,
                              struct capn_rpc_pending_cap *caps, int n);
 static void release_unsent_caps(struct capn_rpc_conn *c,
                                 struct capn_rpc_pending_cap *caps, int n);
+static int frame_question_id(const uint8_t *data, size_t len, uint32_t *qid);
+static int question_id_in_use(struct capn_rpc_conn *c, uint32_t qid);
+static int abort_live_question(struct capn_rpc_conn *c);
 static struct capn_rpc_answer *answer_find(struct capn_rpc_conn *c,
                                            uint32_t qid);
 
@@ -413,6 +416,16 @@ static int send_answer(struct capn_rpc_conn *c, uint32_t qid, struct capn *msg,
 
 	if (buf == NULL)
 		return -1;
+	/* No producer reaches this with the id already answered: each one
+	 * checks question_id_in_use first, and a cancelled call sends
+	 * nothing. Kept so a second Return cannot overwrite the first. */
+	if (answer_find(c, qid) != NULL) {
+		free(buf);
+		if (!c->aborted)
+			capn_rpc_send_abort(c,
+			    "expected !answer.active; questionId is already in use");
+		return -1;
+	}
 	for (i = 0; i < c->answers_cap; i++) {
 		if (!c->answers[i].used) {
 			c->answers[i].used = 1;
@@ -524,40 +537,6 @@ out:
 	capn_free(&stored);
 }
 
-/* 1 when this question still occupies an answer, a call that has not
- * returned, or an unfinished Join part. */
-static int question_id_in_use(struct capn_rpc_conn *c, uint32_t qid)
-{
-	int i, k;
-
-	if (answer_find(c, qid) != NULL)
-		return 1;
-	for (i = 0; i < CAPN_RPC_MAX_PENDING_CALLS; i++) {
-		struct capn_rpc_pending_call *pc = &c->pending_calls[i];
-		if (pc->used && pc->question_id == qid)
-			return 1;
-	}
-	for (i = 0; i < CAPN_RPC_MAX_JOINS; i++) {
-		if (!c->joins[i].used)
-			continue;
-		for (k = 0; k < c->joins[i].part_count && k < CAPN_RPC_MAX_JOIN_PARTS; k++) {
-			if (c->joins[i].seen[k] && c->joins[i].qids[k] == qid)
-				return 1;
-		}
-	}
-	return 0;
-}
-
-static int abort_live_question(struct capn_rpc_conn *c)
-{
-	if (c->aborted)
-		return -1;
-	/* rpc.c++ handleCall, KJ_REQUIRE(!answer.active, "questionId is
-	 * already in use"). */
-	capn_rpc_send_abort(c, "expected !answer.active; questionId is already in use");
-	return -1;
-}
-
 /* Write a one-entry capTable naming a senderHosted export, and point
  * `slot` at it. */
 static void write_cap_payload(struct capn_segment *cs, struct Payload *pl,
@@ -617,9 +596,58 @@ static int send_return_exception(struct capn_rpc_conn *c, uint32_t qid,
 	write_Message(&m, mp);
 	capn_setp(capn_root(&msg), 0, mp.p);
 
-	rc = send_message(c, &msg);
+	/* Record the answer so the question id stays live until Finish, as
+	 * C++ does for an exception Return. */
+	rc = send_answer(c, qid, &msg, 1);
 	capn_free(&msg);
 	return rc;
+}
+
+/* 1 when this question still occupies an answer, a call that has not
+ * returned (including one Finish already cancelled), a queued frame, or
+ * an unfinished Join part. Finish does not free a running call; return
+ * does. C++ 1.4.0 does not implement Join; the join ids are included so
+ * a reused question cannot collide with one. */
+static int question_id_in_use(struct capn_rpc_conn *c, uint32_t qid)
+{
+	int i, k;
+
+	if (answer_find(c, qid) != NULL)
+		return 1;
+	for (i = 0; i < CAPN_RPC_MAX_PENDING_CALLS; i++) {
+		struct capn_rpc_pending_call *pc = &c->pending_calls[i];
+		if (pc->used && pc->question_id == qid)
+			return 1;
+	}
+	for (i = 0; i < CAPN_RPC_MAX_QUEUED; i++) {
+		uint32_t fq;
+
+		if (!c->queued[i].used || c->queued[i].frame == NULL)
+			continue;
+		if (frame_question_id(c->queued[i].frame, c->queued[i].len, &fq) == 0 &&
+		    fq == qid)
+			return 1;
+	}
+	for (i = 0; i < CAPN_RPC_MAX_JOINS; i++) {
+		if (!c->joins[i].used)
+			continue;
+		for (k = 0; k < c->joins[i].part_count && k < CAPN_RPC_MAX_JOIN_PARTS; k++) {
+			if (c->joins[i].seen[k] && c->joins[i].qids[k] == qid)
+				return 1;
+		}
+	}
+	return 0;
+}
+
+static int abort_live_question(struct capn_rpc_conn *c)
+{
+	if (c->aborted)
+		return -1;
+	/* rpc.c++ handleCall, KJ_REQUIRE(!answer.active, "questionId is
+	 * already in use"). Bootstrap's check also appends answerId; this
+	 * vat sends the Call text for every live id. */
+	capn_rpc_send_abort(c, "expected !answer.active; questionId is already in use");
+	return -1;
 }
 
 static int handle_bootstrap(struct capn_rpc_conn *c, Bootstrap_ptr bp)
