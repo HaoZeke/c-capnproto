@@ -93,7 +93,9 @@ static void fill_echo(void *ctx, capn_ptr params)
 {
 	struct capn_rpc_conn *c = (struct capn_rpc_conn *)ctx;
 	capn_ptr cap = capn_rpc_new_export_cap(c, params.seg, &g_token, token_dispatch);
-	if (c->npending > 0)
+	if (c->cap_dest != NULL && c->cap_dest_n != NULL && *c->cap_dest_n > 0)
+		g_token_id = (int)c->cap_dest[*c->cap_dest_n - 1].id;
+	else if (c->npending > 0)
 		g_token_id = (int)c->pending_caps[c->npending - 1].id;
 	capn_setp(params, 0, cap);
 }

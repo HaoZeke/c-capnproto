@@ -286,9 +286,15 @@ int record_cap_dispatch(void *, uint64_t, uint16_t, capn_ptr params, capn_ptr re
 	if (g_return_caps && results.ptrs >= 1) {
 		capn_ptr out = capn_rpc_new_export_cap(g_client, results.seg,
 		                                      &g_callback_hits, counter_dispatch);
-		if (out.type != CAPN_INTERFACE || g_client->npending < 1)
+		struct capn_rpc_pending_cap *built = g_client->pending_caps;
+		int nbuilt = g_client->npending;
+		if (g_client->cap_dest != NULL && g_client->cap_dest_n != NULL) {
+			built = g_client->cap_dest;
+			nbuilt = *g_client->cap_dest_n;
+		}
+		if (out.type != CAPN_INTERFACE || nbuilt < 1)
 			return -1;
-		g_returned_export = static_cast<int>(g_client->pending_caps[g_client->npending - 1].id);
+		g_returned_export = static_cast<int>(built[nbuilt - 1].id);
 		return capn_setp(results, 0, out);
 	}
 	if (cap.type != CAPN_INTERFACE) {
@@ -401,6 +407,34 @@ struct Parked {
 	int calls;
 };
 Parked g_parked;
+
+/* Distinct object so its export refcount is not the bootstrap's. */
+int g_held_obj;
+
+int parking_with_cap(void *, uint64_t, uint16_t, capn_ptr, capn_ptr results)
+{
+	capn_ptr cap = capn_rpc_new_export_cap(g_vat, results.seg, &g_held_obj,
+	                                       doubler_dispatch);
+	if (cap.type != CAPN_INTERFACE)
+		return -1;
+	if (capn_setp(results, 0, cap) != 0)
+		return -1;
+	g_parked.question = capn_rpc_current_question(g_vat);
+	g_parked.generation = capn_rpc_current_generation(g_vat);
+	g_parked.results = results;
+	g_parked.calls++;
+	return CAPN_RPC_PENDING;
+}
+
+int export_refcount(struct capn_rpc_conn *c, void *server)
+{
+	int i;
+	for (i = 0; i < c->exports_cap; i++) {
+		if (c->exports[i].used && c->exports[i].server == server)
+			return c->exports[i].refcount;
+	}
+	return 0;
+}
 
 int parking_dispatch(void *, uint64_t, uint16_t, capn_ptr params, capn_ptr results)
 {
@@ -1038,6 +1072,174 @@ TEST_F(RpcClient, ReusedQuestionIdDoesNotCompleteTheWrongCall)
 	capn_free(&m);
 }
 
+TEST_F(RpcClient, DeferredReturnKeepsCapsAcrossAnotherCall)
+{
+	g_vat = &vat;
+	g_parked = Parked();
+	g_held_obj = 0;
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, parking_with_cap);
+	capn_rpc_set_result_size(&vat, 8, 1);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	uint32_t q1 = capn_rpc_send_call(&client, 0, 0x1234, 0, 0, 1, NULL, NULL);
+	settle();
+	ASSERT_EQ(1, g_parked.calls);
+	uint32_t gen1 = g_parked.generation;
+	ASSERT_GT(export_refcount(&vat, &g_held_obj), 0);
+
+	/* The second call must not wipe the cap the first one already added. */
+	uint32_t q2 = capn_rpc_send_call(&client, 0, 0x1234, 0, 0, 1, NULL, NULL);
+	settle();
+	ASSERT_EQ(2, g_parked.calls);
+	uint32_t q2_id = g_parked.question;
+	uint32_t gen2 = g_parked.generation;
+	EXPECT_NE(q1, q2);
+
+	ASSERT_EQ(0, capn_rpc_return(&vat, q1, gen1));
+	settle();
+	ASSERT_TRUE(capn_rpc_is_answered(&client, q1));
+	ASSERT_FALSE(capn_rpc_is_failed(&client, q1));
+	struct capn m;
+	capn_ptr content;
+	ASSERT_EQ(0, capn_rpc_answer_content(&client, q1, &m, &content));
+	capn_ptr cap = capn_getp(content, 0, 1);
+	ASSERT_EQ(CAPN_INTERFACE, cap.type);
+	int is_export = 1;
+	int id = capn_rpc_answer_cap(&client, q1, cap, &is_export);
+	EXPECT_GE(id, 0);
+	EXPECT_EQ(0, is_export);
+	capn_free(&m);
+
+	ASSERT_EQ(0, capn_rpc_return(&vat, q2_id, gen2));
+	settle();
+	ASSERT_EQ(0, capn_rpc_answer_content(&client, q2, &m, &content));
+	cap = capn_getp(content, 0, 1);
+	ASSERT_EQ(CAPN_INTERFACE, cap.type);
+	capn_free(&m);
+}
+
+TEST_F(RpcClient, CancelledDeferredCallDropsTheUnsentExport)
+{
+	g_vat = &vat;
+	g_parked = Parked();
+	g_held_obj = 0;
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, parking_with_cap);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 0, 0, 1, NULL, NULL);
+	settle();
+	ASSERT_EQ(1, g_parked.calls);
+	EXPECT_EQ(1, export_refcount(&vat, &g_held_obj));
+
+	capn_rpc_send_finish(&client, q);
+	settle();
+	EXPECT_EQ(-1, capn_rpc_return(&vat, g_parked.question, g_parked.generation));
+	EXPECT_EQ(0, export_refcount(&vat, &g_held_obj));
+}
+
+/* A cap created after dispatch returns PENDING has to travel in the
+ * later Return. Creating it only while dispatch runs cannot see a list
+ * that was left on the connection and then abandoned. */
+TEST_F(RpcClient, DeferredCapCreatedAfterDispatchIsReturned)
+{
+	g_vat = &vat;
+	g_parked = Parked();
+	g_held_obj = 0;
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, parking_dispatch);
+	capn_rpc_set_result_size(&vat, 8, 1);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 0, 0, 1, NULL, NULL);
+	settle();
+	ASSERT_EQ(1, g_parked.calls);
+	EXPECT_EQ(0, export_refcount(&vat, &g_held_obj));
+
+	capn_ptr cap = capn_rpc_new_export_cap(&vat, g_parked.results.seg, &g_held_obj,
+	                                      doubler_dispatch);
+	ASSERT_EQ(CAPN_INTERFACE, cap.type);
+	ASSERT_EQ(0, capn_setp(g_parked.results, 0, cap));
+	EXPECT_EQ(1, export_refcount(&vat, &g_held_obj));
+	EXPECT_EQ(0, vat.npending);
+
+	ASSERT_EQ(0, capn_rpc_return(&vat, g_parked.question, g_parked.generation));
+	settle();
+	ASSERT_TRUE(capn_rpc_is_answered(&client, q));
+	ASSERT_FALSE(capn_rpc_is_failed(&client, q));
+	struct capn m;
+	capn_ptr content;
+	ASSERT_EQ(0, capn_rpc_answer_content(&client, q, &m, &content));
+	capn_ptr got = capn_getp(content, 0, 1);
+	ASSERT_EQ(CAPN_INTERFACE, got.type);
+	int is_export = 1;
+	int id = capn_rpc_answer_cap(&client, q, got, &is_export);
+	EXPECT_GE(id, 0);
+	EXPECT_EQ(0, is_export);
+	capn_free(&m);
+	EXPECT_EQ(0, vat.npending);
+	EXPECT_EQ(1, export_refcount(&vat, &g_held_obj));
+
+	/* The peer never saw the cap, so Finish of a second parked call that
+	 * added one and then cancelled must drop the export. */
+	g_parked.calls = 0;
+	uint32_t q2 = capn_rpc_send_call(&client, 0, 0x1234, 0, 0, 1, NULL, NULL);
+	settle();
+	ASSERT_EQ(1, g_parked.calls);
+	cap = capn_rpc_new_export_cap(&vat, g_parked.results.seg, &g_held_obj,
+	                             doubler_dispatch);
+	ASSERT_EQ(CAPN_INTERFACE, cap.type);
+	ASSERT_EQ(0, capn_setp(g_parked.results, 0, cap));
+	EXPECT_EQ(2, export_refcount(&vat, &g_held_obj));
+	capn_rpc_send_finish(&client, q2);
+	settle();
+	EXPECT_EQ(-1, capn_rpc_return(&vat, g_parked.question, g_parked.generation));
+	EXPECT_EQ(1, export_refcount(&vat, &g_held_obj));
+	EXPECT_EQ(0, vat.npending);
+}
+
+TEST_F(RpcClient, ManyDeferredCapsAfterDispatchDoNotExhaustThePool)
+{
+	g_vat = &vat;
+	g_parked = Parked();
+	g_held_obj = 0;
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, parking_dispatch);
+	capn_rpc_set_result_size(&vat, 8, 1);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	/* More than CAPN_RPC_MAX_PENDING_CAPS (16). A connection-global
+	 * counter that is never cleared returns a null cap after that. */
+	for (int i = 0; i < 24; i++) {
+		uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 0, 0, 1, NULL, NULL);
+		settle();
+		ASSERT_EQ(i + 1, g_parked.calls) << i;
+		capn_ptr cap = capn_rpc_new_export_cap(&vat, g_parked.results.seg,
+		                                      &g_held_obj, doubler_dispatch);
+		ASSERT_EQ(CAPN_INTERFACE, cap.type) << i;
+		ASSERT_EQ(0, capn_setp(g_parked.results, 0, cap)) << i;
+		ASSERT_EQ(0, capn_rpc_return(&vat, g_parked.question, g_parked.generation)) << i;
+		settle();
+		ASSERT_TRUE(capn_rpc_is_answered(&client, q)) << i;
+		ASSERT_FALSE(capn_rpc_is_failed(&client, q)) << i;
+		struct capn m;
+		capn_ptr content;
+		ASSERT_EQ(0, capn_rpc_answer_content(&client, q, &m, &content)) << i;
+		capn_ptr got = capn_getp(content, 0, 1);
+		ASSERT_EQ(CAPN_INTERFACE, got.type) << i;
+		int is_export = 1;
+		int id = capn_rpc_answer_cap(&client, q, got, &is_export);
+		EXPECT_GE(id, 0) << i;
+		EXPECT_EQ(0, is_export) << i;
+		capn_free(&m);
+		EXPECT_EQ(0, vat.npending) << i;
+		capn_rpc_send_finish(&client, q);
+		settle();
+	}
+	EXPECT_EQ(24, export_refcount(&vat, &g_held_obj));
+}
+
 TEST_F(RpcClient, ParkedCallsAreReleasedWithTheConnection)
 {
 	g_vat = &vat;
@@ -1648,8 +1850,14 @@ void fill_client_promise(void *ctx, capn_ptr params)
 {
 	struct capn_rpc_conn *c = static_cast<struct capn_rpc_conn *>(ctx);
 	capn_ptr cap = capn_rpc_new_promise_cap(c, params.seg, &g_fill_obj, tribble_dispatch);
-	if (c->npending > 0)
-		g_client_promise = static_cast<int>(c->pending_caps[c->npending - 1].id);
+	struct capn_rpc_pending_cap *built = c->pending_caps;
+	int nbuilt = c->npending;
+	if (c->cap_dest != NULL && c->cap_dest_n != NULL) {
+		built = c->cap_dest;
+		nbuilt = *c->cap_dest_n;
+	}
+	if (nbuilt > 0)
+		g_client_promise = static_cast<int>(built[nbuilt - 1].id);
 	capn_setp(params, 0, cap);
 }
 

@@ -309,6 +309,12 @@ struct capn_rpc_pending_call {
 	/* The peer asked us to keep the results; a later Return names them
 	 * with takeFromOtherQuestion. */
 	int redirect;
+	/* Caps this answer will carry. They stay here until return, so a
+	 * later call cannot overwrite them or drop the export refs. A cap
+	 * built in this message after dispatch returned CAPN_RPC_PENDING is
+	 * appended here too. */
+	struct capn_rpc_pending_cap caps[CAPN_RPC_MAX_PENDING_CAPS];
+	int ncaps;
 };
 
 struct capn_rpc_conn {
@@ -339,6 +345,10 @@ struct capn_rpc_conn {
 	int results_ptrs;
 	struct capn_rpc_pending_cap pending_caps[CAPN_RPC_MAX_PENDING_CAPS];
 	int npending;
+	/* While a fill callback or dispatch runs, new caps are recorded
+	 * here instead of `pending_caps`. NULL outside those callbacks. */
+	struct capn_rpc_pending_cap *cap_dest;
+	int *cap_dest_n;
 	/* The capTable of the call being dispatched, valid during dispatch. */
 	CapDescriptor_list in_caps;
 	struct capn_rpc_pending_call pending_calls[CAPN_RPC_MAX_PENDING_CALLS];
@@ -377,6 +387,11 @@ void capn_rpc_free(struct capn_rpc_conn *c);
  * complete it. */
 uint32_t capn_rpc_current_question(const struct capn_rpc_conn *c);
 uint32_t capn_rpc_current_generation(const struct capn_rpc_conn *c);
+/* Results of a deferred call, or a null pointer when that question and
+ * generation are not waiting. Valid until capn_rpc_return, including
+ * after Finish. */
+capn_ptr capn_rpc_pending_results(struct capn_rpc_conn *c, uint32_t question_id,
+                                  uint32_t generation);
 int capn_rpc_return(struct capn_rpc_conn *c, uint32_t question_id,
                     uint32_t generation);
 int capn_rpc_return_exception(struct capn_rpc_conn *c, uint32_t question_id,
@@ -488,7 +503,13 @@ uint32_t capn_rpc_send_pipelined_call(struct capn_rpc_conn *c, uint32_t question
  * with capn_setp (or in a list), and the payload's capTable is written
  * for you. `new_export_cap` hands the peer one of this vat's objects;
  * `new_import_cap` hands back a capability the peer hosts. Both return a
- * null pointer when the payload already holds CAPN_RPC_MAX_PENDING_CAPS. */
+ * null pointer when the payload already holds CAPN_RPC_MAX_PENDING_CAPS.
+ *
+ * The cap is recorded on the payload being built: the fill or dispatch
+ * that is running, or, when dispatch has already returned
+ * CAPN_RPC_PENDING, the parked call whose message contains `seg`. A cap
+ * built in any other message uses the connection pending list, which
+ * the next outgoing payload consumes. */
 capn_ptr capn_rpc_new_export_cap(struct capn_rpc_conn *c, struct capn_segment *seg,
                                  void *server, capn_rpc_dispatch_fn dispatch);
 capn_ptr capn_rpc_new_import_cap(struct capn_rpc_conn *c, struct capn_segment *seg,

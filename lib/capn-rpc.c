@@ -13,8 +13,10 @@
 #include "rpc-threeparty.capnp.h"
 
 /* Defined below, beside the rest of the answer table. */
-static void attach_cap_table(struct capn_rpc_conn *c, struct capn_segment *cs,
-                             struct Payload *pl);
+static void attach_cap_table(struct capn_segment *cs, struct Payload *pl,
+                             struct capn_rpc_pending_cap *caps, int n);
+static void release_unsent_caps(struct capn_rpc_conn *c,
+                                struct capn_rpc_pending_cap *caps, int n);
 static struct capn_rpc_answer *answer_find(struct capn_rpc_conn *c,
                                            uint32_t qid);
 
@@ -713,7 +715,8 @@ int capn_rpc_write_third_party_cap(struct capn_rpc_conn *c, CapDescriptor_ptr cd
 static void deliver_tail(struct capn_rpc_conn *c, uint32_t peer_qid);
 
 static int finish_call(struct capn_rpc_conn *c, uint32_t qid, struct capn *msg,
-                       capn_ptr rstruct, int redirect)
+                       capn_ptr rstruct, struct capn_rpc_pending_cap *caps,
+                       int ncaps, int redirect)
 {
 	struct Message m;
 	struct Return r;
@@ -730,7 +733,7 @@ static int finish_call(struct capn_rpc_conn *c, uint32_t qid, struct capn *msg,
 
 	plp = new_Payload(cs);
 	results.content = rstruct;
-	attach_cap_table(c, cs, &results);
+	attach_cap_table(cs, &results, caps, ncaps);
 	write_Payload(&results, plp);
 
 	rp = new_Return(cs);
@@ -777,8 +780,37 @@ static struct capn_rpc_pending_call *pending_find_gen(struct capn_rpc_conn *c,
 	return NULL;
 }
 
-static void pending_release(struct capn_rpc_pending_call *pc)
+/* Drop an export reference taken for a capability that will not be sent.
+ * Answer descriptors name a question, not an export, and imports are the
+ * peer's ids, so neither is released here. */
+static void release_export_ref(struct capn_rpc_conn *c, uint32_t id)
 {
+	if (id >= (uint32_t) c->exports_cap || !c->exports[id].used)
+		return;
+	if (c->exports[id].refcount <= 1)
+		memset(&c->exports[id], 0, sizeof c->exports[id]);
+	else
+		c->exports[id].refcount--;
+}
+
+static void release_unsent_caps(struct capn_rpc_conn *c,
+                                struct capn_rpc_pending_cap *caps, int n)
+{
+	int i;
+
+	if (caps == NULL || n <= 0)
+		return;
+	for (i = 0; i < n; i++) {
+		if (caps[i].kind == CAPN_RPC_CAP_ANSWER || caps[i].is_import)
+			continue;
+		release_export_ref(c, caps[i].id);
+	}
+}
+
+static void pending_release(struct capn_rpc_conn *c,
+                            struct capn_rpc_pending_call *pc)
+{
+	release_unsent_caps(c, pc->caps, pc->ncaps);
 	capn_free(pc->msg);
 	free(pc->msg);
 	memset(pc, 0, sizeof *pc);
@@ -813,25 +845,41 @@ uint32_t capn_rpc_current_generation(const struct capn_rpc_conn *c)
 	return c->current_generation;
 }
 
+capn_ptr capn_rpc_pending_results(struct capn_rpc_conn *c, uint32_t question_id,
+                                  uint32_t generation)
+{
+	struct capn_rpc_pending_call *pc = pending_find_gen(c, question_id, generation);
+	capn_ptr none;
+
+	memset(&none, 0, sizeof none);
+	if (pc == NULL)
+		return none;
+	return pc->results;
+}
+
 int capn_rpc_return(struct capn_rpc_conn *c, uint32_t question_id,
                     uint32_t generation)
 {
 	struct capn_rpc_pending_call *pc = pending_find_gen(c, question_id, generation);
 	struct capn *msg;
 	capn_ptr rstruct;
-	int redirect;
+	int redirect, ncaps, rc;
 
 	if (pc == NULL)
 		return -1;
 	if (pc->cancelled) {
-		pending_release(pc);
+		pending_release(c, pc);
 		return -1;
 	}
 	msg = pc->msg;
 	rstruct = pc->results;
 	redirect = pc->redirect;
+	ncaps = pc->ncaps;
+	/* The slot stays until the answer is recorded, so the question id
+	 * is still in use for the duration of the send. */
+	rc = finish_call(c, question_id, msg, rstruct, pc->caps, ncaps, redirect);
 	memset(pc, 0, sizeof *pc);
-	return finish_call(c, question_id, msg, rstruct, redirect);
+	return rc;
 }
 
 int capn_rpc_return_exception(struct capn_rpc_conn *c, uint32_t question_id,
@@ -839,15 +887,24 @@ int capn_rpc_return_exception(struct capn_rpc_conn *c, uint32_t question_id,
 {
 	struct capn_rpc_pending_call *pc = pending_find_gen(c, question_id, generation);
 	int cancelled;
+	int rc;
 
 	if (pc == NULL)
 		return -1;
 	cancelled = pc->cancelled;
-	pending_release(pc);
-	if (cancelled)
+	release_unsent_caps(c, pc->caps, pc->ncaps);
+	pc->ncaps = 0;
+	capn_free(pc->msg);
+	free(pc->msg);
+	pc->msg = NULL;
+	if (cancelled) {
+		memset(pc, 0, sizeof *pc);
 		return -1;
+	}
 	reject_questions(c, question_id, reason ? reason : "call failed");
-	return send_return_exception(c, question_id, reason ? reason : "call failed");
+	rc = send_return_exception(c, question_id, reason ? reason : "call failed");
+	memset(pc, 0, sizeof *pc);
+	return rc;
 }
 
 static int handle_call(struct capn_rpc_conn *c, Call_ptr cp,
@@ -941,59 +998,89 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp,
 		return send_return_exception(c, call.questionId, "out of memory");
 	capn_init_malloc(msg);
 	cs = capn_root(msg).seg;
-	c->npending = 0;
-	c->in_caps = params.capTable;
-	c->current_question = call.questionId;
-	c->current_generation = take_generation(c);
 
-	/* Sized by capn_rpc_set_result_size: one data word and one pointer is
-	 * enough for the bundled servers, and a richer one asks for more. */
-	rstruct = capn_new_struct(cs, c->results_datasz, c->results_ptrs);
-	if (rstruct.type == CAPN_NULL) {
-		c->current_question = 0;
-		c->current_generation = 0;
-		capn_free(msg);
-		free(msg);
-		return send_return_exception(c, call.questionId, "results too large");
-	}
-	rc = c->exports[eid].dispatch(c->exports[eid].server, call.interfaceId,
-	                              call.methodId, params.content, rstruct);
-	memset(&c->in_caps, 0, sizeof c->in_caps);
 	{
-		uint32_t gen = c->current_generation;
-		c->current_question = 0;
-		c->current_generation = 0;
+		struct capn_rpc_pending_cap local_caps[CAPN_RPC_MAX_PENDING_CAPS];
+		int nlocal = 0;
+		CapDescriptor_list saved_in = c->in_caps;
+		uint32_t saved_q = c->current_question;
+		uint32_t saved_g = c->current_generation;
+		struct capn_rpc_pending_cap *saved_dest = c->cap_dest;
+		int *saved_dest_n = c->cap_dest_n;
+		uint32_t gen;
+		int redirect;
 
-		if (rc == CAPN_RPC_PENDING) {
-			int i;
-			for (i = 0; i < CAPN_RPC_MAX_PENDING_CALLS; i++) {
-				if (!c->pending_calls[i].used) {
-					c->pending_calls[i].used = 1;
-					c->pending_calls[i].cancelled = 0;
-					c->pending_calls[i].question_id = call.questionId;
-					c->pending_calls[i].generation = gen;
-					c->pending_calls[i].msg = msg;
-					c->pending_calls[i].results = rstruct;
-					c->pending_calls[i].redirect =
-						call.sendResultsTo_which == Call_sendResultsTo_yourself;
-					c->npending = 0;
-					return 0;
-				}
-			}
-			c->npending = 0;
+		/* Caps created while dispatch runs go to local_caps, not the
+		 * connection list. The park slot is taken only if dispatch
+		 * returns PENDING, so a synchronous handler still runs when
+		 * every slot is already parked. */
+		c->npending = 0;
+		c->in_caps = params.capTable;
+		c->current_question = call.questionId;
+		gen = take_generation(c);
+		c->current_generation = gen;
+		c->cap_dest = local_caps;
+		c->cap_dest_n = &nlocal;
+
+		/* Sized by capn_rpc_set_result_size: one data word and one pointer is
+		 * enough for the bundled servers, and a richer one asks for more. */
+		rstruct = capn_new_struct(cs, c->results_datasz, c->results_ptrs);
+		if (rstruct.type == CAPN_NULL) {
+			c->in_caps = saved_in;
+			c->current_question = saved_q;
+			c->current_generation = saved_g;
+			c->cap_dest = saved_dest;
+			c->cap_dest_n = saved_dest_n;
 			capn_free(msg);
 			free(msg);
-			return send_return_exception(c, call.questionId, "too many pending calls");
+			return send_return_exception(c, call.questionId, "results too large");
 		}
+		rc = c->exports[eid].dispatch(c->exports[eid].server, call.interfaceId,
+		                              call.methodId, params.content, rstruct);
+		c->in_caps = saved_in;
+		c->current_question = saved_q;
+		c->current_generation = saved_g;
+		c->cap_dest = saved_dest;
+		c->cap_dest_n = saved_dest_n;
+
+		redirect = call.sendResultsTo_which == Call_sendResultsTo_yourself;
+		if (rc == CAPN_RPC_PENDING) {
+			int i;
+
+			for (i = 0; i < CAPN_RPC_MAX_PENDING_CALLS; i++) {
+				struct capn_rpc_pending_call *pc = &c->pending_calls[i];
+
+				if (pc->used)
+					continue;
+				memset(pc, 0, sizeof *pc);
+				pc->used = 1;
+				pc->cancelled = 0;
+				pc->question_id = call.questionId;
+				pc->generation = gen;
+				pc->msg = msg;
+				pc->results = rstruct;
+				pc->redirect = redirect;
+				pc->ncaps = nlocal;
+				if (nlocal > 0)
+					memcpy(pc->caps, local_caps,
+					       (size_t) nlocal * sizeof local_caps[0]);
+				return 0;
+			}
+			release_unsent_caps(c, local_caps, nlocal);
+			capn_free(msg);
+			free(msg);
+			return send_return_exception(c, call.questionId,
+			                             "too many pending calls");
+		}
+		if (rc != 0) {
+			release_unsent_caps(c, local_caps, nlocal);
+			capn_free(msg);
+			free(msg);
+			return send_return_exception(c, call.questionId, "call failed");
+		}
+		return finish_call(c, call.questionId, msg, rstruct, local_caps, nlocal,
+		                   redirect);
 	}
-	if (rc != 0) {
-		c->npending = 0;
-		capn_free(msg);
-		free(msg);
-		return send_return_exception(c, call.questionId, "call failed");
-	}
-	return finish_call(c, call.questionId, msg, rstruct,
-	                   call.sendResultsTo_which == Call_sendResultsTo_yourself);
 }
 
 static void handle_release(struct capn_rpc_conn *c, Release_ptr rp)
@@ -1516,36 +1603,36 @@ uint32_t capn_rpc_send_bootstrap(struct capn_rpc_conn *c)
 }
 
 /* Write the Payload for params or results: the content struct is already
- * filled, and any capability made while filling it is in the pending list. */
-static void attach_cap_table(struct capn_rpc_conn *c, struct capn_segment *cs,
-                             struct Payload *pl)
+ * filled, and any capability made while filling it is in `caps`. */
+static void attach_cap_table(struct capn_segment *cs, struct Payload *pl,
+                             struct capn_rpc_pending_cap *caps, int n)
 {
 	int i;
 
-	if (c->npending == 0)
+	if (n <= 0 || caps == NULL)
 		return;
-	pl->capTable = new_CapDescriptor_list(cs, c->npending);
-	for (i = 0; i < c->npending; i++) {
+	pl->capTable = new_CapDescriptor_list(cs, n);
+	for (i = 0; i < n; i++) {
 		struct CapDescriptor cd;
 		memset(&cd, 0, sizeof cd);
-		if (c->pending_caps[i].kind == CAPN_RPC_CAP_PROMISE) {
+		if (caps[i].kind == CAPN_RPC_CAP_PROMISE) {
 			cd.which = CapDescriptor_senderPromise;
-			cd.senderPromise = c->pending_caps[i].id;
-		} else if (c->pending_caps[i].kind == CAPN_RPC_CAP_ANSWER) {
+			cd.senderPromise = caps[i].id;
+		} else if (caps[i].kind == CAPN_RPC_CAP_ANSWER) {
 			struct PromisedAnswer ans;
 			PromisedAnswer_ptr pap;
-			int n = c->pending_caps[i].npath;
+			int npath = caps[i].npath;
 			int k;
 
 			memset(&ans, 0, sizeof ans);
-			ans.questionId = c->pending_caps[i].question_id;
-			if (n > 0) {
-				ans.transform = new_PromisedAnswer_Op_list(cs, n);
-				for (k = 0; k < n; k++) {
+			ans.questionId = caps[i].question_id;
+			if (npath > 0) {
+				ans.transform = new_PromisedAnswer_Op_list(cs, npath);
+				for (k = 0; k < npath; k++) {
 					struct PromisedAnswer_Op op;
 					memset(&op, 0, sizeof op);
 					op.which = PromisedAnswer_Op_getPointerField;
-					op.getPointerField = c->pending_caps[i].path[k];
+					op.getPointerField = caps[i].path[k];
 					set_PromisedAnswer_Op(&op, ans.transform, k);
 				}
 			}
@@ -1553,16 +1640,43 @@ static void attach_cap_table(struct capn_rpc_conn *c, struct capn_segment *cs,
 			write_PromisedAnswer(&ans, pap);
 			cd.which = CapDescriptor_receiverAnswer;
 			cd.receiverAnswer = pap;
-		} else if (c->pending_caps[i].is_import) {
+		} else if (caps[i].is_import) {
 			cd.which = CapDescriptor_receiverHosted;
-			cd.receiverHosted = c->pending_caps[i].id;
+			cd.receiverHosted = caps[i].id;
 		} else {
 			cd.which = CapDescriptor_senderHosted;
-			cd.senderHosted = c->pending_caps[i].id;
+			cd.senderHosted = caps[i].id;
 		}
 		set_CapDescriptor(&cd, pl->capTable, i);
 	}
-	c->npending = 0;
+}
+
+/* The table a new capability is recorded in. cap_dest is set for the
+ * duration of a fill or a dispatch. Otherwise a segment that belongs to
+ * a parked call's message records the cap on that call, so one created
+ * after dispatch returned PENDING is still in the later Return. Anything
+ * else uses the connection list, which an outgoing or held call consumes. */
+static struct capn_rpc_pending_cap *cap_build(struct capn_rpc_conn *c,
+                                              struct capn_segment *seg, int **np)
+{
+	if (c->cap_dest != NULL && c->cap_dest_n != NULL) {
+		*np = c->cap_dest_n;
+		return c->cap_dest;
+	}
+	if (seg != NULL && seg->capn != NULL) {
+		int i;
+
+		for (i = 0; i < CAPN_RPC_MAX_PENDING_CALLS; i++) {
+			struct capn_rpc_pending_call *pc = &c->pending_calls[i];
+
+			if (pc->used && pc->msg == seg->capn) {
+				*np = &pc->ncaps;
+				return pc->caps;
+			}
+		}
+	}
+	*np = &c->npending;
+	return c->pending_caps;
 }
 
 capn_ptr capn_rpc_new_export_cap(struct capn_rpc_conn *c, struct capn_segment *seg,
@@ -1570,22 +1684,27 @@ capn_ptr capn_rpc_new_export_cap(struct capn_rpc_conn *c, struct capn_segment *s
 {
 	capn_ptr p;
 	int eid;
+	int *np;
+	struct capn_rpc_pending_cap *caps;
 
 	memset(&p, 0, sizeof p);
-	if (c->npending >= CAPN_RPC_MAX_PENDING_CAPS)
+	caps = cap_build(c, seg, &np);
+	if (*np >= CAPN_RPC_MAX_PENDING_CAPS)
 		return p;
 	eid = capn_rpc_export(c, server, dispatch);
 	if (eid < 0)
 		return p;
 	p = capn_new_interface(seg, 0, 0);
-	if (p.type == CAPN_NULL)
+	if (p.type == CAPN_NULL) {
+		release_export_ref(c, (uint32_t) eid);
 		return p;
-	p.cap_idx = (uint32_t) c->npending;
-	memset(&c->pending_caps[c->npending], 0, sizeof c->pending_caps[0]);
-	c->pending_caps[c->npending].is_import = 0;
-	c->pending_caps[c->npending].kind = CAPN_RPC_CAP_HOSTED;
-	c->pending_caps[c->npending].id = (uint32_t) eid;
-	c->npending++;
+	}
+	p.cap_idx = (uint32_t) *np;
+	memset(&caps[*np], 0, sizeof caps[*np]);
+	caps[*np].is_import = 0;
+	caps[*np].kind = CAPN_RPC_CAP_HOSTED;
+	caps[*np].id = (uint32_t) eid;
+	(*np)++;
 	return p;
 }
 
@@ -1593,19 +1712,22 @@ capn_ptr capn_rpc_new_import_cap(struct capn_rpc_conn *c, struct capn_segment *s
                                  uint32_t import_id)
 {
 	capn_ptr p;
+	int *np;
+	struct capn_rpc_pending_cap *caps;
 
 	memset(&p, 0, sizeof p);
-	if (c->npending >= CAPN_RPC_MAX_PENDING_CAPS)
+	caps = cap_build(c, seg, &np);
+	if (*np >= CAPN_RPC_MAX_PENDING_CAPS)
 		return p;
 	p = capn_new_interface(seg, 0, 0);
 	if (p.type == CAPN_NULL)
 		return p;
-	p.cap_idx = (uint32_t) c->npending;
-	memset(&c->pending_caps[c->npending], 0, sizeof c->pending_caps[0]);
-	c->pending_caps[c->npending].is_import = 1;
-	c->pending_caps[c->npending].kind = CAPN_RPC_CAP_HOSTED;
-	c->pending_caps[c->npending].id = import_id;
-	c->npending++;
+	p.cap_idx = (uint32_t) *np;
+	memset(&caps[*np], 0, sizeof caps[*np]);
+	caps[*np].is_import = 1;
+	caps[*np].kind = CAPN_RPC_CAP_HOSTED;
+	caps[*np].id = import_id;
+	(*np)++;
 	return p;
 }
 
@@ -1614,21 +1736,26 @@ capn_ptr capn_rpc_new_promise_cap(struct capn_rpc_conn *c, struct capn_segment *
 {
 	capn_ptr p;
 	int eid;
+	int *np;
+	struct capn_rpc_pending_cap *caps;
 
 	memset(&p, 0, sizeof p);
-	if (c->npending >= CAPN_RPC_MAX_PENDING_CAPS)
+	caps = cap_build(c, seg, &np);
+	if (*np >= CAPN_RPC_MAX_PENDING_CAPS)
 		return p;
 	eid = capn_rpc_export_promise(c, server, dispatch);
 	if (eid < 0)
 		return p;
 	p = capn_new_interface(seg, 0, 0);
-	if (p.type == CAPN_NULL)
+	if (p.type == CAPN_NULL) {
+		release_export_ref(c, (uint32_t) eid);
 		return p;
-	p.cap_idx = (uint32_t) c->npending;
-	memset(&c->pending_caps[c->npending], 0, sizeof c->pending_caps[0]);
-	c->pending_caps[c->npending].kind = CAPN_RPC_CAP_PROMISE;
-	c->pending_caps[c->npending].id = (uint32_t) eid;
-	c->npending++;
+	}
+	p.cap_idx = (uint32_t) *np;
+	memset(&caps[*np], 0, sizeof caps[*np]);
+	caps[*np].kind = CAPN_RPC_CAP_PROMISE;
+	caps[*np].id = (uint32_t) eid;
+	(*np)++;
 	return p;
 }
 
@@ -1637,24 +1764,26 @@ capn_ptr capn_rpc_new_answer_cap(struct capn_rpc_conn *c, struct capn_segment *s
                                  int npath)
 {
 	capn_ptr p;
+	int *np;
+	struct capn_rpc_pending_cap *caps;
 
 	memset(&p, 0, sizeof p);
-	if (c->npending >= CAPN_RPC_MAX_PENDING_CAPS)
+	caps = cap_build(c, seg, &np);
+	if (*np >= CAPN_RPC_MAX_PENDING_CAPS)
 		return p;
 	if (npath < 0 || npath > CAPN_RPC_PATH_MAX || (npath > 0 && path == NULL))
 		return p;
 	p = capn_new_interface(seg, 0, 0);
 	if (p.type == CAPN_NULL)
 		return p;
-	p.cap_idx = (uint32_t) c->npending;
-	memset(&c->pending_caps[c->npending], 0, sizeof c->pending_caps[0]);
-	c->pending_caps[c->npending].kind = CAPN_RPC_CAP_ANSWER;
-	c->pending_caps[c->npending].question_id = question_id;
-	c->pending_caps[c->npending].npath = npath;
+	p.cap_idx = (uint32_t) *np;
+	memset(&caps[*np], 0, sizeof caps[*np]);
+	caps[*np].kind = CAPN_RPC_CAP_ANSWER;
+	caps[*np].question_id = question_id;
+	caps[*np].npath = npath;
 	if (npath > 0)
-		memcpy(c->pending_caps[c->npending].path, path,
-		       (size_t) npath * sizeof path[0]);
-	c->npending++;
+		memcpy(caps[*np].path, path, (size_t) npath * sizeof path[0]);
+	(*np)++;
 	return p;
 }
 
@@ -1719,6 +1848,10 @@ static uint32_t send_call_impl(struct capn_rpc_conn *c, int pipelined,
 	Payload_ptr plp;
 	struct capn_segment *cs;
 	struct capn_rpc_question *q;
+	struct capn_rpc_pending_cap local_caps[CAPN_RPC_MAX_PENDING_CAPS];
+	struct capn_rpc_pending_cap *saved_dest;
+	int *saved_n;
+	int nlocal = 0;
 	uint32_t qid = 0;
 
 	if (reuse != NULL) {
@@ -1737,9 +1870,21 @@ static uint32_t send_call_impl(struct capn_rpc_conn *c, int pipelined,
 	memset(&t, 0, sizeof t);
 	memset(&params, 0, sizeof params);
 	/* A held call already registered the caps its params point at.
-	 * A new call lets fill() build that list from scratch. */
-	if (reuse == NULL)
-		c->npending = 0;
+	 * A new call lets fill() build that list from scratch. Either way
+	 * the caps go to local_caps, so a parked answer's table is left
+	 * alone and a nested dispatch does not see this call's caps. */
+	if (reuse != NULL && c->npending > 0) {
+		nlocal = c->npending;
+		if (nlocal > CAPN_RPC_MAX_PENDING_CAPS)
+			nlocal = CAPN_RPC_MAX_PENDING_CAPS;
+		memcpy(local_caps, c->pending_caps,
+		       (size_t) nlocal * sizeof local_caps[0]);
+	}
+	c->npending = 0;
+	saved_dest = c->cap_dest;
+	saved_n = c->cap_dest_n;
+	c->cap_dest = local_caps;
+	c->cap_dest_n = &nlocal;
 
 	if (pipelined) {
 		struct PromisedAnswer pa;
@@ -1772,7 +1917,9 @@ static uint32_t send_call_impl(struct capn_rpc_conn *c, int pipelined,
 	params.content = capn_new_struct(cs, params_datasz, params_ptrs);
 	if (fill)
 		fill(fill_ctx, params.content);
-	attach_cap_table(c, cs, &params);
+	c->cap_dest = saved_dest;
+	c->cap_dest_n = saved_n;
+	attach_cap_table(cs, &params, local_caps, nlocal);
 	plp = new_Payload(cs);
 	write_Payload(&params, plp);
 
@@ -1790,6 +1937,7 @@ static uint32_t send_call_impl(struct capn_rpc_conn *c, int pipelined,
 	write_Message(&m, mp);
 	capn_setp(capn_root(&msg), 0, mp.p);
 	if (send_message(c, &msg) != 0) {
+		release_unsent_caps(c, local_caps, nlocal);
 		if (reuse != NULL) {
 			q->answered = 1;
 			q->failed = 1;
@@ -2626,14 +2774,31 @@ static uint32_t dispatch_local(struct capn_rpc_conn *c, int export_id,
 	capn_init_malloc(&rmsg);
 	cs = capn_root(&rmsg).seg;
 	results = capn_new_struct(cs, c->results_datasz, c->results_ptrs);
-	c->npending = 0;
-	rc = c->exports[eid].dispatch(c->exports[eid].server, interface_id,
-	                              method_id, params, results);
-	if (rc != 0) {
-		fail_existing(q);
-		capn_free(&pmsg);
-		capn_free(&rmsg);
-		return qid;
+	{
+		struct capn_rpc_pending_cap local_caps[CAPN_RPC_MAX_PENDING_CAPS];
+		struct capn_rpc_pending_cap *saved_dest = c->cap_dest;
+		int *saved_n = c->cap_dest_n;
+		int nlocal = 0;
+
+		c->npending = 0;
+		c->cap_dest = local_caps;
+		c->cap_dest_n = &nlocal;
+		rc = c->exports[eid].dispatch(c->exports[eid].server, interface_id,
+		                              method_id, params, results);
+		c->cap_dest = saved_dest;
+		c->cap_dest_n = saved_n;
+		if (rc != 0) {
+			release_unsent_caps(c, local_caps, nlocal);
+			fail_existing(q);
+			capn_free(&pmsg);
+			capn_free(&rmsg);
+			return qid;
+		}
+		/* The success path below reads these. */
+		c->npending = nlocal;
+		if (nlocal > 0)
+			memcpy(c->pending_caps, local_caps,
+			       (size_t) nlocal * sizeof local_caps[0]);
 	}
 	{
 		struct Message m;
@@ -2649,7 +2814,8 @@ static uint32_t dispatch_local(struct capn_rpc_conn *c, int export_id,
 		memset(&r, 0, sizeof r);
 		memset(&pl, 0, sizeof pl);
 		pl.content = results;
-		attach_cap_table(c, cs, &pl);
+		attach_cap_table(cs, &pl, c->pending_caps, c->npending);
+		c->npending = 0;
 		plp = new_Payload(cs);
 		write_Payload(&pl, plp);
 		r.answerId = qid;
@@ -2705,8 +2871,23 @@ static uint32_t hold_call(struct capn_rpc_conn *c, int mode, uint32_t import_id,
 	}
 	capn_init_malloc(msg);
 	params = capn_new_struct(capn_root(msg).seg, datasz, ptrs);
-	if (fill != NULL)
-		fill(ctx, params);
+	{
+		struct capn_rpc_pending_cap local_caps[CAPN_RPC_MAX_PENDING_CAPS];
+		struct capn_rpc_pending_cap *saved_dest = c->cap_dest;
+		int *saved_n = c->cap_dest_n;
+		int nlocal = 0;
+
+		c->cap_dest = local_caps;
+		c->cap_dest_n = &nlocal;
+		if (fill != NULL)
+			fill(ctx, params);
+		c->cap_dest = saved_dest;
+		c->cap_dest_n = saved_n;
+		c->npending = nlocal;
+		if (nlocal > 0)
+			memcpy(c->pending_caps, local_caps,
+			       (size_t) nlocal * sizeof local_caps[0]);
+	}
 	memset(&c->held[i], 0, sizeof c->held[i]);
 	c->held[i].used = 1;
 	c->held[i].mode = mode;
