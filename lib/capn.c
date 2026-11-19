@@ -2211,8 +2211,30 @@ done:
 	return rc;
 }
 
+/* Largest element count a list pointer can carry (29 bits) and the largest
+ * single allocation, which new_object takes as an int. Anything past either
+ * is refused with a null pointer rather than wrapped. */
+#define MAX_LIST_ELEMS 0x1fffffffLL
+#define MAX_ALLOC_BYTES 0x7ffffff0LL
+
+static int struct_dims_ok(int datasz, int ptrs) {
+	return datasz >= 0 && ptrs >= 0 && datasz <= 65535 * 8 && ptrs <= 65535;
+}
+
+static int alloc_ok(int64_t elems, int64_t bytes) {
+	return elems >= 0 && elems <= MAX_LIST_ELEMS && bytes >= 0 && bytes <= MAX_ALLOC_BYTES;
+}
+
+static capn_ptr null_ptr(void) {
+	capn_ptr p;
+	memset(&p, 0, sizeof(p));
+	return p;
+}
+
 capn_ptr capn_new_struct(struct capn_segment *seg, int datasz, int ptrs) {
 	capn_ptr p = {CAPN_STRUCT};
+	if (!struct_dims_ok(datasz, ptrs))
+		return null_ptr();
 	p.seg = seg;
 	p.datasz = (datasz + 7) & ~7;
 	p.ptrs = ptrs;
@@ -2240,6 +2262,9 @@ capn_ptr capn_new_struct_list(struct capn_segment *seg, int sz, int datasz, int 
 	 * and 0-pointer / 1-word / 0-word structs. List(Void) stays on
 	 * capn_new_list(seg, n, 0, 0). */
 	capn_ptr p = {CAPN_LIST};
+	if (!struct_dims_ok(datasz, ptrs) ||
+	    !alloc_ok(sz, (int64_t) sz * ((((int64_t) datasz + 7) & ~7LL) + 8LL * ptrs) + 8))
+		return null_ptr();
 	p.seg = seg;
 	p.len = sz;
 	p.is_composite_list = 1;
@@ -2256,11 +2281,15 @@ capn_ptr capn_new_struct_list(struct capn_segment *seg, int sz, int datasz, int 
 
 capn_ptr capn_new_list(struct capn_segment *seg, int sz, int datasz, int ptrs) {
 	capn_ptr p = {CAPN_LIST};
+	if (datasz < 0 || ptrs < 0 || sz < 0)
+		return null_ptr();
 	p.seg = seg;
 	p.len = sz;
 
 	if (ptrs || datasz > 8) {
 		return capn_new_struct_list(seg, sz, datasz, ptrs);
+	} else if (!alloc_ok(sz, (int64_t) sz * 8)) {
+		return null_ptr();
 	} else if (datasz > 4) {
 		p.datasz = 8;
 		new_object(&p, p.len * 8);
@@ -2277,6 +2306,10 @@ capn_ptr capn_new_list(struct capn_segment *seg, int sz, int datasz, int ptrs) {
 
 capn_list1 capn_new_list1(struct capn_segment *seg, int sz) {
 	capn_list1 l = {{CAPN_BIT_LIST}};
+	if (!alloc_ok(sz, ((int64_t) sz + 7) / 8)) {
+		l.p = null_ptr();
+		return l;
+	}
 	l.p.seg = seg;
 	l.p.datasz = (sz+7)/8;
 	l.p.len = sz;
@@ -2286,6 +2319,8 @@ capn_list1 capn_new_list1(struct capn_segment *seg, int sz) {
 
 capn_ptr capn_new_ptr_list(struct capn_segment *seg, int sz) {
 	capn_ptr p = {CAPN_PTR_LIST};
+	if (!alloc_ok(sz, (int64_t) sz * 8))
+		return null_ptr();
 	p.seg = seg;
 	p.len = sz;
 	p.ptrs = 0;
@@ -2296,8 +2331,13 @@ capn_ptr capn_new_ptr_list(struct capn_segment *seg, int sz) {
 
 capn_ptr capn_new_string(struct capn_segment *seg, const char *str, ssize_t sz) {
 	capn_ptr p = {CAPN_LIST};
+	size_t n = (sz >= 0) ? (size_t) sz : strlen(str);
+	/* p.len is n + 1, and a list length is 29 bits. MAX_ALLOC_BYTES is
+	 * wider than that, so a length in between would not fit the wire. */
+	if (n >= (size_t) MAX_LIST_ELEMS)
+		return null_ptr();
 	p.seg = seg;
-	p.len = ((sz >= 0) ? (size_t)sz : strlen(str)) + 1;
+	p.len = (int) (n + 1);
 	p.datasz = 1;
 	new_object(&p, p.len);
 	if (p.data) {

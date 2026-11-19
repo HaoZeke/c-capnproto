@@ -624,3 +624,32 @@ TEST(DecodeBounds, AddressBookRoundTrip) {
 		capn_free(&rc);
 	}
 }
+
+TEST(NewObjectLimits, RefusesSizesThatWouldWrapOrNotFit) {
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *s = capn_root(&c).seg;
+  const int bad[] = {-1, INT32_MIN, INT32_MAX, 0x20000000};
+
+  for (int n : bad) {
+    EXPECT_EQ(CAPN_NULL, capn_new_list8(s, n).p.type) << n;
+    EXPECT_EQ(CAPN_NULL, capn_new_list16(s, n).p.type) << n;
+    EXPECT_EQ(CAPN_NULL, capn_new_list32(s, n).p.type) << n;
+    EXPECT_EQ(CAPN_NULL, capn_new_list64(s, n).p.type) << n;
+    EXPECT_EQ(CAPN_NULL, capn_new_list1(s, n).p.type) << n;
+    EXPECT_EQ(CAPN_NULL, capn_new_ptr_list(s, n).type) << n;
+    EXPECT_EQ(CAPN_NULL, capn_new_struct_list(s, n, 8, 1).type) << n;
+    EXPECT_EQ(CAPN_NULL, capn_new_list(s, n, 4, 0).type) << n;
+    EXPECT_EQ(CAPN_NULL, capn_new_struct(s, n, 1).type) << n;
+    EXPECT_EQ(CAPN_NULL, capn_new_struct(s, 8, n).type) << n;
+  }
+  EXPECT_EQ(CAPN_NULL, capn_new_struct(s, 65536 * 8, 0).type);
+  EXPECT_EQ(CAPN_NULL, capn_new_struct(s, 0, 65536).type);
+  EXPECT_EQ(CAPN_NULL, capn_new_struct_list(s, 0x10000000, 8, 8).type);
+  EXPECT_EQ(CAPN_NULL, capn_new_string(s, "", (ssize_t) 0x7fffffff).type);
+
+  EXPECT_EQ(CAPN_LIST, capn_new_list8(s, 0).p.type);
+  EXPECT_EQ(CAPN_LIST, capn_new_list8(s, 5).p.type);
+  EXPECT_EQ(CAPN_STRUCT, capn_new_struct(s, 8, 1).type);
+  capn_free(&c);
+}
