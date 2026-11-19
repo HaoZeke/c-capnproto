@@ -1313,6 +1313,88 @@ static int release_provide_embargo(struct capn_rpc_conn *c, uint32_t provide_qid
  * carrying the same id. That reflection is what lets the sender know
  * every call it had already sent through a promise has arrived, so it can
  * stop routing new ones the long way round. */
+/* rpc.c++ handleDisembargo, senderLoopback. The KJ description also
+ * appends the two pointer values in brackets; those addresses are not
+ * available here, so the reason is the condition and the message. */
+static const char kDisembargoForeign[] =
+	"expected target->getBrand() == this; "
+	"'Disembargo' of type 'senderLoopback' sent to an object that "
+	"does not point back to the sender.";
+
+/*  0  still a promise: park on *wait_id
+ *  1  the resolution points back at the sender's import
+ * -1  a local object, a cycle, or a target that never resolved that way
+ */
+static int disembargo_follow(struct capn_rpc_conn *c, int export_id,
+                             int *wait_id, uint32_t *import_id)
+{
+	int seen[CAPN_RPC_MAX_TABLE_CAPACITY];
+	int nseen = 0;
+	int id = export_id;
+
+	for (;;) {
+		struct capn_rpc_export *ex;
+		int i;
+
+		if (id < 0 || id >= c->exports_cap || !c->exports[id].used)
+			return -1;
+		for (i = 0; i < nseen; i++) {
+			if (seen[i] == id)
+				return -1;
+		}
+		if (nseen >= CAPN_RPC_MAX_TABLE_CAPACITY)
+			return -1;
+		seen[nseen++] = id;
+		ex = &c->exports[id];
+		if (ex->promise) {
+			*wait_id = id;
+			return 0;
+		}
+		if (ex->has_forward_import) {
+			*import_id = ex->forward_import;
+			return 1;
+		}
+		if (ex->has_forward) {
+			id = ex->forward_export;
+			continue;
+		}
+		return -1;
+	}
+}
+
+static int park_echo(struct capn_rpc_conn *c, int export_id,
+                     const uint8_t *frame, size_t frame_len)
+{
+	int i;
+	uint8_t *copy;
+
+	if (frame == NULL || frame_len == 0)
+		return 0;
+	for (i = 0; i < CAPN_RPC_MAX_ECHOES; i++) {
+		if (!c->echoes[i].used)
+			break;
+	}
+	if (i == CAPN_RPC_MAX_ECHOES)
+		return 0;
+	copy = (uint8_t *) malloc(frame_len);
+	if (copy == NULL)
+		return 0;
+	memcpy(copy, frame, frame_len);
+	c->echoes[i].used = 1;
+	c->echoes[i].export_id = (uint32_t) export_id;
+	c->echoes[i].frame = copy;
+	c->echoes[i].len = frame_len;
+	return 0;
+}
+
+static int abort_foreign_disembargo(struct capn_rpc_conn *c)
+{
+	if (c->aborted)
+		return -1;
+	capn_rpc_send_abort(c, kDisembargoForeign);
+	return -1;
+}
+
 static int handle_disembargo(struct capn_rpc_conn *c, Disembargo_ptr dp,
                              const uint8_t *frame, size_t frame_len)
 {
@@ -1341,43 +1423,25 @@ static int handle_disembargo(struct capn_rpc_conn *c, Disembargo_ptr dp,
 	 * protocol error to ignore, not to reflect. */
 	if (tgt.kind == CAPN_RES_NONE)
 		return 0;
-	/* Calls queued on a promise must precede the echo. rpc.c++
-	 * handleDisembargo waits until the target resolves, then
-	 * evalLast so those calls are already delivered. */
-	if (tgt.kind == CAPN_RES_EXPORT &&
-	    tgt.export_id >= 0 && tgt.export_id < c->exports_cap &&
-	    c->exports[tgt.export_id].used &&
-	    c->exports[tgt.export_id].promise) {
-		int i;
-		uint8_t *copy;
-		if (frame == NULL || frame_len == 0)
-			return 0;
-		for (i = 0; i < CAPN_RPC_MAX_ECHOES; i++) {
-			if (!c->echoes[i].used)
-				break;
-		}
-		if (i == CAPN_RPC_MAX_ECHOES)
-			return 0;
-		copy = (uint8_t *) malloc(frame_len);
-		if (copy == NULL)
-			return 0;
-		memcpy(copy, frame, frame_len);
-		c->echoes[i].used = 1;
-		c->echoes[i].export_id = (uint32_t) tgt.export_id;
-		c->echoes[i].frame = copy;
-		c->echoes[i].len = frame_len;
-		return 0;
-	}
-	/* Points back at the sender: echo toward that import, not at a
-	 * local object the disembargo cannot cross. */
-	if (tgt.kind == CAPN_RES_REFLECT) {
-		/* Fall through to the echo below, but retarget it. */
-		in.target.p.type = CAPN_NULL;
-	} else if (tgt.kind == CAPN_RES_EXPORT &&
-	           c->exports[tgt.export_id].has_forward_import) {
+	/* Wait until the target settles, then follow the resolution.
+	 * Echo only when that resolution points back at the sender.
+	 * An ordinary local export is the C++ failure. */
+	if (tgt.kind == CAPN_RES_EXPORT) {
+		int wait_id = tgt.export_id;
+		uint32_t import_id = 0;
+		int followed = disembargo_follow(c, tgt.export_id, &wait_id,
+		                                 &import_id);
+		if (followed < 0)
+			return abort_foreign_disembargo(c);
+		if (followed == 0)
+			return park_echo(c, wait_id, frame, frame_len);
 		in.target.p.type = CAPN_NULL;
 		tgt.kind = CAPN_RES_REFLECT;
-		tgt.import_id = c->exports[tgt.export_id].forward_import;
+		tgt.import_id = import_id;
+	} else if (tgt.kind == CAPN_RES_REFLECT) {
+		in.target.p.type = CAPN_NULL;
+	} else {
+		return abort_foreign_disembargo(c);
 	}
 
 	capn_init_malloc(&msg);
@@ -1386,9 +1450,8 @@ static int handle_disembargo(struct capn_rpc_conn *c, Disembargo_ptr dp,
 	memset(&out, 0, sizeof out);
 
 	op = new_Disembargo(cs);
-	/* Echo the target back untouched when it already names an export
-	 * we host. A reflected resolution names the sender's import instead,
-	 * which is where rpc.c++ RpcClient::writeTarget would point. */
+	/* The echo names the sender's import, which is where rpc.c++
+	 * RpcClient::writeTarget points after the promise settles. */
 	if (tgt.kind == CAPN_RES_REFLECT) {
 		struct MessageTarget t;
 		MessageTarget_ptr tp = new_MessageTarget(cs);
