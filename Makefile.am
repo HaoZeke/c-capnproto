@@ -133,8 +133,6 @@ endif
 # Meson builds its tests from a tarball, so the lists below stay
 # outside WITH_GTEST.
 EXTRA_DIST += \
-	fuzz/read_message.c \
-	fuzz/rpc_frame.c \
 	tests/null-ptr-write-test.c \
 	tests/packed-header-write-test.c
 
@@ -212,7 +210,9 @@ EXTRA_DIST += \
 	fuzz/Person.txt \
 	fuzz/in/Person.bin \
 	fuzz/read_mem.c \
-	fuzz/read_fp.c
+	fuzz/read_fp.c \
+	fuzz/read_message.c \
+	fuzz/rpc_frame.c
 
 if WITH_GTEST
 capn_test_CPPFLAGS = $(AM_CPPFLAGS) $(GTEST_CPPFLAGS) \
