@@ -140,8 +140,6 @@ endif
 # Meson builds its tests from a tarball, so the lists below stay
 # outside WITH_GTEST.
 EXTRA_DIST += \
-	interop/rpc_promise_server.c \
-	interop/run_rpc_promise.sh \
 	tests/null-ptr-write-test.c \
 	tests/packed-header-write-test.c \
 	.github/workflows/ci.yml \
@@ -186,7 +184,9 @@ EXTRA_DIST += \
 	compiler/update-notes.md \
 	interop/rpc_client.c \
 	interop/rpc_peer_server.c++ \
+	interop/rpc_promise_server.c \
 	interop/run_rpc_interop.sh \
+	interop/run_rpc_promise.sh \
 	scripts/gen-rpc-frames.sh \
 	scripts/packaging-smoke.sh \
 	scripts/regen-generated.sh \

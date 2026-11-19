@@ -54,11 +54,54 @@ static int queue_frame(struct capn_rpc_conn *c, int export_id,
 static void flush_reject(struct capn_rpc_conn *c, int export_id,
                          const char *reason);
 static void lift_embargo(struct capn_rpc_conn *c, uint32_t embargo_id);
-static int forward_one(struct capn_rpc_conn *c, uint32_t import_id,
-                       const uint8_t *frame, size_t len);
 static void relay_on_return(struct capn_rpc_conn *c, uint32_t local_qid,
                             const uint8_t *frame, size_t len);
 static int handle_resolve(struct capn_rpc_conn *c, Resolve_ptr rp);
+
+/* What a call or disembargo target names, after walking a promised
+ * answer into the cap table of the Return that carried it. */
+enum {
+	CAPN_RES_NONE = 0,
+	CAPN_RES_EXPORT = 1,
+	CAPN_RES_REFLECT = 2,
+	CAPN_RES_PIPE = 3
+};
+
+struct capn_rpc_resolved {
+	int kind;
+	int export_id;
+	uint32_t import_id;
+	uint32_t question_id;
+	int npath;
+	uint16_t path[CAPN_RPC_PATH_MAX];
+};
+
+struct capn_rpc_copy {
+	capn_ptr ptr;
+};
+
+static void fill_from_ptr(void *ctx, capn_ptr dest);
+static int reflect_send(struct capn_rpc_conn *c, int pipelined,
+                        uint32_t target_id, const uint16_t *path, int npath,
+                        const uint8_t *frame, size_t len);
+static void resolve_message_target(struct capn_rpc_conn *c, MessageTarget_ptr tp,
+                                   struct capn_rpc_resolved *out);
+static int question_is_open(struct capn_rpc_conn *c, uint32_t qid);
+static int queue_on_question(struct capn_rpc_conn *c, uint32_t question_id,
+                             const uint8_t *data, size_t len);
+static void flush_questions(struct capn_rpc_conn *c, uint32_t question_id);
+static void reject_questions(struct capn_rpc_conn *c, uint32_t question_id,
+                             const char *reason);
+static void flush_echoes(struct capn_rpc_conn *c, int export_id);
+static void note_pipe(struct capn_rpc_conn *c, uint32_t question_id,
+                      const uint16_t *path, int npath);
+static void apply_pipeline_notes(struct capn_rpc_conn *c,
+                                 struct capn_rpc_question *q,
+                                 struct Payload *pl);
+static int relay_add(struct capn_rpc_conn *c, uint32_t local_qid, uint32_t remote_qid);
+static struct capn_rpc_import *import_slot(struct capn_rpc_conn *c, uint32_t id);
+static int send_disembargo(struct capn_rpc_conn *c, uint32_t promise_id,
+                           uint32_t embargo_id);
 
 void capn_rpc_init(struct capn_rpc_conn *c, capn_rpc_send_fn send,
                    void *send_ctx)
@@ -105,6 +148,8 @@ void capn_rpc_free(struct capn_rpc_conn *c)
 			free(c->held[i].msg);
 		}
 	}
+	for (i = 0; i < CAPN_RPC_MAX_ECHOES; i++)
+		free(c->echoes[i].frame);
 	memset(c->pending_calls, 0, sizeof c->pending_calls);
 	free(c->exports);
 	free(c->answers);
@@ -359,7 +404,8 @@ static int send_message(struct capn_rpc_conn *c, struct capn *msg)
 
 /* Send a Return and keep it until `Finish`, so a call pipelined against
  * this answer can still find the capability it names. */
-static int send_answer(struct capn_rpc_conn *c, uint32_t qid, struct capn *msg)
+static int send_answer(struct capn_rpc_conn *c, uint32_t qid, struct capn *msg,
+                       int transmit)
 {
 	size_t len;
 	uint8_t *buf = frame_alloc(msg, &len);
@@ -373,6 +419,8 @@ static int send_answer(struct capn_rpc_conn *c, uint32_t qid, struct capn *msg)
 			c->answers[i].question_id = qid;
 			c->answers[i].frame = buf;
 			c->answers[i].len = len;
+			if (!transmit)
+				return 0;
 			return c->send(c->send_ctx, buf, len);
 		}
 	}
@@ -390,6 +438,8 @@ static int send_answer(struct capn_rpc_conn *c, uint32_t qid, struct capn *msg)
 	c->answers[i].question_id = qid;
 	c->answers[i].frame = buf;
 	c->answers[i].len = len;
+	if (!transmit)
+		return 0;
 	rc = c->send(c->send_ctx, buf, len);
 	return rc;
 }
@@ -617,7 +667,7 @@ static int handle_bootstrap(struct capn_rpc_conn *c, Bootstrap_ptr bp)
 	write_Message(&m, mp);
 	capn_setp(capn_root(&msg), 0, mp.p);
 
-	rc = send_answer(c, b.questionId, &msg);
+	rc = send_answer(c, b.questionId, &msg, 1);
 	capn_free(&msg);
 	return rc;
 }
@@ -767,9 +817,11 @@ int capn_rpc_write_third_party_cap(struct capn_rpc_conn *c, CapDescriptor_ptr cd
 
 /* Send the Return for a call whose results struct is filled, and release
  * the message it was built in. */
+static void deliver_tail(struct capn_rpc_conn *c, uint32_t peer_qid);
+
 static int finish_call(struct capn_rpc_conn *c, uint32_t qid, struct capn *msg,
                        capn_ptr rstruct, struct capn_rpc_pending_cap *caps,
-                       int ncaps)
+                       int ncaps, int redirect)
 {
 	struct Message m;
 	struct Return r;
@@ -801,11 +853,20 @@ static int finish_call(struct capn_rpc_conn *c, uint32_t qid, struct capn *msg,
 	write_Message(&m, mp);
 	capn_setp(capn_root(msg), 0, mp.p);
 
-	rc = send_answer(c, qid, msg);
+	rc = send_answer(c, qid, msg, redirect ? 0 : 1);
 	/* A failed send that did not keep the answer never handed the
 	 * capabilities to the peer. */
 	if (rc != 0 && answer_find(c, qid) == NULL)
 		release_unsent_caps(c, caps, ncaps);
+	/* sendResultsTo.yourself: keep the results. The peer's Return names
+	 * this question with takeFromOtherQuestion, and only then do we send
+	 * resultsSentElsewhere. */
+	if (rc == 0 && redirect)
+		deliver_tail(c, qid);
+	else if (rc == 0)
+		flush_questions(c, qid);
+	else
+		reject_questions(c, qid, "promise released");
 	capn_free(msg);
 	free(msg);
 	return rc;
@@ -867,6 +928,7 @@ int capn_rpc_return(struct capn_rpc_conn *c, uint32_t question_id,
 	struct capn_rpc_pending_call *pc = pending_find_gen(c, question_id, generation);
 	struct capn *msg;
 	capn_ptr rstruct;
+	int redirect;
 
 	if (pc == NULL)
 		return -1;
@@ -879,13 +941,14 @@ int capn_rpc_return(struct capn_rpc_conn *c, uint32_t question_id,
 	{
 		struct capn_rpc_pending_cap caps[CAPN_RPC_MAX_PENDING_CAPS];
 		int ncaps = pc->ncaps;
+		redirect = pc->redirect;
 		if (ncaps < 0)
 			ncaps = 0;
 		if (ncaps > CAPN_RPC_MAX_PENDING_CAPS)
 			ncaps = CAPN_RPC_MAX_PENDING_CAPS;
 		memcpy(caps, pc->caps, (size_t) ncaps * sizeof caps[0]);
 		memset(pc, 0, sizeof *pc);
-		return finish_call(c, question_id, msg, rstruct, caps, ncaps);
+		return finish_call(c, question_id, msg, rstruct, caps, ncaps, redirect);
 	}
 }
 
@@ -901,6 +964,7 @@ int capn_rpc_return_exception(struct capn_rpc_conn *c, uint32_t question_id,
 	pending_release(c, pc);
 	if (cancelled)
 		return -1;
+	reject_questions(c, question_id, reason ? reason : "call failed");
 	return send_return_exception(c, question_id, reason ? reason : "call failed");
 }
 
@@ -912,7 +976,7 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp,
 	struct Payload params;
 	struct capn_segment *cs;
 	capn_ptr rstruct;
-	int eid, rc;
+	int eid = -1, rc;
 
 	read_Call(&call, cp);
 	if (question_id_in_use(c, call.questionId))
@@ -926,8 +990,45 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp,
 		note_introductions(c, &params);
 	}
 
-	eid = resolve_target(c, call.target);
-	if (eid < 0)
+	{
+		struct capn_rpc_resolved tgt;
+		struct MessageTarget mt;
+		resolve_message_target(c, call.target, &tgt);
+		/* A promised answer whose Return has not been sent yet is
+		 * queued, not failed. The peer is allowed to pipeline before
+		 * it has seen the results. rpc.c++ getMessageTarget on
+		 * PROMISED_ANSWER delivers into the still-open pipeline. */
+		if (tgt.kind == CAPN_RES_NONE) {
+			uint32_t pq = 0;
+			int is_promise = 0;
+			if (call.target.p.type != CAPN_NULL) {
+				read_MessageTarget(&mt, call.target);
+				if (mt.which == MessageTarget_promisedAnswer &&
+				    mt.promisedAnswer.p.type != CAPN_NULL) {
+					struct PromisedAnswer pa;
+					read_PromisedAnswer(&pa, mt.promisedAnswer);
+					pq = pa.questionId;
+					is_promise = 1;
+				}
+			}
+			if (is_promise && question_is_open(c, pq)) {
+				if (queue_on_question(c, pq, frame, frame_len) != 0)
+					return send_return_exception(c, call.questionId,
+					                             "promise queue full");
+				return 0;
+			}
+			return send_return_exception(c, call.questionId, "no such export");
+		}
+		/* The cap in the answer is one the caller hosts, or a question
+		 * this vat asked them. Reflect the call, swapping the cap table. */
+		if (tgt.kind == CAPN_RES_REFLECT)
+			return reflect_send(c, 0, tgt.import_id, NULL, 0, frame, frame_len);
+		if (tgt.kind == CAPN_RES_PIPE)
+			return reflect_send(c, 1, tgt.question_id, tgt.path, tgt.npath,
+			                    frame, frame_len);
+		eid = tgt.export_id;
+	}
+	if (eid < 0 || eid >= c->exports_cap || !c->exports[eid].used)
 		return send_return_exception(c, call.questionId, "no such export");
 	if (c->exports[eid].broken)
 		return send_return_exception(c, call.questionId, "broken promise");
@@ -939,8 +1040,13 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp,
 			                             "promise queue full");
 		return 0;
 	}
+	/* Tribble 4-way: once this promise resolved to import R, every
+	 * later call keeps going to R even if R has resolved further.
+	 * rpc.capnp Disembargo, "The Tribble 4-way Race Condition";
+	 * rpc.c++ PromiseClient::resolve and TribbleRaceBlocker. */
 	if (c->exports[eid].has_forward_import)
-		return forward_one(c, c->exports[eid].forward_import, frame, frame_len);
+		return reflect_send(c, 0, c->exports[eid].forward_import, NULL, 0,
+		                    frame, frame_len);
 	if (c->exports[eid].has_forward) {
 		int dest = c->exports[eid].forward_export;
 		if (dest < 0 || dest >= c->exports_cap || !c->exports[dest].used ||
@@ -989,6 +1095,8 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp,
 					pc->generation = gen;
 					pc->msg = msg;
 					pc->results = rstruct;
+					pc->redirect =
+						call.sendResultsTo_which == Call_sendResultsTo_yourself;
 					pc->ncaps = c->npending;
 					if (c->npending > 0)
 						memcpy(pc->caps, c->pending_caps,
@@ -1014,12 +1122,13 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp,
 	{
 		int n = c->npending;
 		struct capn_rpc_pending_cap caps[CAPN_RPC_MAX_PENDING_CAPS];
+		int redirect = call.sendResultsTo_which == Call_sendResultsTo_yourself;
 		if (n > CAPN_RPC_MAX_PENDING_CAPS)
 			n = CAPN_RPC_MAX_PENDING_CAPS;
 		if (n > 0)
 			memcpy(caps, c->pending_caps, (size_t) n * sizeof caps[0]);
 		c->npending = 0;
-		return finish_call(c, call.questionId, msg, rstruct, caps, n);
+		return finish_call(c, call.questionId, msg, rstruct, caps, n, redirect);
 	}
 }
 
@@ -1193,7 +1302,8 @@ static int release_provide_embargo(struct capn_rpc_conn *c, uint32_t provide_qid
  * carrying the same id. That reflection is what lets the sender know
  * every call it had already sent through a promise has arrived, so it can
  * stop routing new ones the long way round. */
-static int handle_disembargo(struct capn_rpc_conn *c, Disembargo_ptr dp)
+static int handle_disembargo(struct capn_rpc_conn *c, Disembargo_ptr dp,
+                             const uint8_t *frame, size_t frame_len)
 {
 	struct capn msg;
 	struct Disembargo in, out;
@@ -1201,6 +1311,7 @@ static int handle_disembargo(struct capn_rpc_conn *c, Disembargo_ptr dp)
 	Message_ptr mp;
 	Disembargo_ptr op;
 	struct capn_segment *cs;
+	struct capn_rpc_resolved tgt;
 	int rc;
 
 	read_Disembargo(&in, dp);
@@ -1214,8 +1325,49 @@ static int handle_disembargo(struct capn_rpc_conn *c, Disembargo_ptr dp)
 	}
 	if (in.context_which != Disembargo_context_senderLoopback)
 		return 0;
-	if (resolve_target(c, in.target) < 0)
+	resolve_message_target(c, in.target, &tgt);
+	/* A loopback aimed at something this vat does not know is a
+	 * protocol error to ignore, not to reflect. */
+	if (tgt.kind == CAPN_RES_NONE)
 		return 0;
+	/* Calls queued on a promise must precede the echo. rpc.c++
+	 * handleDisembargo waits until the target resolves, then
+	 * evalLast so those calls are already delivered. */
+	if (tgt.kind == CAPN_RES_EXPORT &&
+	    tgt.export_id >= 0 && tgt.export_id < c->exports_cap &&
+	    c->exports[tgt.export_id].used &&
+	    c->exports[tgt.export_id].promise) {
+		int i;
+		uint8_t *copy;
+		if (frame == NULL || frame_len == 0)
+			return 0;
+		for (i = 0; i < CAPN_RPC_MAX_ECHOES; i++) {
+			if (!c->echoes[i].used)
+				break;
+		}
+		if (i == CAPN_RPC_MAX_ECHOES)
+			return 0;
+		copy = (uint8_t *) malloc(frame_len);
+		if (copy == NULL)
+			return 0;
+		memcpy(copy, frame, frame_len);
+		c->echoes[i].used = 1;
+		c->echoes[i].export_id = (uint32_t) tgt.export_id;
+		c->echoes[i].frame = copy;
+		c->echoes[i].len = frame_len;
+		return 0;
+	}
+	/* Points back at the sender: echo toward that import, not at a
+	 * local object the disembargo cannot cross. */
+	if (tgt.kind == CAPN_RES_REFLECT) {
+		/* Fall through to the echo below, but retarget it. */
+		in.target.p.type = CAPN_NULL;
+	} else if (tgt.kind == CAPN_RES_EXPORT &&
+	           c->exports[tgt.export_id].has_forward_import) {
+		in.target.p.type = CAPN_NULL;
+		tgt.kind = CAPN_RES_REFLECT;
+		tgt.import_id = c->exports[tgt.export_id].forward_import;
+	}
 
 	capn_init_malloc(&msg);
 	cs = capn_root(&msg).seg;
@@ -1223,8 +1375,18 @@ static int handle_disembargo(struct capn_rpc_conn *c, Disembargo_ptr dp)
 	memset(&out, 0, sizeof out);
 
 	op = new_Disembargo(cs);
-	/* Echo the target back untouched: the sender matches on it. */
-	if (in.target.p.type != CAPN_NULL) {
+	/* Echo the target back untouched when it already names an export
+	 * we host. A reflected resolution names the sender's import instead,
+	 * which is where rpc.c++ RpcClient::writeTarget would point. */
+	if (tgt.kind == CAPN_RES_REFLECT) {
+		struct MessageTarget t;
+		MessageTarget_ptr tp = new_MessageTarget(cs);
+		memset(&t, 0, sizeof t);
+		t.which = MessageTarget_importedCap;
+		t.importedCap = tgt.import_id;
+		write_MessageTarget(&t, tp);
+		out.target = tp;
+	} else if (in.target.p.type != CAPN_NULL) {
 		MessageTarget_ptr tp = new_MessageTarget(cs);
 		struct MessageTarget t;
 		read_MessageTarget(&t, in.target);
@@ -1760,7 +1922,10 @@ static uint32_t send_call_impl(struct capn_rpc_conn *c, int pipelined,
 	memset(&call, 0, sizeof call);
 	memset(&t, 0, sizeof t);
 	memset(&params, 0, sizeof params);
-	c->npending = 0;
+	/* A held call already registered the caps its params point at.
+	 * A new call lets fill() build that list from scratch. */
+	if (reuse == NULL)
+		c->npending = 0;
 
 	if (pipelined) {
 		struct PromisedAnswer pa;
@@ -1834,10 +1999,6 @@ enum {
 	CAPN_RPC_HELD_LOCAL = 1,
 	CAPN_RPC_HELD_REMOTE = 2,
 	CAPN_RPC_HELD_PIPE = 3
-};
-
-struct capn_rpc_copy {
-	capn_ptr ptr;
 };
 
 static void fill_from_ptr(void *ctx, capn_ptr dest)
@@ -1919,6 +2080,7 @@ static int queue_frame(struct capn_rpc_conn *c, int export_id,
 		return -1;
 	memcpy(copy, data, len);
 	c->queued[i].used = 1;
+	c->queued[i].on_question = 0;
 	c->queued[i].export_id = export_id;
 	c->queued[i].frame = copy;
 	c->queued[i].len = len;
@@ -1946,19 +2108,521 @@ static int frame_question_id(const uint8_t *data, size_t len, uint32_t *qid)
 	return 0;
 }
 
-static void flush_reject(struct capn_rpc_conn *c, int export_id, const char *reason)
+/* Scalar view of one CapDescriptor, so the message it was read from
+ * can be freed before the caller writes a new one. */
+struct capn_rpc_capid {
+	int which;
+	uint32_t id;
+	uint32_t question_id;
+	int npath;
+	uint16_t path[CAPN_RPC_PATH_MAX];
+};
+
+static void ops_to_path(PromisedAnswer_Op_list transform, uint16_t *path, int *npath)
+{
+	int n = capn_len(transform);
+	int i, k = 0;
+
+	for (i = 0; i < n && k < CAPN_RPC_PATH_MAX; i++) {
+		struct PromisedAnswer_Op op;
+		get_PromisedAnswer_Op(&op, transform, i);
+		if (op.which == PromisedAnswer_Op_getPointerField)
+			path[k++] = op.getPointerField;
+	}
+	*npath = k;
+}
+
+/* The capability a stored Return names after walking `path`. */
+static int cap_in_answer(struct capn_rpc_conn *c, uint32_t question_id,
+                         const uint16_t *path, int npath,
+                         struct capn_rpc_capid *out)
+{
+	struct capn_rpc_answer *a;
+	struct capn stored;
+	struct Message m;
+	struct Return r;
+	struct Payload pl;
+	struct CapDescriptor cd;
+	Message_ptr mp;
+	capn_ptr cursor;
+	int i, ok = 0;
+
+	memset(out, 0, sizeof *out);
+	out->which = -1;
+	a = answer_find(c, question_id);
+	if (a == NULL)
+		return 0;
+	if (capn_init_mem(&stored, a->frame, a->len, 0) != 0)
+		return 0;
+	mp.p = capn_getp(capn_root(&stored), 0, 1);
+	read_Message(&m, mp);
+	if (m.which != Message__return)
+		goto done;
+	read_Return(&r, m._return);
+	if (r.which != Return_results)
+		goto done;
+	read_Payload(&pl, r.results);
+	cursor = pl.content;
+	for (i = 0; i < npath; i++) {
+		capn_resolve(&cursor);
+		if (cursor.type != CAPN_STRUCT)
+			goto done;
+		cursor = capn_getp(cursor, path[i], 0);
+	}
+	capn_resolve(&cursor);
+	if (cursor.type != CAPN_INTERFACE)
+		goto done;
+	if (capn_len(pl.capTable) < 0 ||
+	    cursor.cap_idx > (uint32_t) INT_MAX ||
+	    (int) cursor.cap_idx >= capn_len(pl.capTable))
+		goto done;
+	get_CapDescriptor(&cd, pl.capTable, (int) cursor.cap_idx);
+	out->which = (int) cd.which;
+	if (cd.which == CapDescriptor_senderHosted)
+		out->id = cd.senderHosted;
+	else if (cd.which == CapDescriptor_senderPromise)
+		out->id = cd.senderPromise;
+	else if (cd.which == CapDescriptor_receiverHosted)
+		out->id = cd.receiverHosted;
+	else if (cd.which == CapDescriptor_receiverAnswer &&
+	         cd.receiverAnswer.p.type != CAPN_NULL) {
+		struct PromisedAnswer pa;
+		read_PromisedAnswer(&pa, cd.receiverAnswer);
+		out->question_id = pa.questionId;
+		ops_to_path(pa.transform, out->path, &out->npath);
+	} else if (cd.which == CapDescriptor_thirdPartyHosted &&
+	           cd.thirdPartyHosted.p.type != CAPN_NULL) {
+		struct ThirdPartyCapDescriptor tp;
+		read_ThirdPartyCapDescriptor(&tp, cd.thirdPartyHosted);
+		out->id = tp.vineId;
+	} else {
+		goto done;
+	}
+	ok = 1;
+done:
+	capn_free(&stored);
+	return ok;
+}
+
+static int write_capid(struct capn_segment *cs, const struct capn_rpc_capid *cap,
+                       struct CapDescriptor *out)
+{
+	memset(out, 0, sizeof *out);
+	out->attachedFd = 0xff;
+	switch (cap->which) {
+	case CapDescriptor_senderHosted:
+		out->which = CapDescriptor_senderHosted;
+		out->senderHosted = cap->id;
+		return 1;
+	case CapDescriptor_senderPromise:
+		out->which = CapDescriptor_senderPromise;
+		out->senderPromise = cap->id;
+		return 1;
+	case CapDescriptor_receiverHosted:
+	case CapDescriptor_thirdPartyHosted:
+		/* A third-party cap we ourselves returned is reached through
+		 * its vine, which is an export of ours. */
+		out->which = cap->which == CapDescriptor_thirdPartyHosted ?
+		             CapDescriptor_senderHosted : CapDescriptor_receiverHosted;
+		if (cap->which == CapDescriptor_thirdPartyHosted)
+			out->senderHosted = cap->id;
+		else
+			out->receiverHosted = cap->id;
+		return 1;
+	case CapDescriptor_receiverAnswer: {
+		struct PromisedAnswer pa;
+		PromisedAnswer_ptr pap;
+		int i;
+
+		memset(&pa, 0, sizeof pa);
+		pa.questionId = cap->question_id;
+		if (cap->npath > 0) {
+			pa.transform = new_PromisedAnswer_Op_list(cs, cap->npath);
+			for (i = 0; i < cap->npath; i++) {
+				struct PromisedAnswer_Op op;
+				memset(&op, 0, sizeof op);
+				op.which = PromisedAnswer_Op_getPointerField;
+				op.getPointerField = cap->path[i];
+				set_PromisedAnswer_Op(&op, pa.transform, i);
+			}
+		}
+		pap = new_PromisedAnswer(cs);
+		write_PromisedAnswer(&pa, pap);
+		out->which = CapDescriptor_receiverAnswer;
+		out->receiverAnswer = pap;
+		return 1;
+	}
+	default:
+		return 0;
+	}
+}
+
+/* Copy `src` into `cs` with sender and receiver swapped. A call or
+ * return reflected to the party that sent it has to rename every
+ * hosted field: their export is now an import, and ours is now an
+ * export. rpc.c++ writeDescriptor / receiveCap do the same rename by
+ * rebuilding the table from capability objects. Level 1 turns
+ * thirdPartyHosted into the vine (rpc.capnp, CapDescriptor). */
+static CapDescriptor_list rewrite_cap_table(struct capn_rpc_conn *c,
+                                            struct capn_segment *cs,
+                                            CapDescriptor_list src)
+{
+	CapDescriptor_list dst;
+	int n = capn_len(src);
+	int i;
+
+	memset(&dst, 0, sizeof dst);
+	if (n <= 0)
+		return dst;
+	dst = new_CapDescriptor_list(cs, n);
+	for (i = 0; i < n; i++) {
+		struct CapDescriptor in, out;
+		get_CapDescriptor(&in, src, i);
+		memset(&out, 0, sizeof out);
+		out.attachedFd = in.attachedFd;
+		switch (in.which) {
+		case CapDescriptor_none:
+			out.which = CapDescriptor_none;
+			break;
+		case CapDescriptor_senderHosted:
+			out.which = CapDescriptor_receiverHosted;
+			out.receiverHosted = in.senderHosted;
+			break;
+		case CapDescriptor_senderPromise:
+			/* The peer hosts this export and already tracks whether
+			 * it is still a promise. */
+			out.which = CapDescriptor_receiverHosted;
+			out.receiverHosted = in.senderPromise;
+			break;
+		case CapDescriptor_receiverHosted:
+			if (in.receiverHosted < (uint32_t) c->exports_cap &&
+			    c->exports[in.receiverHosted].used &&
+			    c->exports[in.receiverHosted].promise) {
+				out.which = CapDescriptor_senderPromise;
+				out.senderPromise = in.receiverHosted;
+			} else {
+				out.which = CapDescriptor_senderHosted;
+				out.senderHosted = in.receiverHosted;
+			}
+			break;
+		case CapDescriptor_receiverAnswer: {
+			struct PromisedAnswer pa;
+			struct capn_rpc_capid cap;
+			uint16_t path[CAPN_RPC_PATH_MAX];
+			int npath = 0;
+
+			if (in.receiverAnswer.p.type == CAPN_NULL) {
+				out.which = CapDescriptor_none;
+				break;
+			}
+			read_PromisedAnswer(&pa, in.receiverAnswer);
+			ops_to_path(pa.transform, path, &npath);
+			if (!cap_in_answer(c, pa.questionId, path, npath, &cap) ||
+			    !write_capid(cs, &cap, &out))
+				out.which = CapDescriptor_none;
+			break;
+		}
+		case CapDescriptor_thirdPartyHosted: {
+			struct ThirdPartyCapDescriptor tp;
+			memset(&tp, 0, sizeof tp);
+			if (in.thirdPartyHosted.p.type != CAPN_NULL)
+				read_ThirdPartyCapDescriptor(&tp, in.thirdPartyHosted);
+			out.which = CapDescriptor_receiverHosted;
+			out.receiverHosted = tp.vineId;
+			break;
+		}
+		default:
+			out.which = CapDescriptor_none;
+			break;
+		}
+		set_CapDescriptor(&out, dst, i);
+	}
+	return dst;
+}
+
+static void resolve_message_target(struct capn_rpc_conn *c, MessageTarget_ptr tp,
+                                   struct capn_rpc_resolved *out)
+{
+	struct MessageTarget t;
+
+	memset(out, 0, sizeof *out);
+	out->kind = CAPN_RES_NONE;
+	out->export_id = -1;
+	if (tp.p.type == CAPN_NULL)
+		return;
+	read_MessageTarget(&t, tp);
+	if (t.which == MessageTarget_importedCap) {
+		if (t.importedCap < (uint32_t) c->exports_cap &&
+		    c->exports[t.importedCap].used) {
+			out->kind = CAPN_RES_EXPORT;
+			out->export_id = (int) t.importedCap;
+		}
+		return;
+	}
+	if (t.which != MessageTarget_promisedAnswer ||
+	    t.promisedAnswer.p.type == CAPN_NULL)
+		return;
+	{
+		struct PromisedAnswer pa;
+		struct capn_rpc_capid cap;
+		uint16_t path[CAPN_RPC_PATH_MAX];
+		int npath = 0;
+
+		read_PromisedAnswer(&pa, t.promisedAnswer);
+		ops_to_path(pa.transform, path, &npath);
+		if (!cap_in_answer(c, pa.questionId, path, npath, &cap))
+			return;
+		if (cap.which == CapDescriptor_senderHosted ||
+		    cap.which == CapDescriptor_senderPromise ||
+		    cap.which == CapDescriptor_thirdPartyHosted) {
+			if (cap.id < (uint32_t) c->exports_cap &&
+			    c->exports[cap.id].used) {
+				out->kind = CAPN_RES_EXPORT;
+				out->export_id = (int) cap.id;
+			}
+			return;
+		}
+		if (cap.which == CapDescriptor_receiverHosted) {
+			out->kind = CAPN_RES_REFLECT;
+			out->import_id = cap.id;
+			return;
+		}
+		if (cap.which == CapDescriptor_receiverAnswer) {
+			out->kind = CAPN_RES_PIPE;
+			out->question_id = cap.question_id;
+			out->npath = cap.npath;
+			if (cap.npath > 0)
+				memcpy(out->path, cap.path,
+				       (size_t) cap.npath * sizeof cap.path[0]);
+		}
+	}
+}
+
+static int question_is_open(struct capn_rpc_conn *c, uint32_t qid)
+{
+	int i;
+
+	if (answer_find(c, qid) != NULL)
+		return 0;
+	if (c->current_question == qid && c->current_generation != 0)
+		return 1;
+	for (i = 0; i < CAPN_RPC_MAX_PENDING_CALLS; i++) {
+		if (c->pending_calls[i].used && !c->pending_calls[i].cancelled &&
+		    c->pending_calls[i].question_id == qid)
+			return 1;
+	}
+	return 0;
+}
+
+static int queue_on_question(struct capn_rpc_conn *c, uint32_t question_id,
+                             const uint8_t *data, size_t len)
+{
+	int i;
+	uint8_t *copy;
+
+	if (data == NULL || len == 0)
+		return -1;
+	for (i = 0; i < CAPN_RPC_MAX_QUEUED; i++) {
+		if (!c->queued[i].used)
+			break;
+	}
+	if (i == CAPN_RPC_MAX_QUEUED)
+		return -1;
+	copy = (uint8_t *) malloc(len);
+	if (copy == NULL)
+		return -1;
+	memcpy(copy, data, len);
+	memset(&c->queued[i], 0, sizeof c->queued[i]);
+	c->queued[i].used = 1;
+	c->queued[i].on_question = 1;
+	c->queued[i].question_id = question_id;
+	c->queued[i].frame = copy;
+	c->queued[i].len = len;
+	return 0;
+}
+
+static void flush_questions(struct capn_rpc_conn *c, uint32_t question_id)
+{
+	int i;
+
+	for (i = 0; i < CAPN_RPC_MAX_QUEUED; i++) {
+		uint8_t *frame;
+		size_t len;
+		if (!c->queued[i].used || !c->queued[i].on_question ||
+		    c->queued[i].question_id != question_id)
+			continue;
+		frame = c->queued[i].frame;
+		len = c->queued[i].len;
+		memset(&c->queued[i], 0, sizeof c->queued[i]);
+		capn_rpc_handle(c, frame, len);
+		free(frame);
+	}
+}
+
+static void reject_questions(struct capn_rpc_conn *c, uint32_t question_id,
+                             const char *reason)
 {
 	int i;
 
 	for (i = 0; i < CAPN_RPC_MAX_QUEUED; i++) {
 		uint32_t qid;
-		if (!c->queued[i].used || c->queued[i].export_id != export_id)
+		if (!c->queued[i].used || !c->queued[i].on_question ||
+		    c->queued[i].question_id != question_id)
 			continue;
 		if (frame_question_id(c->queued[i].frame, c->queued[i].len, &qid) == 0)
 			send_return_exception(c, qid, reason ? reason : "promise released");
 		free(c->queued[i].frame);
 		memset(&c->queued[i], 0, sizeof c->queued[i]);
 	}
+}
+
+static void flush_echoes(struct capn_rpc_conn *c, int export_id)
+{
+	int i;
+
+	for (i = 0; i < CAPN_RPC_MAX_ECHOES; i++) {
+		uint8_t *frame;
+		size_t len;
+		if (!c->echoes[i].used ||
+		    c->echoes[i].export_id != (uint32_t) export_id)
+			continue;
+		frame = c->echoes[i].frame;
+		len = c->echoes[i].len;
+		memset(&c->echoes[i], 0, sizeof c->echoes[i]);
+		capn_rpc_handle(c, frame, len);
+		free(frame);
+	}
+}
+
+/* Send `frame` back to the peer, either at `target_id` as an import or,
+ * when `pipelined` is set, as a promised answer. The cap table is kept
+ * and its hosted fields are swapped. The Return is relayed onto the
+ * question id in the original call. */
+static int reflect_send(struct capn_rpc_conn *c, int pipelined,
+                        uint32_t target_id, const uint16_t *path, int npath,
+                        const uint8_t *frame, size_t len)
+{
+	struct capn in, out;
+	struct Message m, om;
+	struct Call call, ocall;
+	struct Payload params, oparams;
+	struct MessageTarget t;
+	struct capn_rpc_copy src;
+	Message_ptr mp, omp;
+	Call_ptr cp;
+	Payload_ptr plp;
+	MessageTarget_ptr tp;
+	struct capn_segment *cs;
+	struct capn_rpc_question *q;
+	uint32_t local = 0, remote;
+	int rc, i;
+
+	if (capn_init_mem(&in, frame, len, 0) != 0)
+		return -1;
+	mp.p = capn_getp(capn_root(&in), 0, 1);
+	read_Message(&m, mp);
+	if (m.which != Message_call) {
+		capn_free(&in);
+		return -1;
+	}
+	read_Call(&call, m.call);
+	remote = call.questionId;
+	memset(&params, 0, sizeof params);
+	if (call.params.p.type != CAPN_NULL)
+		read_Payload(&params, call.params);
+	capn_resolve(&params.content);
+
+	q = question_claim(c, &local);
+	if (q == NULL) {
+		capn_free(&in);
+		send_return_exception(c, remote, "forward failed");
+		return -1;
+	}
+
+	capn_init_malloc(&out);
+	cs = capn_root(&out).seg;
+	memset(&om, 0, sizeof om);
+	memset(&ocall, 0, sizeof ocall);
+	memset(&t, 0, sizeof t);
+	memset(&oparams, 0, sizeof oparams);
+	if (params.content.type == CAPN_STRUCT) {
+		oparams.content = capn_new_struct(cs, params.content.datasz,
+		                                  params.content.ptrs);
+		src.ptr = params.content;
+		fill_from_ptr(&src, oparams.content);
+	}
+	if (capn_len(params.capTable) > 0)
+		oparams.capTable = rewrite_cap_table(c, cs, params.capTable);
+
+	if (pipelined) {
+		struct PromisedAnswer pa;
+		PromisedAnswer_ptr pap;
+		memset(&pa, 0, sizeof pa);
+		pa.questionId = target_id;
+		if (npath > 0 && path != NULL) {
+			pa.transform = new_PromisedAnswer_Op_list(cs, npath);
+			for (i = 0; i < npath; i++) {
+				struct PromisedAnswer_Op op;
+				memset(&op, 0, sizeof op);
+				op.which = PromisedAnswer_Op_getPointerField;
+				op.getPointerField = path[i];
+				set_PromisedAnswer_Op(&op, pa.transform, i);
+			}
+		}
+		pap = new_PromisedAnswer(cs);
+		write_PromisedAnswer(&pa, pap);
+		t.which = MessageTarget_promisedAnswer;
+		t.promisedAnswer = pap;
+	} else {
+		t.which = MessageTarget_importedCap;
+		t.importedCap = target_id;
+	}
+	tp = new_MessageTarget(cs);
+	write_MessageTarget(&t, tp);
+	plp = new_Payload(cs);
+	write_Payload(&oparams, plp);
+	ocall.questionId = local;
+	ocall.target = tp;
+	ocall.interfaceId = call.interfaceId;
+	ocall.methodId = call.methodId;
+	ocall.params = plp;
+	cp = new_Call(cs);
+	write_Call(&ocall, cp);
+	om.which = Message_call;
+	om.call = cp;
+	omp = new_Message(cs);
+	write_Message(&om, omp);
+	capn_setp(capn_root(&out), 0, omp.p);
+	rc = send_message(c, &out);
+	capn_free(&in);
+	capn_free(&out);
+	if (rc != 0) {
+		question_clear(q);
+		send_return_exception(c, remote, "forward failed");
+		return -1;
+	}
+	if (relay_add(c, local, remote) != 0) {
+		send_return_exception(c, remote, "forward table full");
+		return -1;
+	}
+	return 0;
+}
+
+static void flush_reject(struct capn_rpc_conn *c, int export_id, const char *reason)
+{
+	int i;
+
+	for (i = 0; i < CAPN_RPC_MAX_QUEUED; i++) {
+		uint32_t qid;
+		if (!c->queued[i].used || c->queued[i].on_question ||
+		    c->queued[i].export_id != export_id)
+			continue;
+		if (frame_question_id(c->queued[i].frame, c->queued[i].len, &qid) == 0)
+			send_return_exception(c, qid, reason ? reason : "promise released");
+		free(c->queued[i].frame);
+		memset(&c->queued[i], 0, sizeof c->queued[i]);
+	}
+	flush_echoes(c, export_id);
 }
 
 static void flush_replay(struct capn_rpc_conn *c, int export_id)
@@ -1968,7 +2632,8 @@ static void flush_replay(struct capn_rpc_conn *c, int export_id)
 	for (i = 0; i < CAPN_RPC_MAX_QUEUED; i++) {
 		uint8_t *frame;
 		size_t len;
-		if (!c->queued[i].used || c->queued[i].export_id != export_id)
+		if (!c->queued[i].used || c->queued[i].on_question ||
+		    c->queued[i].export_id != export_id)
 			continue;
 		frame = c->queued[i].frame;
 		len = c->queued[i].len;
@@ -1976,6 +2641,7 @@ static void flush_replay(struct capn_rpc_conn *c, int export_id)
 		capn_rpc_handle(c, frame, len);
 		free(frame);
 	}
+	flush_echoes(c, export_id);
 }
 
 static int relay_add(struct capn_rpc_conn *c, uint32_t local_qid, uint32_t remote_qid)
@@ -2006,7 +2672,7 @@ static int send_copied_return(struct capn_rpc_conn *c, uint32_t remote_qid,
 	Return_ptr rp;
 	Payload_ptr plp;
 	struct capn_segment *cs;
-	int rc, i, n;
+	int rc;
 
 	if (capn_init_mem(&in, frame, len, 0) != 0)
 		return -1;
@@ -2056,22 +2722,11 @@ static int send_copied_return(struct capn_rpc_conn *c, uint32_t remote_qid,
 			fill_from_ptr(&src, opl.content);
 		}
 	}
-	n = capn_len(pl.capTable);
-	if (n > 0) {
-		opl.capTable = new_CapDescriptor_list(cs, n);
-		for (i = 0; i < n; i++) {
-			struct CapDescriptor cd;
-			get_CapDescriptor(&cd, pl.capTable, i);
-			if (cd.which == CapDescriptor_receiverAnswer ||
-			    cd.which == CapDescriptor_thirdPartyHosted) {
-				capn_free(&in);
-				capn_free(&out);
-				return send_return_exception(c, remote_qid,
-				                             "cannot relay capability");
-			}
-			set_CapDescriptor(&cd, opl.capTable, i);
-		}
-	}
+	/* The peer wrote this cap table. We are now the sender, so hosted
+	 * fields swap. Dropping the table, or copying it unchanged, would
+	 * hand the caller indexes that name the wrong vat. */
+	if (capn_len(pl.capTable) > 0)
+		opl.capTable = rewrite_cap_table(c, cs, pl.capTable);
 	plp = new_Payload(cs);
 	write_Payload(&opl, plp);
 	orr.answerId = remote_qid;
@@ -2105,61 +2760,22 @@ static void relay_on_return(struct capn_rpc_conn *c, uint32_t local_qid,
 	}
 }
 
-static int forward_one(struct capn_rpc_conn *c, uint32_t import_id,
-                       const uint8_t *frame, size_t len)
-{
-	struct capn msg;
-	struct Message m;
-	struct Call call;
-	struct Payload params;
-	struct capn_rpc_copy src;
-	Message_ptr mp;
-	uint32_t local, remote;
-	int datasz = 0, ptrs = 0;
-
-	if (capn_init_mem(&msg, frame, len, 0) != 0)
-		return -1;
-	mp.p = capn_getp(capn_root(&msg), 0, 1);
-	read_Message(&m, mp);
-	if (m.which != Message_call) {
-		capn_free(&msg);
-		return -1;
-	}
-	read_Call(&call, m.call);
-	remote = call.questionId;
-	memset(&params, 0, sizeof params);
-	if (call.params.p.type != CAPN_NULL)
-		read_Payload(&params, call.params);
-	src.ptr = params.content;
-	capn_resolve(&src.ptr);
-	if (src.ptr.type == CAPN_STRUCT) {
-		datasz = src.ptr.datasz;
-		ptrs = src.ptr.ptrs;
-	}
-	local = capn_rpc_send_call(c, import_id, call.interfaceId, call.methodId,
-	                           datasz, ptrs, fill_from_ptr, &src);
-	capn_free(&msg);
-	if (local == (uint32_t) -1) {
-		send_return_exception(c, remote, "forward failed");
-		return -1;
-	}
-	if (relay_add(c, local, remote) != 0) {
-		send_return_exception(c, remote, "forward table full");
-		return -1;
-	}
-	return 0;
-}
-
 static void flush_forward(struct capn_rpc_conn *c, int export_id, uint32_t import_id)
 {
 	int i;
 	for (i = 0; i < CAPN_RPC_MAX_QUEUED; i++) {
-		if (!c->queued[i].used || c->queued[i].export_id != export_id)
+		if (!c->queued[i].used || c->queued[i].on_question ||
+		    c->queued[i].export_id != export_id)
 			continue;
-		forward_one(c, import_id, c->queued[i].frame, c->queued[i].len);
+		/* Straight to this import. Do not follow a later resolution
+		 * of it: that is the Tribble rule, and reflect_send is what
+		 * implements it. */
+		reflect_send(c, 0, import_id, NULL, 0, c->queued[i].frame,
+		             c->queued[i].len);
 		free(c->queued[i].frame);
 		memset(&c->queued[i], 0, sizeof c->queued[i]);
 	}
+	flush_echoes(c, export_id);
 }
 
 static uint32_t dispatch_local(struct capn_rpc_conn *c, int export_id,
@@ -2310,7 +2926,66 @@ static uint32_t hold_call(struct capn_rpc_conn *c, int mode, uint32_t import_id,
 		memcpy(c->held[i].path, path, (size_t) npath * sizeof path[0]);
 		c->held[i].npath = npath;
 	}
+	if (c->npending > 0) {
+		int n = c->npending;
+		if (n > CAPN_RPC_MAX_PENDING_CAPS)
+			n = CAPN_RPC_MAX_PENDING_CAPS;
+		c->held[i].ncaps = n;
+		memcpy(c->held[i].caps, c->pending_caps,
+		       (size_t) n * sizeof c->pending_caps[0]);
+		c->npending = 0;
+	}
 	return qid;
+}
+
+/* Present a held call's caps the way an incoming cap table would, so
+ * capn_rpc_param_cap agrees with a call the peer had sent us. */
+static void install_held_caps(struct capn_rpc_conn *c, struct capn_rpc_held *h)
+{
+	struct capn_segment *cs;
+	int i;
+
+	memset(&c->in_caps, 0, sizeof c->in_caps);
+	if (h->ncaps <= 0 || h->msg == NULL)
+		return;
+	cs = capn_root(h->msg).seg;
+	c->in_caps = new_CapDescriptor_list(cs, h->ncaps);
+	for (i = 0; i < h->ncaps; i++) {
+		struct CapDescriptor cd;
+		struct capn_rpc_pending_cap *p = &h->caps[i];
+		int k;
+
+		memset(&cd, 0, sizeof cd);
+		cd.attachedFd = 0xff;
+		if (p->kind == CAPN_RPC_CAP_ANSWER) {
+			struct PromisedAnswer pa;
+			PromisedAnswer_ptr pap;
+
+			memset(&pa, 0, sizeof pa);
+			pa.questionId = p->question_id;
+			if (p->npath > 0) {
+				pa.transform = new_PromisedAnswer_Op_list(cs, p->npath);
+				for (k = 0; k < p->npath; k++) {
+					struct PromisedAnswer_Op op;
+					memset(&op, 0, sizeof op);
+					op.which = PromisedAnswer_Op_getPointerField;
+					op.getPointerField = p->path[k];
+					set_PromisedAnswer_Op(&op, pa.transform, k);
+				}
+			}
+			pap = new_PromisedAnswer(cs);
+			write_PromisedAnswer(&pa, pap);
+			cd.which = CapDescriptor_receiverAnswer;
+			cd.receiverAnswer = pap;
+		} else if (p->is_import && p->kind != CAPN_RPC_CAP_PROMISE) {
+			cd.which = CapDescriptor_senderHosted;
+			cd.senderHosted = p->id;
+		} else {
+			cd.which = CapDescriptor_receiverHosted;
+			cd.receiverHosted = p->id;
+		}
+		set_CapDescriptor(&cd, c->in_caps, i);
+	}
 }
 
 static void fire_held(struct capn_rpc_conn *c, uint32_t import_id)
@@ -2335,15 +3010,25 @@ static void fire_held(struct capn_rpc_conn *c, uint32_t import_id)
 			continue;
 		}
 		if (h.mode == CAPN_RPC_HELD_LOCAL) {
+			install_held_caps(c, &h);
 			dispatch_local(c, (int) h.target, h.interface_id, h.method_id,
 			               h.datasz, h.ptrs, fill_from_ptr, &src, q,
 			               h.question_id);
+			memset(&c->in_caps, 0, sizeof c->in_caps);
 		} else if (h.mode == CAPN_RPC_HELD_PIPE) {
+			c->npending = h.ncaps;
+			if (h.ncaps > 0)
+				memcpy(c->pending_caps, h.caps,
+				       (size_t) h.ncaps * sizeof h.caps[0]);
 			send_call_impl(c, 1, h.target, h.path, h.npath, h.interface_id,
 			               h.method_id, h.datasz, h.ptrs, fill_from_ptr, &src,
 			               q, h.question_id);
 		} else {
 			note_import_call(c, h.target);
+			c->npending = h.ncaps;
+			if (h.ncaps > 0)
+				memcpy(c->pending_caps, h.caps,
+				       (size_t) h.ncaps * sizeof h.caps[0]);
 			send_call_impl(c, 0, h.target, NULL, 0, h.interface_id, h.method_id,
 			               h.datasz, h.ptrs, fill_from_ptr, &src, q,
 			               h.question_id);
@@ -2621,10 +3306,28 @@ static int handle_resolve(struct capn_rpc_conn *c, Resolve_ptr rp)
 	read_CapDescriptor(&cd, r.cap);
 	if (cd.which == CapDescriptor_senderHosted ||
 	    cd.which == CapDescriptor_senderPromise) {
+		struct capn_rpc_import *other;
 		im->has_import = 1;
 		im->to_import = cd.which == CapDescriptor_senderHosted ?
 		                cd.senderHosted : cd.senderPromise;
-		import_slot(c, im->to_import);
+		other = import_slot(c, im->to_import);
+		if (other == NULL)
+			return -1;
+		/* A still-open promise absorbs the calls so its own later
+		 * reflection performs one embargo. rpc.c++ PromiseClient
+		 * ::resolve merges receivedCall in that case. A promise that
+		 * has already resolved back to us needs its own embargo. */
+		if (cd.which == CapDescriptor_senderPromise && !other->resolved)
+			other->calls += im->calls;
+		if (cd.which == CapDescriptor_senderPromise && other->resolved &&
+		    other->has_export && im->calls > 0) {
+			im->has_import = 0;
+			im->has_export = 1;
+			im->to_export = other->to_export;
+			im->embargoed = 1;
+			im->embargo_id = ++c->next_embargo;
+			return send_disembargo(c, r.promiseId, im->embargo_id);
+		}
 		return 0;
 	}
 	if (cd.which == CapDescriptor_receiverHosted) {
@@ -2684,8 +3387,28 @@ uint32_t capn_rpc_send_call(struct capn_rpc_conn *c, uint32_t imported_cap,
 			mode = CAPN_RPC_HELD_PIPE;
 			target = im->to_question;
 		} else if (im->has_import) {
+			struct capn_rpc_import *nxt = NULL;
 			mode = CAPN_RPC_HELD_REMOTE;
 			target = im->to_import;
+			if (target < (uint32_t) c->imports_cap &&
+			    c->imports[target].used)
+				nxt = &c->imports[target];
+			/* The promise we were merged with already came back to a
+			 * capability we host. Embargo before delivering locally,
+			 * which is PromiseClient::resolve when the other side is
+			 * already REFLECTED. */
+			if (nxt != NULL && nxt->resolved && nxt->has_export &&
+			    (im->calls > 0 || nxt->calls > 0) && !im->embargoed) {
+				im->has_import = 0;
+				im->has_export = 1;
+				im->to_export = nxt->to_export;
+				im->embargoed = 1;
+				im->embargo_id = ++c->next_embargo;
+				send_disembargo(c, id, im->embargo_id);
+				return hold_call(c, CAPN_RPC_HELD_LOCAL, id, nxt->to_export,
+				                 NULL, 0, interface_id, method_id,
+				                 params_datasz, params_ptrs, fill, fill_ctx);
+			}
 		} else {
 			return fail_question(c);
 		}
@@ -2722,10 +3445,14 @@ uint32_t capn_rpc_send_pipelined_call(struct capn_rpc_conn *c, uint32_t question
                                       int params_datasz, int params_ptrs,
                                       capn_rpc_fill_fn fill, void *fill_ctx)
 {
+	uint32_t qid;
 	if (npath < 0 || (npath > 0 && path == NULL))
 		return (uint32_t)-1;
-	return send_call_impl(c, 1, question_id, path, npath, interface_id, method_id,
-	                      params_datasz, params_ptrs, fill, fill_ctx, NULL, 0);
+	qid = send_call_impl(c, 1, question_id, path, npath, interface_id, method_id,
+	                     params_datasz, params_ptrs, fill, fill_ctx, NULL, 0);
+	if (qid != (uint32_t) -1)
+		note_pipe(c, question_id, path, npath);
+	return qid;
 }
 
 int capn_rpc_send_finish(struct capn_rpc_conn *c, uint32_t question_id)
@@ -2910,6 +3637,166 @@ int capn_rpc_answer_content(struct capn_rpc_conn *c, uint32_t question_id,
 	return 0;
 }
 
+/* The reflected call's results were kept locally. Tell the peer it
+ * does not need to forward them, which is what rpc.c++
+ * RpcCallContext::sendRedirectReturn sends. */
+static int send_results_elsewhere(struct capn_rpc_conn *c, uint32_t qid)
+{
+	struct capn msg;
+	struct Message m;
+	struct Return r;
+	Message_ptr mp;
+	Return_ptr rp;
+	struct capn_segment *cs;
+	int rc;
+
+	capn_init_malloc(&msg);
+	cs = capn_root(&msg).seg;
+	memset(&m, 0, sizeof m);
+	memset(&r, 0, sizeof r);
+	rp = new_Return(cs);
+	r.answerId = qid;
+	r.releaseParamCaps = 0;
+	r.which = Return_resultsSentElsewhere;
+	write_Return(&r, rp);
+	mp = new_Message(cs);
+	m.which = Message__return;
+	m._return = rp;
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	rc = send_message(c, &msg);
+	capn_free(&msg);
+	return rc;
+}
+
+/* Use the results we computed for the peer's question as the answer to
+ * one of ours. The stored frame is a Return(results) whose answerId is
+ * theirs; answer_content only reads the payload. */
+/* The stored Return was written for the peer. We are now the side that
+ * reads it, so hosted fields swap, the same rename rewrite_cap_table
+ * does for a reflected call. */
+static uint8_t *swap_return_frame(struct capn_rpc_conn *c, const uint8_t *frame,
+                                  size_t len, size_t *out_len)
+{
+	struct capn in, out;
+	struct Message m, om;
+	struct Return r, orr;
+	struct Payload pl, opl;
+	struct capn_rpc_copy src;
+	Message_ptr mp, omp;
+	Return_ptr rp;
+	Payload_ptr plp;
+	struct capn_segment *cs;
+
+	if (capn_init_mem(&in, frame, len, 0) != 0)
+		return NULL;
+	mp.p = capn_getp(capn_root(&in), 0, 1);
+	read_Message(&m, mp);
+	if (m.which != Message__return) {
+		capn_free(&in);
+		return NULL;
+	}
+	read_Return(&r, m._return);
+	if (r.which != Return_results || r.results.p.type == CAPN_NULL) {
+		capn_free(&in);
+		return NULL;
+	}
+	read_Payload(&pl, r.results);
+	if (capn_len(pl.capTable) <= 0) {
+		capn_free(&in);
+		return NULL;
+	}
+	capn_init_malloc(&out);
+	cs = capn_root(&out).seg;
+	memset(&om, 0, sizeof om);
+	memset(&orr, 0, sizeof orr);
+	memset(&opl, 0, sizeof opl);
+	capn_resolve(&pl.content);
+	if (pl.content.type == CAPN_STRUCT) {
+		opl.content = capn_new_struct(cs, pl.content.datasz, pl.content.ptrs);
+		src.ptr = pl.content;
+		fill_from_ptr(&src, opl.content);
+	}
+	opl.capTable = rewrite_cap_table(c, cs, pl.capTable);
+	plp = new_Payload(cs);
+	write_Payload(&opl, plp);
+	orr.answerId = r.answerId;
+	orr.releaseParamCaps = r.releaseParamCaps;
+	orr.which = Return_results;
+	orr.results = plp;
+	rp = new_Return(cs);
+	write_Return(&orr, rp);
+	om.which = Message__return;
+	om._return = rp;
+	omp = new_Message(cs);
+	write_Message(&om, omp);
+	capn_setp(capn_root(&out), 0, omp.p);
+	{
+		uint8_t *buf = frame_alloc(&out, out_len);
+		capn_free(&in);
+		capn_free(&out);
+		return buf;
+	}
+}
+
+static void adopt_answer(struct capn_rpc_conn *c, struct capn_rpc_question *q,
+                         struct capn_rpc_answer *a)
+{
+	struct capn stored;
+	struct Message m;
+	struct Return r;
+	Message_ptr mp;
+	uint8_t *copy;
+	size_t copy_len = 0;
+
+	copy = swap_return_frame(c, a->frame, a->len, &copy_len);
+	if (copy == NULL) {
+		copy = (uint8_t *) malloc(a->len ? a->len : 1);
+		if (copy == NULL)
+			return;
+		memcpy(copy, a->frame, a->len);
+		copy_len = a->len;
+	}
+	free(q->reply);
+	q->reply = copy;
+	q->reply_len = copy_len;
+	q->answered = 1;
+	q->failed = 1;
+	q->tail_wait = 0;
+	if (capn_init_mem(&stored, copy, copy_len, 0) != 0)
+		return;
+	mp.p = capn_getp(capn_root(&stored), 0, 1);
+	read_Message(&m, mp);
+	if (m.which == Message__return) {
+		read_Return(&r, m._return);
+		q->failed = (r.which != Return_results);
+		if (r.which == Return_results && r.results.p.type != CAPN_NULL) {
+			struct Payload pl;
+			read_Payload(&pl, r.results);
+			note_introductions(c, &pl);
+			apply_pipeline_notes(c, q, &pl);
+		}
+	}
+	capn_free(&stored);
+}
+
+static void deliver_tail(struct capn_rpc_conn *c, uint32_t peer_qid)
+{
+	struct capn_rpc_answer *a = answer_find(c, peer_qid);
+	int i;
+
+	if (a == NULL)
+		return;
+	for (i = 0; i < c->questions_cap; i++) {
+		struct capn_rpc_question *q = &c->questions[i];
+		if (!q->used || !q->tail_wait || q->answered || q->tail_from != peer_qid)
+			continue;
+		adopt_answer(c, q, a);
+		send_results_elsewhere(c, peer_qid);
+		return;
+	}
+}
+
 /* Record a Return against the question that asked it. A Return naming a
  * question this vat never asked is dropped: recording it would let a
  * peer plant answers that later pipelining would trust. */
@@ -2923,6 +3810,20 @@ static void handle_return(struct capn_rpc_conn *c, Return_ptr rp,
 	q = question_find(c, r.answerId);
 	if (q == NULL || q->answered)
 		return;
+	/* The peer forwarded a pipelined call back to us and is telling us
+	 * to use that call's results. rpc.c++ handleReturn
+	 * TAKE_FROM_OTHER_QUESTION. */
+	if (r.which == Return_takeFromOtherQuestion) {
+		struct capn_rpc_answer *a = answer_find(c, r.takeFromOtherQuestion);
+		if (a == NULL) {
+			q->tail_wait = 1;
+			q->tail_from = r.takeFromOtherQuestion;
+			return;
+		}
+		adopt_answer(c, q, a);
+		send_results_elsewhere(c, r.takeFromOtherQuestion);
+		return;
+	}
 	{
 		uint8_t *copy = (uint8_t *) malloc(len ? len : 1);
 		if (copy == NULL)
@@ -2937,8 +3838,102 @@ static void handle_return(struct capn_rpc_conn *c, Return_ptr rp,
 		struct Payload pl;
 		read_Payload(&pl, r.results);
 		note_introductions(c, &pl);
+		apply_pipeline_notes(c, q, &pl);
 	}
 	relay_on_return(c, r.answerId, frame, len);
+}
+
+static int payload_cap(struct Payload *pl, const uint16_t *path, int npath,
+                       struct CapDescriptor *cd)
+{
+	capn_ptr cursor;
+	int i;
+
+	cursor = pl->content;
+	for (i = 0; i < npath; i++) {
+		capn_resolve(&cursor);
+		if (cursor.type != CAPN_STRUCT)
+			return -1;
+		cursor = capn_getp(cursor, path[i], 0);
+	}
+	capn_resolve(&cursor);
+	if (cursor.type != CAPN_INTERFACE)
+		return -1;
+	if (capn_len(pl->capTable) < 0 ||
+	    cursor.cap_idx > (uint32_t) INT_MAX ||
+	    (int) cursor.cap_idx >= capn_len(pl->capTable))
+		return -1;
+	get_CapDescriptor(cd, pl->capTable, (int) cursor.cap_idx);
+	return 0;
+}
+
+static void note_pipe(struct capn_rpc_conn *c, uint32_t question_id,
+                      const uint16_t *path, int npath)
+{
+	struct capn_rpc_question *q = question_find(c, question_id);
+	int i;
+
+	if (q == NULL)
+		return;
+	if (npath < 0)
+		npath = 0;
+	if (npath > CAPN_RPC_PATH_MAX)
+		npath = CAPN_RPC_PATH_MAX;
+	for (i = 0; i < q->npipes; i++) {
+		if (q->pipes[i].npath == npath &&
+		    (npath == 0 ||
+		     memcmp(q->pipes[i].path, path,
+		            (size_t) npath * sizeof path[0]) == 0)) {
+			q->pipes[i].calls++;
+			return;
+		}
+	}
+	if (q->npipes >= CAPN_RPC_MAX_PIPE_NOTES)
+		return;
+	i = q->npipes++;
+	q->pipes[i].calls = 1;
+	q->pipes[i].npath = npath;
+	if (npath > 0 && path != NULL)
+		memcpy(q->pipes[i].path, path, (size_t) npath * sizeof path[0]);
+}
+
+/* Pipelined calls were sent at the question, not at the import the
+ * Return names. Count them on that import so a later Resolve back to
+ * us still sends Disembargo. rpc.c++ PromiseClient::newCall sets
+ * receivedCall, and resolve() embargos when the replacement is local. */
+static void apply_pipeline_notes(struct capn_rpc_conn *c,
+                                 struct capn_rpc_question *q,
+                                 struct Payload *pl)
+{
+	int i;
+
+	if (q == NULL)
+		return;
+	for (i = 0; i < q->npipes; i++) {
+		struct CapDescriptor cd;
+		struct capn_rpc_import *im;
+		uint32_t id;
+
+		if (q->pipes[i].calls <= 0)
+			continue;
+		if (payload_cap(pl, q->pipes[i].path, q->pipes[i].npath, &cd) != 0)
+			continue;
+		if (cd.which != CapDescriptor_senderHosted &&
+		    cd.which != CapDescriptor_senderPromise)
+			continue;
+		id = cd.which == CapDescriptor_senderPromise ? cd.senderPromise
+		                                             : cd.senderHosted;
+		im = import_slot(c, id);
+		if (im == NULL)
+			continue;
+		im->calls += q->pipes[i].calls;
+		if (cd.which == CapDescriptor_senderPromise && im->resolved &&
+		    im->has_export && im->calls > 0 && !im->embargoed) {
+			im->embargoed = 1;
+			im->embargo_id = ++c->next_embargo;
+			send_disembargo(c, id, im->embargo_id);
+		}
+	}
 }
 
 /* --- stream flow control ------------------------------------------- */
@@ -3037,7 +4032,7 @@ static int send_empty_return(struct capn_rpc_conn *c, uint32_t qid)
 	mp = new_Message(cs);
 	write_Message(&m, mp);
 	capn_setp(capn_root(&msg), 0, mp.p);
-	rc = send_answer(c, qid, &msg);
+	rc = send_answer(c, qid, &msg, 1);
 	capn_free(&msg);
 	return rc;
 }
@@ -3073,7 +4068,7 @@ static int send_accepted_cap(struct capn_rpc_conn *c, uint32_t qid, int eid)
 	mp = new_Message(cs);
 	write_Message(&m, mp);
 	capn_setp(capn_root(&msg), 0, mp.p);
-	rc = send_answer(c, qid, &msg);
+	rc = send_answer(c, qid, &msg, 1);
 	capn_free(&msg);
 	return rc;
 }
@@ -3223,7 +4218,7 @@ static int handle_accept(struct capn_rpc_conn *c, Accept_ptr ap)
 	mp = new_Message(cs);
 	write_Message(&m, mp);
 	capn_setp(capn_root(&msg), 0, mp.p);
-	rc = send_answer(c, ac.questionId, &msg);
+	rc = send_answer(c, ac.questionId, &msg, 1);
 	capn_free(&msg);
 	return rc;
 }
@@ -3378,7 +4373,7 @@ int capn_rpc_handle(struct capn_rpc_conn *c, const uint8_t *data, size_t len)
 		rc = handle_resolve(c, m.resolve);
 		break;
 	case Message_disembargo:
-		rc = handle_disembargo(c, m.disembargo);
+		rc = handle_disembargo(c, m.disembargo, data, len);
 		break;
 	case Message_provide:
 		rc = handle_provide(c, m.provide);
