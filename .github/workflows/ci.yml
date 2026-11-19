@@ -186,3 +186,29 @@ jobs:
         run: |
           meson test -C build rpc_interop_cpp --print-errorlogs
           test -x build/rpc_peer_server
+
+  s390x:
+    name: qemu s390x
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install meson ninja
+        run: pip install meson ninja
+      - name: Install the s390x cross compiler and qemu-user
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-s390x-linux-gnu g++-s390x-linux-gnu \
+            libc6-dev-s390x-cross qemu-user-static
+      # No host capnp: the CLI parity tests are not built. The runtime
+      # suite runs under qemu-s390x-static.
+      - name: Configure
+        run: meson setup build-s390x --cross-file cross/s390x.ini -Denable_tests=true
+      - name: Build
+        run: meson compile -C build-s390x
+      - name: Test
+        run: meson test -C build-s390x --print-errorlogs
