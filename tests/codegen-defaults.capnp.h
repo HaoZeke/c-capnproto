@@ -22,14 +22,17 @@ extern "C" {
 
 struct Rec;
 struct Greeting;
+struct Names;
 struct Event;
 
 typedef struct {capn_ptr p;} Rec_ptr;
 typedef struct {capn_ptr p;} Greeting_ptr;
+typedef struct {capn_ptr p;} Names_ptr;
 typedef struct {capn_ptr p;} Event_ptr;
 
 typedef struct {capn_ptr p;} Rec_list;
 typedef struct {capn_ptr p;} Greeting_list;
+typedef struct {capn_ptr p;} Names_list;
 typedef struct {capn_ptr p;} Event_list;
 
 enum Color {
@@ -98,6 +101,43 @@ int Greeting_has_plain(Greeting_ptr p);
 void Greeting_set_hello(Greeting_ptr p, capn_text hello);
 
 void Greeting_set_plain(Greeting_ptr p, capn_text plain);
+enum Names_voids_which {
+	Names_voids_a = 0,
+	Names_voids_b = 1
+};
+
+struct Names {
+	uint8_t _which;
+	uint32_t _errno;
+	unsigned _linux : 1;
+	capn_text _stdin;
+	enum Names_voids_which voids_which;
+};
+
+static const size_t Names_word_count = 1;
+
+static const size_t Names_pointer_count = 1;
+
+static const size_t Names_struct_bytes_count = 16;
+
+
+uint8_t Names_get__which(Names_ptr p);
+
+uint32_t Names_get__errno(Names_ptr p);
+
+unsigned Names_get__linux(Names_ptr p);
+
+capn_text Names_get__stdin(Names_ptr p);
+
+int Names_has__stdin(Names_ptr p);
+
+void Names_set__which(Names_ptr p, uint8_t _which);
+
+void Names_set__errno(Names_ptr p, uint32_t _errno);
+
+void Names_set__linux(Names_ptr p, unsigned _linux);
+
+void Names_set__stdin(Names_ptr p, capn_text _stdin);
 
 struct Event {
 	capn_ptr_list args;
@@ -118,26 +158,32 @@ void Event_set_args(Event_ptr p, capn_ptr_list args);
 
 Rec_ptr new_Rec(struct capn_segment*);
 Greeting_ptr new_Greeting(struct capn_segment*);
+Names_ptr new_Names(struct capn_segment*);
 Event_ptr new_Event(struct capn_segment*);
 
 Rec_list new_Rec_list(struct capn_segment*, int len);
 Greeting_list new_Greeting_list(struct capn_segment*, int len);
+Names_list new_Names_list(struct capn_segment*, int len);
 Event_list new_Event_list(struct capn_segment*, int len);
 
 void read_Rec(struct Rec*, Rec_ptr);
 void read_Greeting(struct Greeting*, Greeting_ptr);
+void read_Names(struct Names*, Names_ptr);
 void read_Event(struct Event*, Event_ptr);
 
 void write_Rec(const struct Rec*, Rec_ptr);
 void write_Greeting(const struct Greeting*, Greeting_ptr);
+void write_Names(const struct Names*, Names_ptr);
 void write_Event(const struct Event*, Event_ptr);
 
 void get_Rec(struct Rec*, Rec_list, int i);
 void get_Greeting(struct Greeting*, Greeting_list, int i);
+void get_Names(struct Names*, Names_list, int i);
 void get_Event(struct Event*, Event_list, int i);
 
 void set_Rec(const struct Rec*, Rec_list, int i);
 void set_Greeting(const struct Greeting*, Greeting_list, int i);
+void set_Names(const struct Names*, Names_list, int i);
 void set_Event(const struct Event*, Event_list, int i);
 
 #ifdef __cplusplus
