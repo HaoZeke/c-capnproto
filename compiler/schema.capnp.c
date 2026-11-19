@@ -10,6 +10,7 @@
 
 static const capn_text capn_val0 = {0,"",0};
 static const capn_ptr capn_null = {CAPN_NULL};
+static const capn_text capn_text_null = {0,0,0};
 const uint16_t Field_noDiscriminant = FIELD_NO_DISCRIMINANT;
 
 Node_ptr new_Node(struct capn_segment *s) {
@@ -78,7 +79,7 @@ void write_Node(const struct Node *s capnp_unused, Node_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write64(p.p, 0, s->id);
-	capn_set_text(p.p, 0, s->displayName);
+	capn_set_text(p.p, 0, (s->displayName.str != capn_val0.str) ? s->displayName : capn_text_null);
 	capn_write32(p.p, 8, s->displayNamePrefixLength);
 	capn_write64(p.p, 16, s->scopeId);
 	capn_setp(p.p, 5, (s->parameters.p.type != CAPN_NULL) ? s->parameters.p : capn_null);
@@ -242,7 +243,7 @@ void Node_set_id(Node_ptr p, uint64_t id)
 void Node_set_displayName(Node_ptr p, capn_text displayName)
 {
 	capn_resolve(&p.p);
-	capn_set_text(p.p, 0, displayName);
+	capn_set_text(p.p, 0, (displayName.str != capn_val0.str) ? displayName : capn_text_null);
 }
 
 void Node_set_displayNamePrefixLength(Node_ptr p, uint32_t displayNamePrefixLength)
@@ -299,7 +300,7 @@ void read_Node_Parameter(struct Node_Parameter *s capnp_unused, Node_Parameter_p
 void write_Node_Parameter(const struct Node_Parameter *s capnp_unused, Node_Parameter_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
-	capn_set_text(p.p, 0, s->name);
+	capn_set_text(p.p, 0, (s->name.str != capn_val0.str) ? s->name : capn_text_null);
 }
 void get_Node_Parameter(struct Node_Parameter *s, Node_Parameter_list l, int i) {
 	Node_Parameter_ptr p;
@@ -331,7 +332,7 @@ int Node_Parameter_has_name(Node_Parameter_ptr p)
 void Node_Parameter_set_name(Node_Parameter_ptr p, capn_text name)
 {
 	capn_resolve(&p.p);
-	capn_set_text(p.p, 0, name);
+	capn_set_text(p.p, 0, (name.str != capn_val0.str) ? name : capn_text_null);
 }
 
 Node_NestedNode_ptr new_Node_NestedNode(struct capn_segment *s) {
@@ -353,7 +354,7 @@ void read_Node_NestedNode(struct Node_NestedNode *s capnp_unused, Node_NestedNod
 void write_Node_NestedNode(const struct Node_NestedNode *s capnp_unused, Node_NestedNode_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
-	capn_set_text(p.p, 0, s->name);
+	capn_set_text(p.p, 0, (s->name.str != capn_val0.str) ? s->name : capn_text_null);
 	capn_write64(p.p, 0, s->id);
 }
 void get_Node_NestedNode(struct Node_NestedNode *s, Node_NestedNode_list l, int i) {
@@ -394,7 +395,7 @@ uint64_t Node_NestedNode_get_id(Node_NestedNode_ptr p)
 void Node_NestedNode_set_name(Node_NestedNode_ptr p, capn_text name)
 {
 	capn_resolve(&p.p);
-	capn_set_text(p.p, 0, name);
+	capn_set_text(p.p, 0, (name.str != capn_val0.str) ? name : capn_text_null);
 }
 
 void Node_NestedNode_set_id(Node_NestedNode_ptr p, uint64_t id)
@@ -446,7 +447,7 @@ void read_Field(struct Field *s capnp_unused, Field_ptr p) {
 void write_Field(const struct Field *s capnp_unused, Field_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
-	capn_set_text(p.p, 0, s->name);
+	capn_set_text(p.p, 0, (s->name.str != capn_val0.str) ? s->name : capn_text_null);
 	capn_write16(p.p, 0, s->codeOrder);
 	capn_setp(p.p, 1, (s->annotations.p.type != CAPN_NULL) ? s->annotations.p : capn_null);
 	capn_write16(p.p, 2, s->discriminantValue ^ 65535u);
@@ -535,7 +536,7 @@ uint16_t Field_get_discriminantValue(Field_ptr p)
 void Field_set_name(Field_ptr p, capn_text name)
 {
 	capn_resolve(&p.p);
-	capn_set_text(p.p, 0, name);
+	capn_set_text(p.p, 0, (name.str != capn_val0.str) ? name : capn_text_null);
 }
 
 void Field_set_codeOrder(Field_ptr p, uint16_t codeOrder)
@@ -576,7 +577,7 @@ void read_Enumerant(struct Enumerant *s capnp_unused, Enumerant_ptr p) {
 void write_Enumerant(const struct Enumerant *s capnp_unused, Enumerant_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
-	capn_set_text(p.p, 0, s->name);
+	capn_set_text(p.p, 0, (s->name.str != capn_val0.str) ? s->name : capn_text_null);
 	capn_write16(p.p, 0, s->codeOrder);
 	capn_setp(p.p, 1, (s->annotations.p.type != CAPN_NULL) ? s->annotations.p : capn_null);
 }
@@ -634,7 +635,7 @@ int Enumerant_has_annotations(Enumerant_ptr p)
 void Enumerant_set_name(Enumerant_ptr p, capn_text name)
 {
 	capn_resolve(&p.p);
-	capn_set_text(p.p, 0, name);
+	capn_set_text(p.p, 0, (name.str != capn_val0.str) ? name : capn_text_null);
 }
 
 void Enumerant_set_codeOrder(Enumerant_ptr p, uint16_t codeOrder)
@@ -743,7 +744,7 @@ void read_Method(struct Method *s capnp_unused, Method_ptr p) {
 void write_Method(const struct Method *s capnp_unused, Method_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
-	capn_set_text(p.p, 0, s->name);
+	capn_set_text(p.p, 0, (s->name.str != capn_val0.str) ? s->name : capn_text_null);
 	capn_write16(p.p, 0, s->codeOrder);
 	capn_setp(p.p, 4, (s->implicitParameters.p.type != CAPN_NULL) ? s->implicitParameters.p : capn_null);
 	capn_write64(p.p, 8, s->paramStructType);
@@ -870,7 +871,7 @@ int Method_has_annotations(Method_ptr p)
 void Method_set_name(Method_ptr p, capn_text name)
 {
 	capn_resolve(&p.p);
-	capn_set_text(p.p, 0, name);
+	capn_set_text(p.p, 0, (name.str != capn_val0.str) ? name : capn_text_null);
 }
 
 void Method_set_codeOrder(Method_ptr p, uint16_t codeOrder)
@@ -1283,7 +1284,7 @@ void write_Value(const struct Value *s capnp_unused, Value_ptr p) {
 		capn_write64(p.p, 8, capn_from_f64(s->float64));
 		break;
 	case Value_text:
-		capn_set_text(p.p, 0, s->text);
+		capn_set_text(p.p, 0, (s->text.str != capn_val0.str) ? s->text : capn_text_null);
 		break;
 	case Value_data:
 		capn_set_data(p.p, 0, s->data);
@@ -1503,7 +1504,7 @@ void write_CodeGeneratorRequest_RequestedFile(const struct CodeGeneratorRequest_
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write64(p.p, 0, s->id);
-	capn_set_text(p.p, 0, s->filename);
+	capn_set_text(p.p, 0, (s->filename.str != capn_val0.str) ? s->filename : capn_text_null);
 	capn_setp(p.p, 1, (s->imports.p.type != CAPN_NULL) ? s->imports.p : capn_null);
 }
 void get_CodeGeneratorRequest_RequestedFile(struct CodeGeneratorRequest_RequestedFile *s, CodeGeneratorRequest_RequestedFile_list l, int i) {
@@ -1566,7 +1567,7 @@ void CodeGeneratorRequest_RequestedFile_set_id(CodeGeneratorRequest_RequestedFil
 void CodeGeneratorRequest_RequestedFile_set_filename(CodeGeneratorRequest_RequestedFile_ptr p, capn_text filename)
 {
 	capn_resolve(&p.p);
-	capn_set_text(p.p, 0, filename);
+	capn_set_text(p.p, 0, (filename.str != capn_val0.str) ? filename : capn_text_null);
 }
 
 void CodeGeneratorRequest_RequestedFile_set_imports(CodeGeneratorRequest_RequestedFile_ptr p, CodeGeneratorRequest_RequestedFile_Import_list imports)
@@ -1595,7 +1596,7 @@ void write_CodeGeneratorRequest_RequestedFile_Import(const struct CodeGeneratorR
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write64(p.p, 0, s->id);
-	capn_set_text(p.p, 0, s->name);
+	capn_set_text(p.p, 0, (s->name.str != capn_val0.str) ? s->name : capn_text_null);
 }
 void get_CodeGeneratorRequest_RequestedFile_Import(struct CodeGeneratorRequest_RequestedFile_Import *s, CodeGeneratorRequest_RequestedFile_Import_list l, int i) {
 	CodeGeneratorRequest_RequestedFile_Import_ptr p;
@@ -1641,5 +1642,5 @@ void CodeGeneratorRequest_RequestedFile_Import_set_id(CodeGeneratorRequest_Reque
 void CodeGeneratorRequest_RequestedFile_Import_set_name(CodeGeneratorRequest_RequestedFile_Import_ptr p, capn_text name)
 {
 	capn_resolve(&p.p);
-	capn_set_text(p.p, 0, name);
+	capn_set_text(p.p, 0, (name.str != capn_val0.str) ? name : capn_text_null);
 }

@@ -9,6 +9,7 @@
 #endif
 
 static const capn_text capn_val0 = {0,"",0};
+static const capn_text capn_text_null = {0,0,0};
 
 EXTRAHEADER_EXTATTR Widget_ptr new_Widget(struct capn_segment *s) {
 	Widget_ptr p;
@@ -30,7 +31,7 @@ EXTRAHEADER_EXTATTR void write_Widget(const struct Widget *s capnp_unused, Widge
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write32(p.p, 0, s->id);
-	capn_set_text(p.p, 0, s->name);
+	capn_set_text(p.p, 0, (s->name.str != capn_val0.str) ? s->name : capn_text_null);
 }
 EXTRAHEADER_EXTATTR void get_Widget(struct Widget *s, Widget_list l, int i) {
 	Widget_ptr p;
@@ -76,5 +77,5 @@ EXTRAHEADER_EXTATTR void Widget_set_id(Widget_ptr p, uint32_t id)
 EXTRAHEADER_EXTATTR void Widget_set_name(Widget_ptr p, capn_text name)
 {
 	capn_resolve(&p.p);
-	capn_set_text(p.p, 0, name);
+	capn_set_text(p.p, 0, (name.str != capn_val0.str) ? name : capn_text_null);
 }

@@ -10,6 +10,7 @@
 
 static const capn_text capn_val0 = {0,"",0};
 static const capn_ptr capn_null = {CAPN_NULL};
+static const capn_text capn_text_null = {0,0,0};
 
 Leaf_ptr new_Leaf(struct capn_segment *s) {
 	Leaf_ptr p;
@@ -245,7 +246,7 @@ void read_Bag(struct Bag *s capnp_unused, Bag_ptr p) {
 void write_Bag(const struct Bag *s capnp_unused, Bag_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
-	capn_set_text(p.p, 0, s->note);
+	capn_set_text(p.p, 0, (s->note.str != capn_val0.str) ? s->note : capn_text_null);
 	capn_set_data(p.p, 1, s->blob);
 }
 void get_Bag(struct Bag *s, Bag_list l, int i) {
@@ -294,7 +295,7 @@ int Bag_has_blob(Bag_ptr p)
 void Bag_set_note(Bag_ptr p, capn_text note)
 {
 	capn_resolve(&p.p);
-	capn_set_text(p.p, 0, note);
+	capn_set_text(p.p, 0, (note.str != capn_val0.str) ? note : capn_text_null);
 }
 
 void Bag_set_blob(Bag_ptr p, capn_data blob)

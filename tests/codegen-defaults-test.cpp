@@ -179,3 +179,51 @@ TEST(CodegenDefaults, GeneratedConstantsAreConst) {
   EXPECT_EQ(99, answerCamel);
   EXPECT_EQ(99, ANSWER_CAMEL);
 }
+
+TEST(CodegenDefaults, TextDefaultSurvivesReadWriteRoundTrip) {
+  struct capn src;
+  capn_init_malloc(&src);
+  Greeting_ptr g = new_Greeting(capn_root(&src).seg);
+  capn_set_root(&src, g.p);
+  ASSERT_EQ(capn_getp(g.p, 0, 1).type, CAPN_NULL);
+
+  struct Greeting read;
+  memset(&read, 0, sizeof(read));
+  read_Greeting(&read, g);
+  ASSERT_STREQ(read.hello.str, "hi");
+  ASSERT_STREQ(read.plain.str, "");
+
+  struct capn dst;
+  capn_init_malloc(&dst);
+  Greeting_ptr copy = new_Greeting(capn_root(&dst).seg);
+  write_Greeting(&read, copy);
+  capn_set_root(&dst, copy.p);
+
+  EXPECT_EQ(capn_getp(copy.p, 0, 1).type, CAPN_NULL);
+  EXPECT_EQ(capn_getp(copy.p, 1, 1).type, CAPN_NULL);
+
+  struct Greeting again;
+  memset(&again, 0, sizeof(again));
+  read_Greeting(&again, copy);
+  EXPECT_STREQ(again.hello.str, "hi");
+
+  capn_free(&dst);
+  capn_free(&src);
+}
+
+TEST(CodegenDefaults, ExplicitEmptyTextOverridesDefault) {
+  struct capn c;
+  capn_init_malloc(&c);
+  Greeting_ptr g = new_Greeting(capn_root(&c).seg);
+  struct Greeting s;
+  memset(&s, 0, sizeof(s));
+  s.hello = chars_to_text("");
+  write_Greeting(&s, g);
+
+  EXPECT_EQ(capn_getp(g.p, 0, 1).type, CAPN_LIST);
+  struct Greeting back;
+  memset(&back, 0, sizeof(back));
+  read_Greeting(&back, g);
+  EXPECT_EQ(back.hello.len, 0);
+  capn_free(&c);
+}
