@@ -61,7 +61,7 @@ set_target_properties(capnp_c PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   WINDOWS_EXPORT_ALL_SYMBOLS ON
   VERSION ${PROJECT_VERSION}
-  SOVERSION 1
+  SOVERSION 2
 )
 add_library(c_capnproto::capnp_c ALIAS capnp_c)
 set_target_properties(capnp_c PROPERTIES EXPORT_NAME capnp_c)
