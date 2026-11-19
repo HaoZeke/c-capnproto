@@ -43,6 +43,8 @@ static int listen_port(int *port)
 	return fd;
 }
 
+/* Pull whatever the client already wrote so its send cannot fill the
+ * buffer and stall before the frame read. */
 static void drain(int fd)
 {
 	char buf[4096];
@@ -116,6 +118,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	/* Two seconds is enough for a reject. A hang stays in read(). */
 	step.tv_sec = 0;
 	step.tv_nsec = 50000000L;
 	status = -1;

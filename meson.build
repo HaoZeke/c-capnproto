@@ -442,7 +442,7 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
         implicit_include_directories: false,
       )
       test('frame-wrap', frame_wrap_test, args: [rpc_client_c.full_path()],
-           depends: [rpc_client_c])
+           depends: [rpc_client_c], timeout: 10)
 
       rpc_server_c = executable(
         'rpc_server_c',
