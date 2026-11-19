@@ -36,6 +36,9 @@ extern "C" {
 #define CAPN_RPC_MAX_JOIN_PARTS 16
 /* Capabilities one params or results payload can carry. */
 #define CAPN_RPC_MAX_PENDING_CAPS 16
+#define CAPN_RPC_MAX_PENDING_CALLS 64
+/* Return this from dispatch to answer later with capn_rpc_return. */
+#define CAPN_RPC_PENDING 1
 
 struct capn_rpc_conn;
 
@@ -178,6 +181,15 @@ struct capn_rpc_pending_cap {
 	uint32_t id;
 };
 
+/* A call dispatch has not answered yet, with the message its results are
+ * being built in. */
+struct capn_rpc_pending_call {
+	int used;
+	uint32_t question_id;
+	struct capn *msg;
+	capn_ptr results;
+};
+
 struct capn_rpc_conn {
 	struct capn_rpc_export exports[CAPN_RPC_MAX_EXPORTS];
 	struct capn_rpc_answer answers[CAPN_RPC_MAX_ANSWERS];
@@ -205,6 +217,8 @@ struct capn_rpc_conn {
 	int npending;
 	/* The capTable of the call being dispatched, valid during dispatch. */
 	CapDescriptor_list in_caps;
+	struct capn_rpc_pending_call pending_calls[CAPN_RPC_MAX_PENDING_CALLS];
+	uint32_t current_question;
 };
 
 /* Zero the tables and install the transmit callback. */
@@ -215,6 +229,18 @@ void capn_rpc_init(struct capn_rpc_conn *c, capn_rpc_send_fn send,
  * unclaimed answers. Call it when the connection is finished; the
  * connection must not be used afterwards without capn_rpc_init. */
 void capn_rpc_free(struct capn_rpc_conn *c);
+
+/* Deferred replies. A dispatch function that cannot answer yet returns
+ * CAPN_RPC_PENDING after noting capn_rpc_current_question() and keeping
+ * the `results` pointer; later it fills `results` and calls
+ * capn_rpc_return, or capn_rpc_return_exception. `params` points into the
+ * incoming message and is gone once dispatch returns, so copy what is
+ * needed first. If the peer sends Finish in the meantime the call is
+ * cancelled and capn_rpc_return reports -1, and the results are dropped. */
+uint32_t capn_rpc_current_question(const struct capn_rpc_conn *c);
+int capn_rpc_return(struct capn_rpc_conn *c, uint32_t question_id);
+int capn_rpc_return_exception(struct capn_rpc_conn *c, uint32_t question_id,
+                              const char *reason);
 
 /* Size the results struct dispatch receives. It must cover the largest
  * results of any method this connection serves; the generated

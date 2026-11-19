@@ -24,6 +24,9 @@ Pre-1.0 minor releases may include breaking wire or API changes.
   `capn_rpc_param_cap` and `capn_rpc_answer_cap` read one, and
   `capn_rpc_send_pipelined_call` calls a capability inside an answer that
   has not arrived.
+- Deferred RPC replies: `dispatch` returns `CAPN_RPC_PENDING` and answers
+  later with `capn_rpc_return` or `capn_rpc_return_exception`; a `Finish` in
+  between cancels the call.
 - `$C.rpcstubs`: per interface, the method parameter and result structs, a
   client call helper and result reader per method, and a server vtable with
   a `<Interface>_dispatch` for `capn-rpc.h`.

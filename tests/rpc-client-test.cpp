@@ -176,6 +176,25 @@ void fill_with_callback(void *ctx, capn_ptr params)
 	capn_setp(params, 0, cap);
 }
 
+/* A server that answers later: it parks the call and returns PENDING. */
+struct Parked {
+	uint32_t question;
+	capn_ptr results;
+	uint32_t arg;
+	int calls;
+};
+Parked g_parked;
+
+int parking_dispatch(void *, uint64_t, uint16_t, capn_ptr params, capn_ptr results)
+{
+	capn_resolve(&params);
+	g_parked.question = capn_rpc_current_question(g_vat);
+	g_parked.results = results;
+	g_parked.arg = params.type == CAPN_STRUCT ? capn_read32(params, 0) : 0;
+	g_parked.calls++;
+	return CAPN_RPC_PENDING;
+}
+
 class RpcClient : public ::testing::Test {
  protected:
 	void SetUp() override
@@ -636,6 +655,84 @@ TEST_F(RpcClient, PassingBackACapabilityNamesTheReceiversExport)
 	EXPECT_EQ(1, client.npending);
 	client.npending = 0;
 	capn_free(&msg);
+}
+
+TEST_F(RpcClient, DeferredReplyIsSentWhenTheServerReturns)
+{
+	g_vat = &vat;
+	g_parked = Parked();
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, parking_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	uint32_t arg = 9;
+	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 0, 8, 1, fill_u32, &arg);
+	settle();
+	EXPECT_EQ(1, g_parked.calls);
+	EXPECT_EQ(9u, g_parked.arg);
+	EXPECT_FALSE(capn_rpc_is_answered(&client, q)) << "answered before the server returned";
+
+	capn_write32(g_parked.results, 0, g_parked.arg * 3);
+	ASSERT_EQ(0, capn_rpc_return(&vat, g_parked.question));
+	settle();
+	ASSERT_TRUE(capn_rpc_is_answered(&client, q));
+	ASSERT_FALSE(capn_rpc_is_failed(&client, q));
+	struct capn m;
+	capn_ptr content;
+	ASSERT_EQ(0, capn_rpc_answer_content(&client, q, &m, &content));
+	EXPECT_EQ(27u, capn_read32(content, 0));
+	capn_free(&m);
+
+	/* Answering twice is refused. */
+	EXPECT_EQ(-1, capn_rpc_return(&vat, g_parked.question));
+}
+
+TEST_F(RpcClient, DeferredReplyCanFail)
+{
+	g_vat = &vat;
+	g_parked = Parked();
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, parking_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 0, 8, 1, NULL, NULL);
+	settle();
+	ASSERT_EQ(0, capn_rpc_return_exception(&vat, g_parked.question, "gave up"));
+	settle();
+	EXPECT_TRUE(capn_rpc_is_answered(&client, q));
+	EXPECT_TRUE(capn_rpc_is_failed(&client, q));
+}
+
+TEST_F(RpcClient, FinishCancelsAParkedCall)
+{
+	g_vat = &vat;
+	g_parked = Parked();
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, parking_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 0, 8, 1, NULL, NULL);
+	settle();
+	ASSERT_EQ(1, g_parked.calls);
+	capn_rpc_send_finish(&client, q);
+	settle();
+
+	/* The call is gone; returning for it reports that and sends nothing. */
+	size_t before = wire.to_client.size();
+	EXPECT_EQ(-1, capn_rpc_return(&vat, g_parked.question));
+	EXPECT_EQ(before, wire.to_client.size());
+}
+
+TEST_F(RpcClient, ParkedCallsAreReleasedWithTheConnection)
+{
+	g_vat = &vat;
+	g_parked = Parked();
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, parking_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+	capn_rpc_send_call(&client, 0, 0x1234, 0, 8, 1, NULL, NULL);
+	settle();
+	/* TearDown's capn_rpc_free must release the parked message (leak check). */
 }
 
 } // namespace

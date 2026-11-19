@@ -44,6 +44,13 @@ void capn_rpc_free(struct capn_rpc_conn *c)
 		free(c->answers[i].frame);
 	for (i = 0; i < CAPN_RPC_MAX_QUESTIONS; i++)
 		free(c->questions[i].reply);
+	for (i = 0; i < CAPN_RPC_MAX_PENDING_CALLS; i++) {
+		if (c->pending_calls[i].used) {
+			capn_free(c->pending_calls[i].msg);
+			free(c->pending_calls[i].msg);
+		}
+	}
+	memset(c->pending_calls, 0, sizeof c->pending_calls);
 	memset(c->answers, 0, sizeof c->answers);
 	memset(c->questions, 0, sizeof c->questions);
 }
@@ -506,16 +513,99 @@ int capn_rpc_write_third_party_cap(struct capn_rpc_conn *c, CapDescriptor_ptr cd
 	return 0;
 }
 
-static int handle_call(struct capn_rpc_conn *c, Call_ptr cp)
+/* Send the Return for a call whose results struct is filled, and release
+ * the message it was built in. */
+static int finish_call(struct capn_rpc_conn *c, uint32_t qid, struct capn *msg,
+                       capn_ptr rstruct)
 {
-	struct capn msg;
-	struct Call call;
 	struct Message m;
 	struct Return r;
-	struct Payload params, results;
+	struct Payload results;
 	Message_ptr mp;
 	Return_ptr rp;
 	Payload_ptr plp;
+	struct capn_segment *cs = rstruct.seg;
+	int rc;
+
+	memset(&m, 0, sizeof m);
+	memset(&r, 0, sizeof r);
+	memset(&results, 0, sizeof results);
+
+	plp = new_Payload(cs);
+	results.content = rstruct;
+	attach_cap_table(c, cs, &results);
+	write_Payload(&results, plp);
+
+	rp = new_Return(cs);
+	r.answerId = qid;
+	r.which = Return_results;
+	r.results = plp;
+	write_Return(&r, rp);
+
+	mp = new_Message(cs);
+	m.which = Message__return;
+	m._return = rp;
+	write_Message(&m, mp);
+	capn_setp(capn_root(msg), 0, mp.p);
+
+	rc = send_answer(c, qid, msg);
+	capn_free(msg);
+	free(msg);
+	return rc;
+}
+
+static struct capn_rpc_pending_call *pending_find(struct capn_rpc_conn *c, uint32_t qid)
+{
+	int i;
+	for (i = 0; i < CAPN_RPC_MAX_PENDING_CALLS; i++)
+		if (c->pending_calls[i].used && c->pending_calls[i].question_id == qid)
+			return &c->pending_calls[i];
+	return NULL;
+}
+
+static void pending_drop(struct capn_rpc_conn *c, uint32_t qid)
+{
+	struct capn_rpc_pending_call *pc = pending_find(c, qid);
+	if (pc) {
+		capn_free(pc->msg);
+		free(pc->msg);
+		memset(pc, 0, sizeof *pc);
+	}
+}
+
+uint32_t capn_rpc_current_question(const struct capn_rpc_conn *c)
+{
+	return c->current_question;
+}
+
+int capn_rpc_return(struct capn_rpc_conn *c, uint32_t question_id)
+{
+	struct capn_rpc_pending_call *pc = pending_find(c, question_id);
+	struct capn *msg;
+	capn_ptr rstruct;
+
+	if (pc == NULL)
+		return -1;
+	msg = pc->msg;
+	rstruct = pc->results;
+	memset(pc, 0, sizeof *pc);
+	return finish_call(c, question_id, msg, rstruct);
+}
+
+int capn_rpc_return_exception(struct capn_rpc_conn *c, uint32_t question_id,
+                              const char *reason)
+{
+	if (pending_find(c, question_id) == NULL)
+		return -1;
+	pending_drop(c, question_id);
+	return send_return_exception(c, question_id, reason ? reason : "call failed");
+}
+
+static int handle_call(struct capn_rpc_conn *c, Call_ptr cp)
+{
+	struct capn *msg;
+	struct Call call;
+	struct Payload params;
 	struct capn_segment *cs;
 	capn_ptr rstruct;
 	int eid, rc;
@@ -534,50 +624,52 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp)
 	if (eid < 0)
 		return send_return_exception(c, call.questionId, "no such export");
 
-	capn_init_malloc(&msg);
-	cs = capn_root(&msg).seg;
-	memset(&m, 0, sizeof m);
-	memset(&r, 0, sizeof r);
-	memset(&results, 0, sizeof results);
+	msg = (struct capn *) malloc(sizeof *msg);
+	if (msg == NULL)
+		return send_return_exception(c, call.questionId, "out of memory");
+	capn_init_malloc(msg);
+	cs = capn_root(msg).seg;
 	c->npending = 0;
 	c->in_caps = params.capTable;
+	c->current_question = call.questionId;
 
 	/* Sized by capn_rpc_set_result_size: one data word and one pointer is
 	 * enough for the bundled servers, and a richer one asks for more. */
 	rstruct = capn_new_struct(cs, c->results_datasz, c->results_ptrs);
 	if (rstruct.type == CAPN_NULL) {
-		capn_free(&msg);
+		capn_free(msg);
+		free(msg);
 		return send_return_exception(c, call.questionId, "results too large");
 	}
 	rc = c->exports[eid].dispatch(c->exports[eid].server, call.interfaceId,
 	                              call.methodId, params.content, rstruct);
 	memset(&c->in_caps, 0, sizeof c->in_caps);
+	c->current_question = 0;
+
+	if (rc == CAPN_RPC_PENDING) {
+		int i;
+		for (i = 0; i < CAPN_RPC_MAX_PENDING_CALLS; i++) {
+			if (!c->pending_calls[i].used) {
+				c->pending_calls[i].used = 1;
+				c->pending_calls[i].question_id = call.questionId;
+				c->pending_calls[i].msg = msg;
+				c->pending_calls[i].results = rstruct;
+				c->npending = 0;
+				return 0;
+			}
+		}
+		c->npending = 0;
+		capn_free(msg);
+		free(msg);
+		return send_return_exception(c, call.questionId, "too many pending calls");
+	}
 	if (rc != 0) {
 		c->npending = 0;
-		capn_free(&msg);
+		capn_free(msg);
+		free(msg);
 		return send_return_exception(c, call.questionId, "call failed");
 	}
-
-	plp = new_Payload(cs);
-	results.content = rstruct;
-	attach_cap_table(c, cs, &results);
-	write_Payload(&results, plp);
-
-	rp = new_Return(cs);
-	r.answerId = call.questionId;
-	r.which = Return_results;
-	r.results = plp;
-	write_Return(&r, rp);
-
-	mp = new_Message(cs);
-	m.which = Message__return;
-	m._return = rp;
-	write_Message(&m, mp);
-	capn_setp(capn_root(&msg), 0, mp.p);
-
-	rc = send_answer(c, call.questionId, &msg);
-	capn_free(&msg);
-	return rc;
+	return finish_call(c, call.questionId, msg, rstruct);
 }
 
 static void handle_release(struct capn_rpc_conn *c, Release_ptr rp)
@@ -1845,6 +1937,9 @@ int capn_rpc_handle(struct capn_rpc_conn *c, const uint8_t *data, size_t len)
 		struct Finish fin;
 		read_Finish(&fin, m.finish);
 		answer_drop(c, fin.questionId);
+		/* Finish before the Return is cancellation: nothing is left to
+		 * answer, and a later capn_rpc_return reports it. */
+		pending_drop(c, fin.questionId);
 		break;
 	}
 	case Message_release:
