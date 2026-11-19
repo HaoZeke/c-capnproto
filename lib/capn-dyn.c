@@ -366,7 +366,7 @@ static void get_field_value(capn_ptr st, const struct capn_dyn_field *f,
 		break;
 	case CAPN_DYN_DATA:
 		v->p = capn_dyn_get_ptr(st, f);
-		v->data = capn_get_data(st, (int) f->offset);
+		v->data.p = v->p;
 		break;
 	case CAPN_DYN_STRUCT:
 		if (f->is_group)
@@ -2399,7 +2399,7 @@ static int jwalk(struct bctx *b, const struct vnode *at,
 		if (rt->st == NULL)
 			return berr(b, at, "field %s has no descriptor", step->f->name);
 		{
-			capn_ptr sub = capn_dyn_get_ptr(*cur, step->f);
+			capn_ptr sub = wire_ptr(*cur, step->f);
 			if (sub.type == CAPN_NULL) {
 				sub = capn_new_struct((*cur).seg, rt->st->data_words * 8, rt->st->pointers);
 				if (sub.type == CAPN_NULL)
