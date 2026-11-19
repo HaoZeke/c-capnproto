@@ -8,8 +8,59 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ## [Unreleased]
 
+### Added
+
+- `$C.reflect` and `lib/capn-dyn.h`: a descriptor per struct, group and
+  enum (`<Name>_dyn`), with field access by name, union selection and
+  setters, `capn_dyn_to_text` (`capnp decode --short`),
+  `capn_dyn_to_json` (`capnp convert binary:json`), and
+  `capn_dyn_from_text` / `capn_dyn_from_json`, which build the canonical
+  message `capnp encode` builds. Generic instantiations are resolved
+  through their brands.
+- `capn_rpc_free`, `capn_rpc_send_abort`, `capn_rpc_is_aborted` and
+  `capn_rpc_set_result_size`.
+- `scripts/regen-generated.sh`, which rewrites every checked-in
+  `*.capnp.[ch]` or, with `--check`, fails on a stale one; CI runs it.
+- Tests that read back the values baked into generated constants, that
+  compare read/write round trips and far-pointer messages with `capnp`,
+  and that check RPC frames over 8 KiB.
+
+### Changed
+
+- `CAPN_RPC_MAX_ANSWER_BYTES` is gone: RPC frames are sized from the
+  message, and `capn_rpc_answer` / `capn_rpc_question` hold heap frames
+  that `capn_rpc_free` releases.
+- Stream readers refuse a message over 64 MiB, as C++ does, and a buffer
+  whose segment table claims more than the buffer holds
+  (`CAPN_MAX_MESSAGE_BYTES` overrides the limit at compile time).
+- `capn_new_*` return a null pointer for a negative or oversized count.
+- The names `which`, `errno`, `stdin`, `stdout`, `stderr`, `unix`, `linux`,
+  `i386`, `noreturn`, `complex` and `imaginary` are renamed with a leading
+  underscore when a schema field uses them.
+
 ### Fixed
 
+- A Text field read from a null pointer wrote back as an empty string,
+  turning a schema default or a null into explicit data; it now writes a
+  null again.
+- `capn_setp` with a same-session far pointer stored the pointer word in
+  the struct's first data word instead of the named slot.
+- `capn_getv`/`capn_setv` for 16, 32 and 64 bit lists treated the element
+  offset as bytes; `getv1`/`setv1` mixed bits and bytes; negative offsets
+  and counts are rejected, as are negative indices to `capn_get*`,
+  `capn_set*`, `capn_getp` and `capn_setp`.
+- RPC: frames over 8 KiB were dropped; `Unimplemented` and `Abort` were
+  answered with an `Unimplemented` of their own and the echo wrapped the
+  message in a second one; a `Release` count of 0xffffffff overflowed.
+- `capnpc-c`: a header for a `-> stream` method included the nonexistent
+  `capnp/stream.capnp.h`; two schemas in one request read freed memory;
+  an all-Void union produced an empty C union; generated constants warned
+  under `-Wextra`.
+- The checked-in generated sources matched an older plugin (no `has_`
+  accessors); they are regenerated.
+- An installed `capnpc-c` could not find `libcapnp_c.so`; the meson
+  `.pc` file lacked `codegen`; `make dist` failed and the tarball lacked
+  files; `.travis.yml` was dead and is removed.
 - `capnpc-c` accepts an empty string append without passing a null pointer to
   `memcpy`, including under UBSan.
 - Generator-only helper parameters are limited to values that affect emitted
