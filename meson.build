@@ -254,8 +254,15 @@ if get_option('enable_tests') and not meson.is_subproject()
   )
   test('rpc-client-test', rpc_client_test)
 
-  capnp = find_program('capnp', required: false)
-  if capnp.found()
+  # A cross build must not run the host capnp against the target
+  # capnpc-c plugin. The CLI parity tests stay on native builds.
+  if meson.is_cross_build()
+    have_host_capnp = false
+  else
+    capnp = find_program('capnp', native: true, required: false)
+    have_host_capnp = capnp.found()
+  endif
+  if have_host_capnp
     codec_c_args = common_c_args + ['-D_POSIX_C_SOURCE=200809L']
 
     test(
@@ -656,9 +663,14 @@ if get_option('fuzz')
   # otherwise use the checked-in seed. Not unbounded AFL.
   fs = import('fs')
   fuzz_seed = meson.project_source_root() / 'fuzz' / 'in' / 'Person.bin'
-  capnp_fuzz = find_program('capnp', required: false)
+  if meson.is_cross_build()
+    have_fuzz_capnp = false
+  else
+    capnp_fuzz = find_program('capnp', native: true, required: false)
+    have_fuzz_capnp = capnp_fuzz.found()
+  endif
   sh = find_program('sh', required: false)
-  if capnp_fuzz.found() and sh.found()
+  if have_fuzz_capnp and sh.found()
     fuzz_person_bin = custom_target(
       'fuzz-person-bin',
       input: files('fuzz' / 'Person.txt'),
