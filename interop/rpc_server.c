@@ -14,6 +14,12 @@
 #include "capn-rpc.h"
 
 static char g_label[64];
+static struct capn_rpc_conn *g_conn;
+static struct Adder_server g_server;
+static int g_parked;
+static uint32_t g_q, g_gen;
+static int32_t g_n;
+static capn_ptr g_cap;
 
 static int on_add(void *self, const struct Adder_add_params *in,
                   struct Adder_add_results *out, struct capn_segment *seg)
@@ -71,11 +77,38 @@ static int on_tag(void *self, const struct Adder_tag_params *in,
 	return 0;
 }
 
+static int on_borrow(void *self, const struct Adder_borrow_params *in,
+                     struct Adder_borrow_results *out, struct capn_segment *seg)
+{
+	(void) self;
+	(void) out;
+	g_cap = capn_rpc_new_export_cap(g_conn, seg, &g_server, Adder_dispatch);
+	if (g_cap.type == CAPN_NULL)
+		return -1;
+	g_n = in->n;
+	g_q = capn_rpc_current_question(g_conn);
+	g_gen = capn_rpc_current_generation(g_conn);
+	g_parked = 1;
+	return CAPN_RPC_PENDING;
+}
+
+static void finish_parked(void)
+{
+	struct Adder_borrow_results out;
+
+	if (!g_parked)
+		return;
+	memset(&out, 0, sizeof out);
+	out.n = g_n;
+	out.cap.p = g_cap;
+	Adder_return_borrow(g_conn, g_q, g_gen, &out);
+	g_parked = 0;
+}
+
 int main(int argc, char **argv)
 {
 	struct sockaddr_in addr;
 	struct capn_rpc_conn conn;
-	struct Adder_server adder;
 	struct CountBase_server base;
 	struct CountMid_server mid;
 	struct CountLeaf_server leaf;
@@ -101,24 +134,28 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	memset(&adder, 0, sizeof adder);
+	memset(&g_server, 0, sizeof g_server);
 	memset(&base, 0, sizeof base);
 	memset(&mid, 0, sizeof mid);
 	memset(&leaf, 0, sizeof leaf);
-	adder.on_add = on_add;
-	adder.on_tag = on_tag;
+	g_server.on_add = on_add;
+	g_server.on_tag = on_tag;
+	g_server.on_borrow = on_borrow;
 	base.on_inc = on_inc;
 	mid.on_twice = on_twice;
 	mid.super_CountBase = &base;
 	leaf.on_dec = on_dec;
 	leaf.super_CountMid = &mid;
-	leaf.super_Adder = &adder;
+	leaf.super_Adder = &g_server;
 	capn_rpc_init(&conn, capn_rpc_fd_send, &fd);
+	g_conn = &conn;
 	capn_rpc_set_bootstrap(&conn, &leaf, CountLeaf_dispatch);
 	capn_rpc_set_result_size(&conn, CountLeaf_RESULT_DATASZ, CountLeaf_RESULT_PTRS);
 
 	for (;;) {
 		int rc = capn_rpc_fd_pump(&conn, fd);
+		if (g_parked)
+			finish_parked();
 		if (rc != 0)
 			break;
 	}

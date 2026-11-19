@@ -62,6 +62,24 @@ int main(int argc, char **argv) {
 			return 1;
 		}
 	}
+	{
+		auto req = leaf.borrowRequest();
+		req.setN(7);
+		auto resp = req.send().wait(waitScope);
+		if (resp.getN() != 7) {
+			fprintf(stderr, "borrow() returned n=%d\n", resp.getN());
+			return 1;
+		}
+		auto add = resp.getCap().addRequest();
+		add.setA(20);
+		add.setB(22);
+		auto sum = add.send().wait(waitScope);
+		if (sum.getSum() != 42) {
+			fprintf(stderr, "borrowed add(20, 22) returned %lld\n",
+			        (long long) sum.getSum());
+			return 1;
+		}
+	}
 	printf("All reverse rpc interop assertions passed.\n");
 	return 0;
 }
