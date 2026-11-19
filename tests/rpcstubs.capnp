@@ -20,3 +20,13 @@ interface Echo {
 interface SubCalc extends(Calc) {
   multiply @0 (a :Int32, b :Int32) -> (product :Int32);
 }
+
+struct Note {
+  n @0 :Int32;
+  label @1 :Text;
+}
+
+interface Noted {
+  post @0 Note -> Note;
+  mix @1 (n :Int32, label :Text) -> (echo :Text, n :Int32);
+}

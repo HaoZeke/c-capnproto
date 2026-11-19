@@ -187,7 +187,13 @@ EXTRA_DIST += \
 	fuzz/read_mem.c \
 	fuzz/read_fp.c \
 	fuzz/read_message.c \
-	fuzz/rpc_frame.c
+	fuzz/rpc_frame.c \
+	fuzz/dyn_text.c \
+	fuzz/in/cap-index-frame.bin \
+	fuzz/in/dyn-cap-16.bin \
+	scripts/fuzz-smoke.sh \
+	interop/rpc_server.c \
+	interop/rpc_peer_client.c++
 capn_test_CPPFLAGS = $(AM_CPPFLAGS) $(GTEST_CPPFLAGS) \
 	-DEXTRAHEADER_GENERATED_H=\"$(abs_srcdir)/tests/extraheader.capnp.h\" \
 	-DCODEGEN_DEFAULTS_GENERATED_C=\"$(abs_srcdir)/tests/codegen-defaults.capnp.c\" \

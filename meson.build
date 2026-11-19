@@ -166,7 +166,16 @@ if get_option('enable_tests') and not meson.is_subproject()
     install: false,
     implicit_include_directories: false,
   )
-  test('capn-test', exe)
+  test(
+    'capn-test',
+    exe,
+    env: {
+      'CAPNP_SOURCE_ROOT': meson.project_source_root(),
+      # A huge list is refused with NULL. ASan aborts that allocation
+      # unless it is allowed to return NULL.
+      'ASAN_OPTIONS': 'halt_on_error=1:abort_on_error=1:print_summary=1:allocator_may_return_null=1',
+    },
+  )
 
   compiler_str_test = executable(
     'compiler-str-test',
@@ -310,6 +319,7 @@ if get_option('enable_tests') and not meson.is_subproject()
         command: [
           capnp, 'compile',
           '--src-prefix=' + meson.current_source_dir() / 'compiler',
+          '-I', meson.current_source_dir() / 'compiler',
           '-o' + capnpc_cpp.full_path() + ':@OUTDIR@',
           '@INPUT@',
         ],
@@ -337,6 +347,21 @@ if get_option('enable_tests') and not meson.is_subproject()
         implicit_include_directories: false,
       )
 
+      rpc_server_c = executable(
+        'rpc_server_c',
+        ['interop' / 'rpc_server.c', 'compiler' / 'adder.capnp.c'],
+        include_directories: include_directories(['lib', 'compiler']),
+        dependencies: [libcapnp_dep],
+        c_args: ['-D_POSIX_C_SOURCE=200809L'],
+        implicit_include_directories: false,
+      )
+      rpc_peer_client = executable(
+        'rpc_peer_client',
+        ['interop' / 'rpc_peer_client.c++', adder_cpp],
+        dependencies: capnp_rpc_dep,
+        override_options: ['cpp_std=c++17'],
+      )
+
       test(
         'rpc_interop_cpp',
         bash,
@@ -344,8 +369,10 @@ if get_option('enable_tests') and not meson.is_subproject()
           meson.current_source_dir() / 'interop' / 'run_rpc_interop.sh',
           rpc_peer_server.full_path(),
           rpc_client_c.full_path(),
+          rpc_server_c.full_path(),
+          rpc_peer_client.full_path(),
         ],
-        depends: [rpc_peer_server, rpc_client_c],
+        depends: [rpc_peer_server, rpc_client_c, rpc_server_c, rpc_peer_client],
         timeout: 60,
       )
     else
@@ -552,6 +579,15 @@ if get_option('fuzz')
     install: false,
     implicit_include_directories: false,
   )
+  fuzz_dyn = executable(
+    'fuzz-dyn-text',
+    'fuzz' / 'dyn_text.c',
+    include_directories: fuzz_inc,
+    dependencies: [libcapnp_dep],
+    c_args: common_c_args,
+    install: false,
+    implicit_include_directories: false,
+  )
 
   # One-shot smoke on the seed corpus. Prefer a freshly encoded Person.bin
   # when capnp is on PATH (same as the autotools fuzz/in/Person.bin rule);
@@ -588,5 +624,27 @@ if get_option('fuzz')
     test('fuzz-reader-smoke', fuzz_reader, args: [fuzz_seed])
     test('fuzz-rpc-frame-smoke', fuzz_rpc,
          args: [meson.project_source_root() / 'tests' / 'fixtures' / 'rpc-accept.bin'])
+  endif
+  if sh.found()
+    smoke = meson.project_source_root() / 'scripts' / 'fuzz-smoke.sh'
+    person = meson.project_source_root() / 'fuzz' / 'in' / 'Person.bin'
+    cap_frame = meson.project_source_root() / 'fuzz' / 'in' / 'cap-index-frame.bin'
+    dyn16 = meson.project_source_root() / 'fuzz' / 'in' / 'dyn-cap-16.bin'
+    rpc_fix = meson.project_source_root() / 'tests' / 'fixtures' / 'rpc-accept.bin'
+    test('fuzz-reader-60s', sh,
+         args: [smoke, '60', fuzz_reader, person, cap_frame, dyn16],
+         timeout: 120)
+    test('fuzz-mem-60s', sh,
+         args: [smoke, '60', fuzz_mem, person],
+         timeout: 120)
+    test('fuzz-fp-60s', sh,
+         args: [smoke, '60', fuzz_fp, person],
+         timeout: 120)
+    test('fuzz-rpc-60s', sh,
+         args: [smoke, '60', fuzz_rpc, cap_frame, rpc_fix],
+         timeout: 120)
+    test('fuzz-dyn-60s', sh,
+         args: [smoke, '60', fuzz_dyn, dyn16, cap_frame],
+         timeout: 120)
   endif
 endif
