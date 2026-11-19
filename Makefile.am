@@ -140,6 +140,10 @@ endif
 # Meson builds its tests from a tarball, so the lists below stay
 # outside WITH_GTEST.
 EXTRA_DIST += \
+	fuzz/dyn_text.c \
+	fuzz/in/cap-index-frame.bin \
+	fuzz/in/dyn-cap-16.bin \
+	scripts/fuzz-smoke.sh \
 	tests/null-ptr-write-test.c \
 	tests/packed-header-write-test.c
 

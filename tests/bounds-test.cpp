@@ -5,11 +5,22 @@
  */
 
 #include <gtest/gtest.h>
+/* The bundled gtest that autotools builds against predates GTEST_SKIP. */
+#ifndef GTEST_SKIP
+#define GTEST_SKIP() return GTEST_SUCCEED()
+#endif
 #include <cstdint>
 #include <cstring>
+#include <string>
+#include <signal.h>
+#include <stdlib.h>
+#include <sys/resource.h>
+#include <unistd.h>
 #include <vector>
 
 #include "capnp_c.h"
+#include "capn-rpc.h"
+#include "capn-dyn.h"
 #include "addressbook.capnp.h"
 
 static capn_text chars_to_text(const char *chars) {
@@ -753,5 +764,198 @@ TEST(DecodeBounds, BitListPastDataszFieldIsReadable) {
   ASSERT_EQ(8, capn_getv1(l, bits - 8, &last, 8));
   EXPECT_EQ(0x5a, last);
   EXPECT_EQ(0, capn_validate(&c));
+  capn_free(&c);
+}
+
+/* A hang in a list walk must fail the test instead of the suite. */
+static void review_alarm(int) {
+  _exit(97);
+}
+
+static void arm_review_alarm(void) {
+  struct sigaction sa;
+  memset(&sa, 0, sizeof sa);
+  sa.sa_handler = review_alarm;
+  sigaction(SIGALRM, &sa, NULL);
+  alarm(2);
+}
+
+static int discard_frame(void *, const uint8_t *, size_t) {
+  return 0;
+}
+
+/* 230-byte Call whose params.capTable word is a capability index of
+ * 0x7fffffff. The declared segment is 11 words; the rest is padding
+ * the reader ignores. */
+static void build_cap_index_frame(uint8_t out[230]) {
+  memset(out, 0, 230);
+  wr32(out + 0, 0);
+  wr32(out + 4, 11);
+  /* word 0: struct, offset 0, 1 data word, 1 pointer. */
+  wr64(out + 8, (UINT64_C(1) << 32) | (UINT64_C(1) << 48));
+  /* word 1: Message.which = call (2). */
+  wr32(out + 16, 2);
+  /* word 2: struct, offset 0, 3 data words, 3 pointers (a Call). */
+  wr64(out + 24, (UINT64_C(3) << 32) | (UINT64_C(3) << 48));
+  /* words 3-5: Call data. word 6: target null. */
+  /* word 7: params, offset 1, 0 data words, 2 pointers (a Payload). */
+  wr64(out + 64, (UINT64_C(1) << 2) | (UINT64_C(2) << 48));
+  /* word 9: content null. word 10: capability index 0x7fffffff. */
+  wr64(out + 88, UINT64_C(3) | (UINT64_C(0x7fffffff) << 32));
+}
+
+TEST(Interface, CapabilityIndexIsNotAListLength) {
+  uint8_t msg[16] = {
+    0, 0, 0, 0, 1, 0, 0, 0,
+    0x03, 0, 0, 0, 0xff, 0xff, 0xff, 0x7f
+  };
+  struct capn c;
+  ASSERT_EQ(0, capn_init_mem(&c, msg, sizeof msg, 0));
+  capn_ptr got = capn_getp(capn_root(&c), 0, 1);
+  EXPECT_EQ(CAPN_INTERFACE, got.type);
+  EXPECT_EQ(0, got.len);
+  EXPECT_EQ(0x7fffffffu, got.cap_idx);
+  EXPECT_EQ(0, capn_ptr_len(got));
+  capn_list8 as_list;
+  as_list.p = got;
+  EXPECT_EQ(0, capn_len(as_list));
+  EXPECT_EQ(8u, c.traversal_used);
+  capn_free(&c);
+
+  ASSERT_EQ(0, capn_init_mem(&c, msg, sizeof msg, 0));
+  c.traversal_limit = 4;
+  got = capn_getp(capn_root(&c), 0, 1);
+  EXPECT_EQ(CAPN_NULL, got.type);
+  EXPECT_EQ(0, capn_ok(&c));
+  capn_free(&c);
+}
+
+TEST(Interface, CapabilityCallFrameDoesNotHang) {
+  uint8_t frame[230];
+  build_cap_index_frame(frame);
+  struct capn_rpc_conn conn;
+  capn_rpc_init(&conn, discard_frame, NULL);
+  arm_review_alarm();
+  int rc = capn_rpc_handle(&conn, frame, sizeof frame);
+  alarm(0);
+  EXPECT_LE(rc, 0);
+  capn_rpc_free(&conn);
+
+  const char *root = getenv("CAPNP_SOURCE_ROOT");
+  if (root == NULL)
+    return;
+  std::string path = std::string(root) + "/fuzz/in/cap-index-frame.bin";
+  FILE *fp = fopen(path.c_str(), "rb");
+  ASSERT_NE(nullptr, fp) << path;
+  uint8_t disk[230];
+  ASSERT_EQ(230u, fread(disk, 1, sizeof disk, fp));
+  EXPECT_EQ(EOF, fgetc(fp));
+  fclose(fp);
+  EXPECT_EQ(0, memcmp(frame, disk, sizeof frame));
+}
+
+TEST(DynText, CapabilityListDoesNotOom) {
+  uint8_t msg[16] = {
+    0, 0, 0, 0, 1, 0, 0, 0,
+    0x03, 0, 0, 0, 0xff, 0xff, 0xff, 0x7f
+  };
+  struct capn_dyn_type u8t;
+  struct capn_dyn_field fields[2];
+  struct capn_dyn_struct box;
+  memset(&u8t, 0, sizeof u8t);
+  memset(fields, 0, sizeof fields);
+  memset(&box, 0, sizeof box);
+  u8t.kind = CAPN_DYN_UINT8;
+  fields[0].name = "items";
+  fields[0].type.kind = CAPN_DYN_LIST;
+  fields[0].type.elem = &u8t;
+  fields[0].offset = 0;
+  fields[0].discriminant = CAPN_DYN_NO_DISCRIMINANT;
+  fields[1].name = "blob";
+  fields[1].type.kind = CAPN_DYN_DATA;
+  fields[1].offset = 1;
+  fields[1].discriminant = CAPN_DYN_NO_DISCRIMINANT;
+  box.name = "Box";
+  box.pointers = 2;
+  box.nfields = 2;
+  box.fields = fields;
+
+  struct capn src, dst;
+  ASSERT_EQ(0, capn_init_mem(&src, msg, sizeof msg, 0));
+  capn_ptr cap = capn_getp(capn_root(&src), 0, 1);
+  ASSERT_EQ(CAPN_INTERFACE, cap.type);
+  /* The decoded segment is full, so the list-typed field lives in a
+   * fresh message. setp copies the capability tag, not an object. */
+  capn_init_malloc(&dst);
+  capn_ptr boxp = capn_new_struct(capn_root(&dst).seg, 0, 2);
+  ASSERT_EQ(CAPN_STRUCT, boxp.type);
+  ASSERT_EQ(0, capn_setp(boxp, 0, cap));
+  ASSERT_EQ(0, capn_setp(boxp, 1, cap));
+
+  arm_review_alarm();
+  char *text = capn_dyn_to_text(&box, boxp);
+  char *json = capn_dyn_to_json(&box, boxp, 0);
+  alarm(0);
+  ASSERT_NE(nullptr, text);
+  ASSERT_NE(nullptr, json);
+  EXPECT_LT(strlen(text), 200u);
+  EXPECT_LT(strlen(json), 200u);
+  free(text);
+  free(json);
+  capn_free(&dst);
+  capn_free(&src);
+
+  const char *rootenv = getenv("CAPNP_SOURCE_ROOT");
+  if (rootenv == NULL)
+    return;
+  std::string path = std::string(rootenv) + "/fuzz/in/dyn-cap-16.bin";
+  FILE *fp = fopen(path.c_str(), "rb");
+  ASSERT_NE(nullptr, fp) << path;
+  uint8_t disk[16];
+  ASSERT_EQ(16u, fread(disk, 1, sizeof disk, fp));
+  EXPECT_EQ(EOF, fgetc(fp));
+  fclose(fp);
+  EXPECT_EQ(0, memcmp(msg, disk, sizeof msg));
+}
+
+TEST(NewObjectLimits, BitListOneShift22RoundTrips) {
+  /* 1<<22 bits is 524288 bytes, one past the 19-bit datasz field.
+   * Truncating that field and still advertising the element count
+   * used to allocate nothing and then write off the end. */
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *seg = capn_root(&c).seg;
+  const int bits = 1 << 22;
+  capn_list1 l = capn_new_list1(seg, bits);
+  ASSERT_EQ(CAPN_BIT_LIST, l.p.type);
+  ASSERT_NE(nullptr, l.p.data);
+  EXPECT_EQ(bits, l.p.len);
+  uint8_t b = 0x5a;
+  ASSERT_EQ(8, capn_setv1(l, bits - 8, &b, 8));
+  uint8_t out = 0;
+  ASSERT_EQ(8, capn_getv1(l, bits - 8, &out, 8));
+  EXPECT_EQ(0x5a, out);
+  capn_free(&c);
+}
+
+TEST(NewObjectLimits, HugeListRefusesAWrappedAllocation) {
+  struct rlimit old;
+  ASSERT_EQ(0, getrlimit(RLIMIT_AS, &old));
+  struct rlimit lim = old;
+  lim.rlim_cur = (rlim_t) 512 * 1024 * 1024;
+  if (setrlimit(RLIMIT_AS, &lim) != 0) {
+    GTEST_SKIP() << "cannot cap the address space";
+  }
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *seg = capn_root(&c).seg;
+  ASSERT_NE(nullptr, seg);
+  /* 0xffffffe * 8 == 0x7ffffff0. The 8-byte far tag on top of that
+   * used to wrap a signed create() size down to a 4096-byte segment. */
+  capn_ptr p = capn_new_list(seg, 0xffffffe, 8, 0);
+  int rc = setrlimit(RLIMIT_AS, &old);
+  EXPECT_EQ(0, rc);
+  EXPECT_EQ(CAPN_NULL, p.type);
+  EXPECT_EQ(nullptr, p.data);
   capn_free(&c);
 }
