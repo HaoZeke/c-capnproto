@@ -43,9 +43,9 @@ extern "C" {
 #define CAPN_RPC_MAX_RELAYS 32
 #define CAPN_RPC_MAX_IMPORTS 4096
 #define CAPN_RPC_PATH_MAX 8
-/* Pipelined calls recorded against one question, so a later Resolve
- * can embargo the capability they actually addressed. */
-#define CAPN_RPC_MAX_PIPE_NOTES 4
+/* First batch of pipeline notes on a question. The table doubles
+ * from here. A fixed cap of four used to drop later paths. */
+#define CAPN_RPC_PIPE_NOTES_INIT 4
 /* Disembargo messages held until the promise they name has resolved
  * and its queued calls are on the wire. */
 #define CAPN_RPC_MAX_ECHOES 8
@@ -97,6 +97,10 @@ struct capn_rpc_answer {
 	uint32_t question_id;
 	uint8_t *frame;
 	size_t len;
+	/* Kept locally because the call set sendResultsTo to yourself.
+	 * takeFromOtherQuestion may adopt the payload once. */
+	int redirected;
+	int taken;
 };
 
 /* One pipelined call path sent against a question that had not
@@ -116,8 +120,10 @@ struct capn_rpc_question {
 	int failed;
 	uint8_t *reply;
 	size_t reply_len;
-	struct capn_rpc_pipe_note pipes[CAPN_RPC_MAX_PIPE_NOTES];
+	/* Growable. A fixed table of four used to drop further paths. */
+	struct capn_rpc_pipe_note *pipes;
 	int npipes;
+	int pipes_cap;
 	/* Return(takeFromOtherQuestion) arrived before the reflected call
 	 * finished. tail_from is the peer's question id whose results are
 	 * the answer. rpc.capnp Call.sendResultsTo.yourself. */
@@ -314,6 +320,9 @@ struct capn_rpc_pending_call {
 	uint32_t generation;
 	struct capn *msg;
 	capn_ptr results;
+	/* The caller is on this connection. The answer fills that question
+	 * and is not sent to the peer. */
+	int local_question;
 	/* Caps this answer will carry. They stay here until return, so a
 	 * later call cannot overwrite them or drop the export refs. A cap
 	 * built in this message after dispatch returned CAPN_RPC_PENDING is
