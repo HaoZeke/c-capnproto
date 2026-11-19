@@ -185,6 +185,10 @@ struct capn_rpc_conn {
 	capn_rpc_dispatch_fn bootstrap_dispatch;
 	capn_rpc_send_fn send;
 	void *send_ctx;
+	/* Size of the results struct handed to dispatch, in bytes of data and
+	 * pointer slots. capn_rpc_init sets 8 and 1. */
+	int results_datasz;
+	int results_ptrs;
 };
 
 /* Zero the tables and install the transmit callback. */
@@ -195,6 +199,11 @@ void capn_rpc_init(struct capn_rpc_conn *c, capn_rpc_send_fn send,
  * unclaimed answers. Call it when the connection is finished; the
  * connection must not be used afterwards without capn_rpc_init. */
 void capn_rpc_free(struct capn_rpc_conn *c);
+
+/* Size the results struct dispatch receives. It must cover the largest
+ * results of any method this connection serves; the generated
+ * `<Interface>_<method>_method` descriptors give the sizes per method. */
+void capn_rpc_set_result_size(struct capn_rpc_conn *c, int datasz, int ptrs);
 
 /* Share level 3 arrangements with this vat's other connections. Call
  * after capn_rpc_init and before any Provide; `vat` must outlive the

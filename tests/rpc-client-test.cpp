@@ -306,4 +306,30 @@ TEST_F(RpcClient, PayloadsLargerThanEightKilobytesRoundTrip)
 	capn_free(&m);
 }
 
+TEST_F(RpcClient, ResultStructSizeFollowsTheConnectionSetting)
+{
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, echo_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	/* The default result struct has one data word, so the second word the
+	 * echo server writes is dropped. */
+	Blob blob = {4};
+	uint32_t q1 = capn_rpc_send_call(&client, 0, 0x1234, 0, 0, 1, fill_blob, &blob);
+	settle();
+	struct capn m;
+	capn_ptr content;
+	ASSERT_EQ(0, capn_rpc_answer_content(&client, q1, &m, &content));
+	EXPECT_EQ(0u, capn_read32(content, 8));
+	capn_free(&m);
+
+	capn_rpc_set_result_size(&vat, 16, 1);
+	uint32_t q2 = capn_rpc_send_call(&client, 0, 0x1234, 0, 0, 1, fill_blob, &blob);
+	settle();
+	ASSERT_EQ(0, capn_rpc_answer_content(&client, q2, &m, &content));
+	EXPECT_EQ(4u, capn_read32(content, 0));
+	EXPECT_EQ(0xfeedbeefu, capn_read32(content, 8));
+	capn_free(&m);
+}
+
 } // namespace
