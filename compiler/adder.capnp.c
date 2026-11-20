@@ -11,7 +11,374 @@
 #include <string.h>
 static const char capn_val0_str[1] = {0};
 static const capn_text capn_val0 = {0,capn_val0_str,0};
+static const capn_ptr capn_null = {CAPN_NULL};
 static const capn_text capn_text_null = {0,0,0};
+
+Adder_borrow_results_ptr new_Adder_borrow_results(struct capn_segment *s) {
+	Adder_borrow_results_ptr p;
+	p.p = capn_new_struct(s, 8, 1);
+	return p;
+}
+Adder_borrow_results_list new_Adder_borrow_results_list(struct capn_segment *s, int len) {
+	Adder_borrow_results_list p;
+	p.p = capn_new_struct_list(s, len, 8, 1);
+	return p;
+}
+void read_Adder_borrow_results(struct Adder_borrow_results *s capnp_unused, Adder_borrow_results_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	s->n = (int32_t) ((int32_t)capn_read32(p.p, 0));
+	s->cap.p = capn_getp(p.p, 0, 0);
+}
+void write_Adder_borrow_results(const struct Adder_borrow_results *s capnp_unused, Adder_borrow_results_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	capn_write32(p.p, 0, (uint32_t) (s->n));
+	capn_setp(p.p, 0, (s->cap.p.type != CAPN_NULL) ? s->cap.p : capn_null);
+}
+void get_Adder_borrow_results(struct Adder_borrow_results *s, Adder_borrow_results_list l, int i) {
+	Adder_borrow_results_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_Adder_borrow_results(s, p);
+}
+void set_Adder_borrow_results(const struct Adder_borrow_results *s, Adder_borrow_results_list l, int i) {
+	Adder_borrow_results_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_Adder_borrow_results(s, p);
+}
+
+Adder_borrow_params_ptr new_Adder_borrow_params(struct capn_segment *s) {
+	Adder_borrow_params_ptr p;
+	p.p = capn_new_struct(s, 8, 0);
+	return p;
+}
+Adder_borrow_params_list new_Adder_borrow_params_list(struct capn_segment *s, int len) {
+	Adder_borrow_params_list p;
+	p.p = capn_new_struct_list(s, len, 8, 0);
+	return p;
+}
+void read_Adder_borrow_params(struct Adder_borrow_params *s capnp_unused, Adder_borrow_params_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	s->n = (int32_t) ((int32_t)capn_read32(p.p, 0));
+}
+void write_Adder_borrow_params(const struct Adder_borrow_params *s capnp_unused, Adder_borrow_params_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	capn_write32(p.p, 0, (uint32_t) (s->n));
+}
+void get_Adder_borrow_params(struct Adder_borrow_params *s, Adder_borrow_params_list l, int i) {
+	Adder_borrow_params_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_Adder_borrow_params(s, p);
+}
+void set_Adder_borrow_params(const struct Adder_borrow_params *s, Adder_borrow_params_list l, int i) {
+	Adder_borrow_params_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_Adder_borrow_params(s, p);
+}
+
+Adder_seq_results_ptr new_Adder_seq_results(struct capn_segment *s) {
+	Adder_seq_results_ptr p;
+	p.p = capn_new_struct(s, 8, 0);
+	return p;
+}
+Adder_seq_results_list new_Adder_seq_results_list(struct capn_segment *s, int len) {
+	Adder_seq_results_list p;
+	p.p = capn_new_struct_list(s, len, 8, 0);
+	return p;
+}
+void read_Adder_seq_results(struct Adder_seq_results *s capnp_unused, Adder_seq_results_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	s->prev = (int64_t) ((int64_t)(capn_read64(p.p, 0)));
+}
+void write_Adder_seq_results(const struct Adder_seq_results *s capnp_unused, Adder_seq_results_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	capn_write64(p.p, 0, (uint64_t) (s->prev));
+}
+void get_Adder_seq_results(struct Adder_seq_results *s, Adder_seq_results_list l, int i) {
+	Adder_seq_results_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_Adder_seq_results(s, p);
+}
+void set_Adder_seq_results(const struct Adder_seq_results *s, Adder_seq_results_list l, int i) {
+	Adder_seq_results_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_Adder_seq_results(s, p);
+}
+
+Adder_seq_params_ptr new_Adder_seq_params(struct capn_segment *s) {
+	Adder_seq_params_ptr p;
+	p.p = capn_new_struct(s, 8, 0);
+	return p;
+}
+Adder_seq_params_list new_Adder_seq_params_list(struct capn_segment *s, int len) {
+	Adder_seq_params_list p;
+	p.p = capn_new_struct_list(s, len, 8, 0);
+	return p;
+}
+void read_Adder_seq_params(struct Adder_seq_params *s capnp_unused, Adder_seq_params_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	s->n = (int64_t) ((int64_t)(capn_read64(p.p, 0)));
+}
+void write_Adder_seq_params(const struct Adder_seq_params *s capnp_unused, Adder_seq_params_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	capn_write64(p.p, 0, (uint64_t) (s->n));
+}
+void get_Adder_seq_params(struct Adder_seq_params *s, Adder_seq_params_list l, int i) {
+	Adder_seq_params_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_Adder_seq_params(s, p);
+}
+void set_Adder_seq_params(const struct Adder_seq_params *s, Adder_seq_params_list l, int i) {
+	Adder_seq_params_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_Adder_seq_params(s, p);
+}
+
+Adder_echo_results_ptr new_Adder_echo_results(struct capn_segment *s) {
+	Adder_echo_results_ptr p;
+	p.p = capn_new_struct(s, 0, 1);
+	return p;
+}
+Adder_echo_results_list new_Adder_echo_results_list(struct capn_segment *s, int len) {
+	Adder_echo_results_list p;
+	p.p = capn_new_struct_list(s, len, 0, 1);
+	return p;
+}
+void read_Adder_echo_results(struct Adder_echo_results *s capnp_unused, Adder_echo_results_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	s->cap.p = capn_getp(p.p, 0, 0);
+}
+void write_Adder_echo_results(const struct Adder_echo_results *s capnp_unused, Adder_echo_results_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	capn_setp(p.p, 0, (s->cap.p.type != CAPN_NULL) ? s->cap.p : capn_null);
+}
+void get_Adder_echo_results(struct Adder_echo_results *s, Adder_echo_results_list l, int i) {
+	Adder_echo_results_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_Adder_echo_results(s, p);
+}
+void set_Adder_echo_results(const struct Adder_echo_results *s, Adder_echo_results_list l, int i) {
+	Adder_echo_results_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_Adder_echo_results(s, p);
+}
+
+Adder_echo_params_ptr new_Adder_echo_params(struct capn_segment *s) {
+	Adder_echo_params_ptr p;
+	p.p = capn_new_struct(s, 0, 1);
+	return p;
+}
+Adder_echo_params_list new_Adder_echo_params_list(struct capn_segment *s, int len) {
+	Adder_echo_params_list p;
+	p.p = capn_new_struct_list(s, len, 0, 1);
+	return p;
+}
+void read_Adder_echo_params(struct Adder_echo_params *s capnp_unused, Adder_echo_params_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	s->cap.p = capn_getp(p.p, 0, 0);
+}
+void write_Adder_echo_params(const struct Adder_echo_params *s capnp_unused, Adder_echo_params_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	capn_setp(p.p, 0, (s->cap.p.type != CAPN_NULL) ? s->cap.p : capn_null);
+}
+void get_Adder_echo_params(struct Adder_echo_params *s, Adder_echo_params_list l, int i) {
+	Adder_echo_params_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_Adder_echo_params(s, p);
+}
+void set_Adder_echo_params(const struct Adder_echo_params *s, Adder_echo_params_list l, int i) {
+	Adder_echo_params_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_Adder_echo_params(s, p);
+}
+
+Adder_watch_results_ptr new_Adder_watch_results(struct capn_segment *s) {
+	Adder_watch_results_ptr p;
+	p.p = capn_new_struct(s, 0, 0);
+	return p;
+}
+Adder_watch_results_list new_Adder_watch_results_list(struct capn_segment *s, int len) {
+	Adder_watch_results_list p;
+	p.p = capn_new_struct_list(s, len, 0, 0);
+	return p;
+}
+void read_Adder_watch_results(struct Adder_watch_results *s capnp_unused, Adder_watch_results_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+}
+void write_Adder_watch_results(const struct Adder_watch_results *s capnp_unused, Adder_watch_results_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+}
+void get_Adder_watch_results(struct Adder_watch_results *s, Adder_watch_results_list l, int i) {
+	Adder_watch_results_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_Adder_watch_results(s, p);
+}
+void set_Adder_watch_results(const struct Adder_watch_results *s, Adder_watch_results_list l, int i) {
+	Adder_watch_results_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_Adder_watch_results(s, p);
+}
+
+Adder_watch_params_ptr new_Adder_watch_params(struct capn_segment *s) {
+	Adder_watch_params_ptr p;
+	p.p = capn_new_struct(s, 0, 1);
+	return p;
+}
+Adder_watch_params_list new_Adder_watch_params_list(struct capn_segment *s, int len) {
+	Adder_watch_params_list p;
+	p.p = capn_new_struct_list(s, len, 0, 1);
+	return p;
+}
+void read_Adder_watch_params(struct Adder_watch_params *s capnp_unused, Adder_watch_params_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	s->cap.p = capn_getp(p.p, 0, 0);
+}
+void write_Adder_watch_params(const struct Adder_watch_params *s capnp_unused, Adder_watch_params_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	capn_setp(p.p, 0, (s->cap.p.type != CAPN_NULL) ? s->cap.p : capn_null);
+}
+void get_Adder_watch_params(struct Adder_watch_params *s, Adder_watch_params_list l, int i) {
+	Adder_watch_params_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_Adder_watch_params(s, p);
+}
+void set_Adder_watch_params(const struct Adder_watch_params *s, Adder_watch_params_list l, int i) {
+	Adder_watch_params_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_Adder_watch_params(s, p);
+}
+
+Adder_fulfill_results_ptr new_Adder_fulfill_results(struct capn_segment *s) {
+	Adder_fulfill_results_ptr p;
+	p.p = capn_new_struct(s, 0, 0);
+	return p;
+}
+Adder_fulfill_results_list new_Adder_fulfill_results_list(struct capn_segment *s, int len) {
+	Adder_fulfill_results_list p;
+	p.p = capn_new_struct_list(s, len, 0, 0);
+	return p;
+}
+void read_Adder_fulfill_results(struct Adder_fulfill_results *s capnp_unused, Adder_fulfill_results_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+}
+void write_Adder_fulfill_results(const struct Adder_fulfill_results *s capnp_unused, Adder_fulfill_results_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+}
+void get_Adder_fulfill_results(struct Adder_fulfill_results *s, Adder_fulfill_results_list l, int i) {
+	Adder_fulfill_results_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_Adder_fulfill_results(s, p);
+}
+void set_Adder_fulfill_results(const struct Adder_fulfill_results *s, Adder_fulfill_results_list l, int i) {
+	Adder_fulfill_results_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_Adder_fulfill_results(s, p);
+}
+
+Adder_fulfill_params_ptr new_Adder_fulfill_params(struct capn_segment *s) {
+	Adder_fulfill_params_ptr p;
+	p.p = capn_new_struct(s, 0, 0);
+	return p;
+}
+Adder_fulfill_params_list new_Adder_fulfill_params_list(struct capn_segment *s, int len) {
+	Adder_fulfill_params_list p;
+	p.p = capn_new_struct_list(s, len, 0, 0);
+	return p;
+}
+void read_Adder_fulfill_params(struct Adder_fulfill_params *s capnp_unused, Adder_fulfill_params_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+}
+void write_Adder_fulfill_params(const struct Adder_fulfill_params *s capnp_unused, Adder_fulfill_params_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+}
+void get_Adder_fulfill_params(struct Adder_fulfill_params *s, Adder_fulfill_params_list l, int i) {
+	Adder_fulfill_params_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_Adder_fulfill_params(s, p);
+}
+void set_Adder_fulfill_params(const struct Adder_fulfill_params *s, Adder_fulfill_params_list l, int i) {
+	Adder_fulfill_params_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_Adder_fulfill_params(s, p);
+}
+
+Adder_defer_results_ptr new_Adder_defer_results(struct capn_segment *s) {
+	Adder_defer_results_ptr p;
+	p.p = capn_new_struct(s, 0, 1);
+	return p;
+}
+Adder_defer_results_list new_Adder_defer_results_list(struct capn_segment *s, int len) {
+	Adder_defer_results_list p;
+	p.p = capn_new_struct_list(s, len, 0, 1);
+	return p;
+}
+void read_Adder_defer_results(struct Adder_defer_results *s capnp_unused, Adder_defer_results_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	s->cap.p = capn_getp(p.p, 0, 0);
+}
+void write_Adder_defer_results(const struct Adder_defer_results *s capnp_unused, Adder_defer_results_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+	capn_setp(p.p, 0, (s->cap.p.type != CAPN_NULL) ? s->cap.p : capn_null);
+}
+void get_Adder_defer_results(struct Adder_defer_results *s, Adder_defer_results_list l, int i) {
+	Adder_defer_results_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_Adder_defer_results(s, p);
+}
+void set_Adder_defer_results(const struct Adder_defer_results *s, Adder_defer_results_list l, int i) {
+	Adder_defer_results_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_Adder_defer_results(s, p);
+}
+
+Adder_defer_params_ptr new_Adder_defer_params(struct capn_segment *s) {
+	Adder_defer_params_ptr p;
+	p.p = capn_new_struct(s, 0, 0);
+	return p;
+}
+Adder_defer_params_list new_Adder_defer_params_list(struct capn_segment *s, int len) {
+	Adder_defer_params_list p;
+	p.p = capn_new_struct_list(s, len, 0, 0);
+	return p;
+}
+void read_Adder_defer_params(struct Adder_defer_params *s capnp_unused, Adder_defer_params_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+}
+void write_Adder_defer_params(const struct Adder_defer_params *s capnp_unused, Adder_defer_params_ptr p) {
+	capn_resolve(&p.p);
+	capnp_use(s);
+}
+void get_Adder_defer_params(struct Adder_defer_params *s, Adder_defer_params_list l, int i) {
+	Adder_defer_params_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	read_Adder_defer_params(s, p);
+}
+void set_Adder_defer_params(const struct Adder_defer_params *s, Adder_defer_params_list l, int i) {
+	Adder_defer_params_ptr p;
+	p.p = capn_getp(l.p, i, 0);
+	write_Adder_defer_params(s, p);
+}
 
 Adder_tag_results_ptr new_Adder_tag_results(struct capn_segment *s) {
 	Adder_tag_results_ptr p;
@@ -386,6 +753,120 @@ int Adder_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn
 		write_Adder_tag_results(&out, rp);
 		return 0;
 	}
+	case 2: {
+		struct Adder_defer_params in;
+		Adder_defer_params_ptr pp;
+		int rc;
+		struct Adder_defer_results out;
+		Adder_defer_results_ptr rp;
+		if (srv->on_defer == NULL)
+			return -1;
+		memset(&in, 0, sizeof in);
+		memset(&out, 0, sizeof out);
+		pp.p = params;
+		read_Adder_defer_params(&in, pp);
+		rc = srv->on_defer(srv->self, &in, &out, results.seg);
+		if (rc != 0)
+			return rc;
+		rp.p = results;
+		write_Adder_defer_results(&out, rp);
+		return 0;
+	}
+	case 3: {
+		struct Adder_fulfill_params in;
+		Adder_fulfill_params_ptr pp;
+		int rc;
+		struct Adder_fulfill_results out;
+		Adder_fulfill_results_ptr rp;
+		if (srv->on_fulfill == NULL)
+			return -1;
+		memset(&in, 0, sizeof in);
+		memset(&out, 0, sizeof out);
+		pp.p = params;
+		read_Adder_fulfill_params(&in, pp);
+		rc = srv->on_fulfill(srv->self, &in, &out, results.seg);
+		if (rc != 0)
+			return rc;
+		rp.p = results;
+		write_Adder_fulfill_results(&out, rp);
+		return 0;
+	}
+	case 4: {
+		struct Adder_watch_params in;
+		Adder_watch_params_ptr pp;
+		int rc;
+		struct Adder_watch_results out;
+		Adder_watch_results_ptr rp;
+		if (srv->on_watch == NULL)
+			return -1;
+		memset(&in, 0, sizeof in);
+		memset(&out, 0, sizeof out);
+		pp.p = params;
+		read_Adder_watch_params(&in, pp);
+		rc = srv->on_watch(srv->self, &in, &out, results.seg);
+		if (rc != 0)
+			return rc;
+		rp.p = results;
+		write_Adder_watch_results(&out, rp);
+		return 0;
+	}
+	case 5: {
+		struct Adder_echo_params in;
+		Adder_echo_params_ptr pp;
+		int rc;
+		struct Adder_echo_results out;
+		Adder_echo_results_ptr rp;
+		if (srv->on_echo == NULL)
+			return -1;
+		memset(&in, 0, sizeof in);
+		memset(&out, 0, sizeof out);
+		pp.p = params;
+		read_Adder_echo_params(&in, pp);
+		rc = srv->on_echo(srv->self, &in, &out, results.seg);
+		if (rc != 0)
+			return rc;
+		rp.p = results;
+		write_Adder_echo_results(&out, rp);
+		return 0;
+	}
+	case 6: {
+		struct Adder_seq_params in;
+		Adder_seq_params_ptr pp;
+		int rc;
+		struct Adder_seq_results out;
+		Adder_seq_results_ptr rp;
+		if (srv->on_seq == NULL)
+			return -1;
+		memset(&in, 0, sizeof in);
+		memset(&out, 0, sizeof out);
+		pp.p = params;
+		read_Adder_seq_params(&in, pp);
+		rc = srv->on_seq(srv->self, &in, &out, results.seg);
+		if (rc != 0)
+			return rc;
+		rp.p = results;
+		write_Adder_seq_results(&out, rp);
+		return 0;
+	}
+	case 7: {
+		struct Adder_borrow_params in;
+		Adder_borrow_params_ptr pp;
+		int rc;
+		struct Adder_borrow_results out;
+		Adder_borrow_results_ptr rp;
+		if (srv->on_borrow == NULL)
+			return -1;
+		memset(&in, 0, sizeof in);
+		memset(&out, 0, sizeof out);
+		pp.p = params;
+		read_Adder_borrow_params(&in, pp);
+		rc = srv->on_borrow(srv->self, &in, &out, results.seg);
+		if (rc != 0)
+			return rc;
+		rp.p = results;
+		write_Adder_borrow_results(&out, rp);
+		return 0;
+	}
 	default:
 		return -1;
 	}
@@ -408,6 +889,18 @@ int Adder_results_add(struct capn_rpc_conn *c, uint32_t question, struct Adder_a
 	read_Adder_add_results(out, rp);
 	return 0;
 }
+int Adder_return_add(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_add_results *out) {
+	capn_ptr results;
+	Adder_add_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_Adder_add_results(out, rp);
+	return capn_rpc_return(c, question, generation);
+}
 
 static void Adder_tag_fill(void *ctx, capn_ptr params) {
 	Adder_tag_params_ptr pp;
@@ -425,6 +918,198 @@ int Adder_results_tag(struct capn_rpc_conn *c, uint32_t question, struct Adder_t
 	rp.p = content;
 	read_Adder_tag_results(out, rp);
 	return 0;
+}
+int Adder_return_tag(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_tag_results *out) {
+	capn_ptr results;
+	Adder_tag_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_Adder_tag_results(out, rp);
+	return capn_rpc_return(c, question, generation);
+}
+
+static void Adder_defer_fill(void *ctx, capn_ptr params) {
+	Adder_defer_params_ptr pp;
+	pp.p = params;
+	write_Adder_defer_params((const struct Adder_defer_params *) ctx, pp);
+}
+uint32_t Adder_call_defer(struct capn_rpc_conn *c, uint32_t cap, const struct Adder_defer_params *in) {
+	return capn_rpc_send_call(c, cap, Adder_INTERFACE_ID, 2, (int) (Adder_defer_params_word_count * 8), (int) Adder_defer_params_pointer_count, Adder_defer_fill, (void *) in);
+}
+int Adder_results_defer(struct capn_rpc_conn *c, uint32_t question, struct Adder_defer_results *out, struct capn *msg) {
+	capn_ptr content;
+	Adder_defer_results_ptr rp;
+	if (capn_rpc_answer_content(c, question, msg, &content) != 0)
+		return -1;
+	rp.p = content;
+	read_Adder_defer_results(out, rp);
+	return 0;
+}
+int Adder_return_defer(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_defer_results *out) {
+	capn_ptr results;
+	Adder_defer_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_Adder_defer_results(out, rp);
+	return capn_rpc_return(c, question, generation);
+}
+
+static void Adder_fulfill_fill(void *ctx, capn_ptr params) {
+	Adder_fulfill_params_ptr pp;
+	pp.p = params;
+	write_Adder_fulfill_params((const struct Adder_fulfill_params *) ctx, pp);
+}
+uint32_t Adder_call_fulfill(struct capn_rpc_conn *c, uint32_t cap, const struct Adder_fulfill_params *in) {
+	return capn_rpc_send_call(c, cap, Adder_INTERFACE_ID, 3, (int) (Adder_fulfill_params_word_count * 8), (int) Adder_fulfill_params_pointer_count, Adder_fulfill_fill, (void *) in);
+}
+int Adder_results_fulfill(struct capn_rpc_conn *c, uint32_t question, struct Adder_fulfill_results *out, struct capn *msg) {
+	capn_ptr content;
+	Adder_fulfill_results_ptr rp;
+	if (capn_rpc_answer_content(c, question, msg, &content) != 0)
+		return -1;
+	rp.p = content;
+	read_Adder_fulfill_results(out, rp);
+	return 0;
+}
+int Adder_return_fulfill(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_fulfill_results *out) {
+	capn_ptr results;
+	Adder_fulfill_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_Adder_fulfill_results(out, rp);
+	return capn_rpc_return(c, question, generation);
+}
+
+static void Adder_watch_fill(void *ctx, capn_ptr params) {
+	Adder_watch_params_ptr pp;
+	pp.p = params;
+	write_Adder_watch_params((const struct Adder_watch_params *) ctx, pp);
+}
+uint32_t Adder_call_watch(struct capn_rpc_conn *c, uint32_t cap, const struct Adder_watch_params *in) {
+	return capn_rpc_send_call(c, cap, Adder_INTERFACE_ID, 4, (int) (Adder_watch_params_word_count * 8), (int) Adder_watch_params_pointer_count, Adder_watch_fill, (void *) in);
+}
+int Adder_results_watch(struct capn_rpc_conn *c, uint32_t question, struct Adder_watch_results *out, struct capn *msg) {
+	capn_ptr content;
+	Adder_watch_results_ptr rp;
+	if (capn_rpc_answer_content(c, question, msg, &content) != 0)
+		return -1;
+	rp.p = content;
+	read_Adder_watch_results(out, rp);
+	return 0;
+}
+int Adder_return_watch(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_watch_results *out) {
+	capn_ptr results;
+	Adder_watch_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_Adder_watch_results(out, rp);
+	return capn_rpc_return(c, question, generation);
+}
+
+static void Adder_echo_fill(void *ctx, capn_ptr params) {
+	Adder_echo_params_ptr pp;
+	pp.p = params;
+	write_Adder_echo_params((const struct Adder_echo_params *) ctx, pp);
+}
+uint32_t Adder_call_echo(struct capn_rpc_conn *c, uint32_t cap, const struct Adder_echo_params *in) {
+	return capn_rpc_send_call(c, cap, Adder_INTERFACE_ID, 5, (int) (Adder_echo_params_word_count * 8), (int) Adder_echo_params_pointer_count, Adder_echo_fill, (void *) in);
+}
+int Adder_results_echo(struct capn_rpc_conn *c, uint32_t question, struct Adder_echo_results *out, struct capn *msg) {
+	capn_ptr content;
+	Adder_echo_results_ptr rp;
+	if (capn_rpc_answer_content(c, question, msg, &content) != 0)
+		return -1;
+	rp.p = content;
+	read_Adder_echo_results(out, rp);
+	return 0;
+}
+int Adder_return_echo(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_echo_results *out) {
+	capn_ptr results;
+	Adder_echo_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_Adder_echo_results(out, rp);
+	return capn_rpc_return(c, question, generation);
+}
+
+static void Adder_seq_fill(void *ctx, capn_ptr params) {
+	Adder_seq_params_ptr pp;
+	pp.p = params;
+	write_Adder_seq_params((const struct Adder_seq_params *) ctx, pp);
+}
+uint32_t Adder_call_seq(struct capn_rpc_conn *c, uint32_t cap, const struct Adder_seq_params *in) {
+	return capn_rpc_send_call(c, cap, Adder_INTERFACE_ID, 6, (int) (Adder_seq_params_word_count * 8), (int) Adder_seq_params_pointer_count, Adder_seq_fill, (void *) in);
+}
+int Adder_results_seq(struct capn_rpc_conn *c, uint32_t question, struct Adder_seq_results *out, struct capn *msg) {
+	capn_ptr content;
+	Adder_seq_results_ptr rp;
+	if (capn_rpc_answer_content(c, question, msg, &content) != 0)
+		return -1;
+	rp.p = content;
+	read_Adder_seq_results(out, rp);
+	return 0;
+}
+int Adder_return_seq(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_seq_results *out) {
+	capn_ptr results;
+	Adder_seq_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_Adder_seq_results(out, rp);
+	return capn_rpc_return(c, question, generation);
+}
+
+static void Adder_borrow_fill(void *ctx, capn_ptr params) {
+	Adder_borrow_params_ptr pp;
+	pp.p = params;
+	write_Adder_borrow_params((const struct Adder_borrow_params *) ctx, pp);
+}
+uint32_t Adder_call_borrow(struct capn_rpc_conn *c, uint32_t cap, const struct Adder_borrow_params *in) {
+	return capn_rpc_send_call(c, cap, Adder_INTERFACE_ID, 7, (int) (Adder_borrow_params_word_count * 8), (int) Adder_borrow_params_pointer_count, Adder_borrow_fill, (void *) in);
+}
+int Adder_results_borrow(struct capn_rpc_conn *c, uint32_t question, struct Adder_borrow_results *out, struct capn *msg) {
+	capn_ptr content;
+	Adder_borrow_results_ptr rp;
+	if (capn_rpc_answer_content(c, question, msg, &content) != 0)
+		return -1;
+	rp.p = content;
+	read_Adder_borrow_results(out, rp);
+	return 0;
+}
+int Adder_return_borrow(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct Adder_borrow_results *out) {
+	capn_ptr results;
+	Adder_borrow_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_Adder_borrow_results(out, rp);
+	return capn_rpc_return(c, question, generation);
 }
 
 CountBase_ptr new_CountBase(struct capn_segment *s) {
@@ -486,6 +1171,18 @@ int CountBase_results_inc(struct capn_rpc_conn *c, uint32_t question, struct Cou
 	rp.p = content;
 	read_CountBase_inc_results(out, rp);
 	return 0;
+}
+int CountBase_return_inc(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct CountBase_inc_results *out) {
+	capn_ptr results;
+	CountBase_inc_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_CountBase_inc_results(out, rp);
+	return capn_rpc_return(c, question, generation);
 }
 
 CountMid_ptr new_CountMid(struct capn_segment *s) {
@@ -549,6 +1246,18 @@ int CountMid_results_twice(struct capn_rpc_conn *c, uint32_t question, struct Co
 	rp.p = content;
 	read_CountMid_twice_results(out, rp);
 	return 0;
+}
+int CountMid_return_twice(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct CountMid_twice_results *out) {
+	capn_ptr results;
+	CountMid_twice_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_CountMid_twice_results(out, rp);
+	return capn_rpc_return(c, question, generation);
 }
 
 CountLeaf_ptr new_CountLeaf(struct capn_segment *s) {
@@ -614,4 +1323,16 @@ int CountLeaf_results_dec(struct capn_rpc_conn *c, uint32_t question, struct Cou
 	rp.p = content;
 	read_CountLeaf_dec_results(out, rp);
 	return 0;
+}
+int CountLeaf_return_dec(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct CountLeaf_dec_results *out) {
+	capn_ptr results;
+	CountLeaf_dec_results_ptr rp;
+	if (out == NULL)
+		return -1;
+	results = capn_rpc_pending_results(c, question, generation);
+	if (results.type == CAPN_NULL)
+		return -1;
+	rp.p = results;
+	write_CountLeaf_dec_results(out, rp);
+	return capn_rpc_return(c, question, generation);
 }

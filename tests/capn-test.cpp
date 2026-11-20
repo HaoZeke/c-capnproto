@@ -1044,6 +1044,56 @@ TEST(WireFormat, SetpCopiesSameSessionFarPointerIntoTheNamedSlot) {
   ASSERT_EQ(3, got.len);
   EXPECT_EQ(0, memcmp(got.str, "far", 3));
 }
+
+TEST(WireFormat, SetpDeepCopiesAFarPointerInsteadOfAliasingIt) {
+  Session ctx;
+  ctx.capn.create = &CreateSmallSegment;
+
+  capn_ptr root = capn_new_struct(capn_root(&ctx.capn).seg, 8, 2);
+  ASSERT_EQ(CAPN_STRUCT, root.type);
+  ASSERT_EQ(0, capn_set_root(&ctx.capn, root));
+  capn_text word = {3, "far", NULL};
+  ASSERT_EQ(0, capn_set_text(root, 0, word));
+
+  capn_ptr slot = capn_getp(root, 0, 0);
+  ASSERT_EQ(CAPN_FAR_POINTER, slot.type);
+  ASSERT_NE(nullptr, slot.data);
+  uint64_t raw = 0;
+  memcpy(&raw, slot.data, sizeof raw);
+  unsigned kind = (unsigned)(capn_flip64(raw) & 7);
+  /* FAR_PTR is 2 and DOUBLE_PTR is 6; both have (word & 3) == 2. */
+  EXPECT_TRUE(kind == 2 || kind == 6);
+
+  ASSERT_EQ(0, capn_setp(root, 1, slot));
+
+  capn_text def = {0, NULL, NULL};
+  capn_text orig = capn_get_text(root, 0, def);
+  capn_text copy = capn_get_text(root, 1, def);
+  ASSERT_EQ(3, orig.len);
+  ASSERT_EQ(3, copy.len);
+  EXPECT_NE(orig.str, copy.str) << "the two slots alias one object";
+  const_cast<char *>(orig.str)[0] = 'X';
+  EXPECT_EQ('f', copy.str[0]);
+  EXPECT_EQ(0, memcmp(copy.str, "far", 3));
+}
+
+TEST(WireFormat, SetpDropsAFarPointerThatDoesNotResolve) {
+  Session ctx;
+  capn_ptr root = capn_new_struct(capn_root(&ctx.capn).seg, 0, 2);
+  ASSERT_EQ(CAPN_STRUCT, root.type);
+  /* Double-far (low bits 6, so low two bits look like a single far)
+   * aimed at a segment that does not exist. */
+  uint64_t bad = capn_flip64(6ull | (0xffffull << 32));
+  memcpy(root.data + root.datasz, &bad, sizeof bad);
+
+  capn_ptr slot = capn_getp(root, 0, 0);
+  ASSERT_EQ(CAPN_FAR_POINTER, slot.type);
+  ASSERT_EQ(0, capn_setp(root, 1, slot));
+
+  uint64_t dst = 1;
+  memcpy(&dst, root.data + root.datasz + 8, sizeof dst);
+  EXPECT_EQ(0ull, dst);
+}
 TEST(ListAccess, VectorOffsetsAreInElements) {
   Session ctx;
   capn_list64 l64 = capn_new_list64(capn_root(&ctx.capn).seg, 4);

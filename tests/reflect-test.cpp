@@ -96,6 +96,14 @@ class Reflect : public ::testing::Test {
     EXPECT_EQ(want_text(c, bin), text) << c.text;
     free(text);
 
+    char *pretty = capn_dyn_to_text_pretty(c.desc, root);
+    ASSERT_NE(nullptr, pretty);
+    CmdResult want_pretty = run_argv(cli("decode", nullptr, c.type, false),
+                                     bin.data(), bin.size());
+    EXPECT_EQ(0, want_pretty.status) << want_pretty.err;
+    EXPECT_EQ(strip(want_pretty.out), pretty) << c.text;
+    free(pretty);
+
     char *json = capn_dyn_to_json(c.desc, root, CAPN_DYN_COMPACT);
     ASSERT_NE(nullptr, json);
     EXPECT_EQ(want_json(c, bin), json) << c.text;
@@ -392,5 +400,60 @@ TEST_F(Reflect, DecodersAcceptTheLooseSpellings) {
   capn_text t = capn_dyn_get_text(st, capn_dyn_find_field(&Defaults_dyn, "t"));
   ASSERT_EQ(7, t.len);
   EXPECT_EQ(0, memcmp(t.str, "\xc3\xa9\xf0\x9f\x98\x80\n", 7));
+  capn_free(&c);
+}
+
+TEST_F(Reflect, UnsetPointerReadsTheSchemaDefault) {
+  struct capn c;
+  capn_init_malloc(&c);
+  capn_ptr st = capn_new_struct(capn_root(&c).seg, Defaults_dyn.data_words * 8,
+                                Defaults_dyn.pointers);
+  ASSERT_EQ(CAPN_STRUCT, st.type);
+
+  const struct capn_dyn_field *tf = capn_dyn_find_field(&Defaults_dyn, "t");
+  const struct capn_dyn_field *df = capn_dyn_find_field(&Defaults_dyn, "d");
+  const struct capn_dyn_field *lst = capn_dyn_find_field(&Defaults_dyn, "lst");
+  const struct capn_dyn_field *lt = capn_dyn_find_field(&Defaults_dyn, "lt");
+  const struct capn_dyn_field *sf = capn_dyn_find_field(&Defaults_dyn, "s");
+  ASSERT_NE(nullptr, tf);
+  EXPECT_EQ(0, capn_dyn_has(&Defaults_dyn, st, tf));
+  EXPECT_EQ(0, capn_dyn_has(&Defaults_dyn, st, df));
+  EXPECT_EQ(0, capn_dyn_has(&Defaults_dyn, st, lst));
+  EXPECT_EQ(0, capn_dyn_has(&Defaults_dyn, st, sf));
+
+  capn_text hello = capn_dyn_get_text(st, tf);
+  EXPECT_EQ(std::string("hello"), std::string(hello.str, (size_t) hello.len));
+
+  capn_list8 bytes;
+  bytes.p = capn_dyn_get_ptr(st, df);
+  ASSERT_EQ(4, capn_len(bytes));
+  EXPECT_EQ(0xde, capn_get8(bytes, 0));
+  EXPECT_EQ(0xad, capn_get8(bytes, 1));
+  EXPECT_EQ(0xbe, capn_get8(bytes, 2));
+  EXPECT_EQ(0xef, capn_get8(bytes, 3));
+
+  capn_list32 nums;
+  nums.p = capn_dyn_get_ptr(st, lst);
+  ASSERT_EQ(3, capn_len(nums));
+  EXPECT_EQ(1, capn_get32(nums, 0));
+  EXPECT_EQ(2, capn_get32(nums, 1));
+  EXPECT_EQ(3, capn_get32(nums, 2));
+
+  capn_text blank = {0, "", NULL};
+  capn_ptr texts = capn_dyn_get_ptr(st, lt);
+  capn_text a = capn_get_text(texts, 0, blank);
+  capn_text b = capn_get_text(texts, 1, blank);
+  EXPECT_EQ(std::string("a"), std::string(a.str, (size_t) a.len));
+  EXPECT_EQ(std::string("b"), std::string(b.str, (size_t) b.len));
+
+  capn_ptr sub = capn_dyn_get_ptr(st, sf);
+  ASSERT_EQ(CAPN_STRUCT, sub.type);
+  const struct capn_dyn_field *x = capn_dyn_find_field(sf->type.st, "x");
+  const struct capn_dyn_field *name = capn_dyn_find_field(sf->type.st, "name");
+  ASSERT_NE(nullptr, x);
+  ASSERT_NE(nullptr, name);
+  EXPECT_EQ(5u, capn_dyn_get_bits(sub, x));
+  capn_text nm = capn_dyn_get_text(sub, name);
+  EXPECT_EQ(std::string("five"), std::string(nm.str, (size_t) nm.len));
   capn_free(&c);
 }

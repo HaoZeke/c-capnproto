@@ -12,9 +12,10 @@
  * accept for the types they cover.
  *
  * Not covered: Interface and AnyPointer fields are opaque (printed as
- * a placeholder, never decoded), fields typed by a generic parameter are
- * AnyPointer, and defaults of Struct, List and Data fields are not
- * recorded because an unset pointer is absent from a message's value.
+ * a placeholder, never decoded). Fields typed by a generic parameter are
+ * AnyPointer until a brand binds them. Pointer defaults are returned by
+ * capn_dyn_get_ptr and capn_dyn_get_text; capn_dyn_has stays false when
+ * the wire pointer is null.
  */
 
 #ifndef CAPN_DYN_H
@@ -102,6 +103,17 @@ struct capn_dyn_field {
 	uint64_t default_bits;
 	const char *default_text;
 	int default_text_len;
+	/* $Json.name. NULL means the schema name. */
+	const char *json_name;
+	/* $Json.flatten. json_prefix is NULL when there is no prefix. */
+	uint8_t json_flatten;
+	const char *json_prefix;
+	/* $Json.base64 is 1, $Json.hex is 2, a JSON number array is 0. */
+	uint8_t json_data;
+	/* Struct, list, text or data default. NULL when the field has none.
+	 * The pointer addresses a static segment. capn_dyn_has stays false
+	 * while the wire pointer is null. */
+	const capn_ptr *default_ptr;
 };
 
 struct capn_dyn_struct {
@@ -115,6 +127,12 @@ struct capn_dyn_struct {
 	uint32_t union_offset;
 	int nfields;
 	const struct capn_dyn_field *fields; /* in declaration order */
+	/* $Json.discriminator. json_has_disc is 0 when the struct has none.
+	 * json_disc_name is the tag field (NULL when the annotation names
+	 * none). json_disc_value is valueName, or NULL. */
+	const char *json_disc_name;
+	const char *json_disc_value;
+	uint8_t json_has_disc;
 };
 
 struct capn_dyn_enum {
@@ -122,6 +140,9 @@ struct capn_dyn_enum {
 	uint64_t id;
 	int n;
 	const char *const *names; /* indexed by value */
+	/* $Json.name per enumerant. NULL, or a parallel list whose NULL
+	 * entries keep `names`. */
+	const char *const *json_names;
 };
 
 /* --- reflection ---------------------------------------------------- */
@@ -168,6 +189,10 @@ CAPN_EXPORT int64_t capn_dyn_bits_to_i64(const struct capn_dyn_field *f, uint64_
 /* Single-line text format, as `capnp decode --short` prints it. Returns
  * a malloc'd string, or NULL on out of memory. */
 CAPN_EXPORT char *capn_dyn_to_text(const struct capn_dyn_struct *s, capn_ptr st);
+
+/* Multi-line text format, as `capnp decode` prints it (without --short).
+ * Returns a malloc'd string, or NULL on out of memory. */
+char *capn_dyn_to_text_pretty(const struct capn_dyn_struct *s, capn_ptr st);
 
 /* JSON, as `capnp convert binary:json` prints it (`--short` is
  * CAPN_DYN_COMPACT). 64-bit integers are strings, Data is an array of

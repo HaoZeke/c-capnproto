@@ -1658,9 +1658,10 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 
 	copy_ptr:
 		/* An unresolved far word is not a value. Follow it and
-		 * deep-copy the object. Copying the word aliases the landing
-		 * pad, and (val & 3) == FAR_PTR is also true of a double far
-		 * (DOUBLE_PTR == 6). A follow that fails stores null. */
+		 * deep-copy the object, as C++ copyPointer does. Copying the
+		 * word aliases the landing pad, and (val & 3) == FAR_PTR is
+		 * also true of a double far (DOUBLE_PTR == 6). A follow that
+		 * fails (missing segment, out of range) stores null. */
 		if (far_tgt.type == CAPN_FAR_POINTER && p.seg != NULL) {
 			int follow = 0;
 			if (far_tgt.seg != NULL && far_tgt.data != NULL &&
@@ -1962,6 +1963,14 @@ static void new_object(capn_ptr *p, int bytes) {
 		return;
 	}
 	if (bytes > INT_MAX - 8) {
+		memset(p, 0, sizeof(*p));
+		return;
+	}
+	/* The far tag is allocated with the body. 0x7ffffff0 plus that
+	 * tag is the size that used to wrap a signed create() length down
+	 * to the 4096-byte minimum. Refuse it on every endian; a later
+	 * successful calloc is not a legal object. */
+	if ((int64_t) bytes + (ADD_TAG ? 8 : 0) > 0x7ffffff0LL) {
 		memset(p, 0, sizeof(*p));
 		return;
 	}

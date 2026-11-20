@@ -30,7 +30,7 @@ AM_CPPFLAGS = \
 	-I${srcdir}/lib
 
 lib_LTLIBRARIES += libcapnp_c.la
-libcapnp_c_la_LDFLAGS = -version-info 1:0:0
+libcapnp_c_la_LDFLAGS = -version-info 2:0:0
 libcapnp_c_la_CPPFLAGS = $(AM_CPPFLAGS) -DCAPNP_C_BUILDING
 libcapnp_c_la_SOURCES = \
 	lib/capn-malloc.c \
@@ -148,7 +148,9 @@ EXTRA_DIST += \
 	compiler/update-notes.md \
 	interop/rpc_client.c \
 	interop/rpc_peer_server.c++ \
+	interop/rpc_promise_server.c \
 	interop/run_rpc_interop.sh \
+	interop/run_rpc_promise.sh \
 	scripts/gen-rpc-frames.sh \
 	scripts/packaging-smoke.sh \
 	scripts/regen-generated.sh \
@@ -181,6 +183,9 @@ EXTRA_DIST += \
 	tests/capnp-cli.h \
 	tests/reflect-test.cpp \
 	tests/reflect.capnp \
+	tests/jsonann.capnp \
+	tests/json-ann-test.cpp \
+	tests/brand-test.cpp \
 	tests/rpcstubs.capnp \
 	tests/rpcstubs-test.cpp \
 	tests/reflect-other.capnp \

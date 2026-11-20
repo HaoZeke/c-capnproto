@@ -3,9 +3,9 @@
  * For every struct, group and enum in a file, emit a const descriptor the
  * runtime in lib/capn-dyn.c walks to read, print and build messages
  * without generated per-type code. Descriptors hold names, types, slot
- * offsets, union discriminants and scalar defaults; pointer-typed defaults
- * other than Text are not recorded, because an unset pointer is not part
- * of a message's value (C++ prints and encodes it as absent too).
+ * offsets, union discriminants, scalar defaults and the bytes of struct,
+ * list, text and data defaults. An unset pointer still counts as absent
+ * when printing, which is what capnp decode does.
  */
 
 #include <inttypes.h>
@@ -19,6 +19,7 @@
 #include "reflectgen.h"
 
 static int g_tcount;
+static int g_dcount;
 
 static struct node *file_of(struct node *n) {
 	while (n && n->n.which != Node_file && n->n.scopeId) {
@@ -38,6 +39,86 @@ int reflect_file_enabled(struct node *file) {
 			return 1;
 	}
 	return 0;
+}
+
+#define JSON_NAME_ID 0xfa5b1fd61c2e7c3dull
+#define JSON_FLATTEN_ID 0x82d3e852af0336bfull
+#define JSON_DISC_ID 0xcfa794e8d19a0162ull
+#define JSON_BASE64_ID 0xd7d879450a253e4bull
+#define JSON_HEX_ID 0xf061e22f0ae5c7b5ull
+
+static int find_anno(Annotation_list list, uint64_t id, struct Annotation *a)
+{
+	int i, n = capn_len(list);
+	for (i = 0; i < n; i++) {
+		get_Annotation(a, list, i);
+		if (a->id == id)
+			return 1;
+	}
+	return 0;
+}
+
+/* 1 when the annotation value is Text and not empty. */
+static int anno_text(struct Annotation *a, capn_text *out)
+{
+	struct Value v;
+	memset(&v, 0, sizeof v);
+	read_Value(&v, a->value);
+	if (v.which != Value_text || v.text.str == NULL || v.text.len <= 0)
+		return 0;
+	*out = v.text;
+	return 1;
+}
+
+/* Annotation value is a struct. *set is 1 when pointer `idx` is present. */
+static int anno_field_text(struct Annotation *a, int idx, capn_text *out, int *set)
+{
+	struct Value v;
+	capn_ptr p;
+	capn_text def = {0, "", NULL};
+	memset(&v, 0, sizeof v);
+	read_Value(&v, a->value);
+	*set = 0;
+	if (v.which != Value__struct)
+		return 0;
+	p = capn_getp(v._struct, idx, 1);
+	if (p.type == CAPN_NULL)
+		return 1;
+	*out = capn_get_text(v._struct, idx, def);
+	*set = out->str != NULL;
+	return 1;
+}
+
+static struct field *group_field_in(struct node *scope, uint64_t gid)
+{
+	int i, nf;
+	if (scope == NULL || scope->n.which != Node__struct)
+		return NULL;
+	nf = capn_len(scope->n._struct.fields);
+	for (i = 0; i < nf; i++) {
+		struct field *f = &scope->fields[i];
+		struct field *inner;
+		if (f->f.which == Field_group && f->f.group.typeId == gid)
+			return f;
+		inner = group_field_in(f->group, gid);
+		if (inner)
+			return inner;
+	}
+	return NULL;
+}
+
+static struct field *find_group_field(struct node *g)
+{
+	struct node *file = file_of(g);
+	struct node *n;
+	if (file == NULL)
+		return NULL;
+	for (n = file->file_nodes; n != NULL; n = n->next_file_node) {
+		struct field *f = group_field_in(n, g->n.id);
+		if (f)
+			return f;
+	}
+	return NULL;
 }
 
 static void add_cstr(struct str *s, const char *p, int len) {
@@ -219,6 +300,117 @@ static uint64_t default_bits(struct Type *t, struct Value *v) {
 	}
 }
 
+/* Copy a pointer default into its own message and emit a capn_ptr that
+ * addresses those bytes. expr receives "&capn_dyn_dpN" or "NULL". */
+static void emit_default_ptr(struct str *pre, struct str *expr, int is_text,
+                             capn_text text, capn_ptr src)
+{
+	struct capn dst;
+	capn_ptr root, out;
+	int n, off;
+
+	str_reset(expr);
+	str_addf(expr, "NULL");
+	memset(&dst, 0, sizeof dst);
+	capn_init_malloc(&dst);
+	root = capn_root(&dst);
+	if (is_text) {
+		if (capn_set_text(root, 0, text))
+			goto done;
+	} else if (capn_setp(root, 0, src)) {
+		goto done;
+	}
+	out = capn_getp(root, 0, 1);
+	if (out.type == CAPN_NULL)
+		goto done;
+
+	n = ++g_dcount;
+	if ((out.type == CAPN_LIST || out.type == CAPN_PTR_LIST || out.type == CAPN_BIT_LIST) &&
+	    out.len == 0 && out.data == NULL) {
+		str_reset(expr);
+		str_addf(pre, "static const capn_ptr capn_dyn_dp%d = {%u,0,0,%u,%u,%u,0,NULL,NULL,0,0};\n",
+		         n, out.type, out.is_composite_list, out.datasz, out.ptrs);
+		str_addf(expr, "&capn_dyn_dp%d", n);
+		goto done;
+	}
+	if (out.seg == NULL || out.data == NULL || out.seg->data == NULL)
+		goto done;
+	off = (int) (out.data - out.seg->data);
+	if (off < 0 || (size_t) off > out.seg->len)
+		goto done;
+
+	{
+		struct capn_segment *segs[64];
+		struct capn_segment *s;
+		int nseg = 0, si, owner = -1;
+		uint32_t segnum = 0;
+
+		/* Far pointers in a default resolve through `seg->capn`. One
+		 * byte array per segment, 8-aligned, chained on a static capn
+		 * whose lookup walks that chain. */
+		for (s = dst.seglist; s != NULL && nseg < 64; s = s->next)
+			segs[nseg++] = s;
+		if (nseg == 64 && s != NULL)
+			goto done;
+		for (si = 0; si < nseg; si++) {
+			if (segs[si] == out.seg)
+				owner = si;
+			if (segs[si]->id >= segnum)
+				segnum = segs[si]->id + 1;
+		}
+		if (owner < 0)
+			goto done;
+
+		str_reset(expr);
+		str_addf(pre, "static struct capn capn_dyn_dc%d;\n", n);
+		for (si = 0; si < nseg; si++)
+			str_addf(pre, "static struct capn_segment capn_dyn_ds%d_%d;\n", n, si);
+		str_addf(pre,
+		         "static struct capn_segment *capn_dyn_lu%d(void *user, uint32_t id) {\n"
+		         "\tstruct capn_segment *s = (struct capn_segment *) user;\n"
+		         "\twhile (s) { if (s->id == id) return s; s = s->next; }\n"
+		         "\treturn NULL;\n}\n",
+		         n);
+		for (si = 0; si < nseg; si++) {
+			size_t slen = segs[si]->len;
+			size_t bi;
+			str_addf(pre,
+			         "static const union { uint64_t align; uint8_t bytes[%zu]; } capn_dyn_db%d_%d = { .bytes = {",
+			         slen, n, si);
+			for (bi = 0; bi < slen; bi++) {
+				if (bi)
+					str_addf(pre, ",");
+				str_addf(pre, "%u", (unsigned char) segs[si]->data[bi]);
+			}
+			str_addf(pre, "} };\n");
+		}
+		for (si = 0; si < nseg; si++) {
+			str_addf(pre, "static struct capn_segment capn_dyn_ds%d_%d = {{0},", n, si);
+			if (si + 1 < nseg)
+				str_addf(pre, "&capn_dyn_ds%d_%d,", n, si + 1);
+			else
+				str_addf(pre, "0,");
+			str_addf(pre, "&capn_dyn_dc%d,%u,(char*)capn_dyn_db%d_%d.bytes,%zu,%zu,0};\n",
+			         n, segs[si]->id, n, si, segs[si]->len, segs[si]->len);
+		}
+		str_addf(pre,
+		         "static struct capn capn_dyn_dc%d = {capn_dyn_lu%d,0,0,&capn_dyn_ds%d_0,0,0,%u,0,0,&capn_dyn_ds%d_0,",
+		         n, n, n, segnum, n);
+		if (nseg > 1)
+			str_addf(pre, "&capn_dyn_ds%d_%d,", n, nseg - 1);
+		else
+			str_addf(pre, "&capn_dyn_ds%d_0,", n);
+		str_addf(pre, "0,0,0};\n");
+		str_addf(pre,
+		         "static const capn_ptr capn_dyn_dp%d = {%u,%u,%u,%u,%u,%u,%d,(char*)capn_dyn_db%d_%d.bytes+%d,&capn_dyn_ds%d_%d,0,0};\n",
+		         n, out.type, out.has_ptr_tag, out.is_list_member, out.is_composite_list,
+		         out.datasz, out.ptrs, out.len, n, owner, off, n, owner);
+		str_addf(expr, "&capn_dyn_dp%d", n);
+	}
+done:
+	capn_free(&dst);
+}
+
 static void emit_struct_forward(struct str *out, struct node *n, int group) {
 	if (group) {
 		str_addf(out, "static const struct capn_dyn_struct capn_dyn_g%" PRIx64 ";\n", n->n.id);
@@ -237,10 +429,17 @@ static void emit_struct(struct str *src, struct node *n, int group) {
 		struct str tb = STR_INIT;
 		const char *dtext = "NULL";
 		struct str dtbuf = STR_INIT;
+		struct str dexpr = STR_INIT;
+		struct str jnbuf = STR_INIT, jpbuf = STR_INIT;
+		const char *jname = "NULL";
+		const char *jprefix = "NULL";
+		int jflatten = 0, jdata = 0;
 		uint64_t bits = 0;
 		int dlen = 0;
 		unsigned is_group = 0;
 		uint32_t offset = 0;
+		struct Annotation ann;
+		capn_text jt;
 
 		if (f->f.which == Field_group) {
 			is_group = 1;
@@ -254,26 +453,59 @@ static void emit_struct(struct str *src, struct node *n, int group) {
 			read_Value(&v, f->f.slot.defaultValue);
 			bits = default_bits(&t, &v);
 			offset = f->f.slot.offset;
+			str_addf(&dexpr, "NULL");
 			if (t.which == Type_text && v.which == Value_text && v.text.len > 0) {
+				capn_ptr none = {CAPN_NULL};
 				add_cstr(&dtbuf, v.text.str, v.text.len);
 				dtext = dtbuf.str;
 				dlen = v.text.len;
+				emit_default_ptr(&pre, &dexpr, 1, v.text, none);
+			} else if (t.which == Type_data && v.which == Value_data && v.data.p.type != CAPN_NULL) {
+				capn_text none = {0, "", NULL};
+				emit_default_ptr(&pre, &dexpr, 0, none, v.data.p);
+			} else if (t.which == Type__list && v.which == Value__list && v._list.type != CAPN_NULL) {
+				capn_text none = {0, "", NULL};
+				emit_default_ptr(&pre, &dexpr, 0, none, v._list);
+			} else if (t.which == Type__struct && v.which == Value__struct && v._struct.type != CAPN_NULL) {
+				capn_text none = {0, "", NULL};
+				emit_default_ptr(&pre, &dexpr, 0, none, v._struct);
 			}
 		}
 
+		if (find_anno(f->f.annotations, JSON_NAME_ID, &ann) && anno_text(&ann, &jt)) {
+			add_cstr(&jnbuf, jt.str, jt.len);
+			jname = jnbuf.str;
+		}
+		if (find_anno(f->f.annotations, JSON_FLATTEN_ID, &ann)) {
+			int set = 0;
+			jflatten = 1;
+			if (anno_field_text(&ann, 0, &jt, &set) && set && jt.len > 0) {
+				add_cstr(&jpbuf, jt.str, jt.len);
+				jprefix = jpbuf.str;
+			}
+		}
+		if (find_anno(f->f.annotations, JSON_BASE64_ID, &ann))
+			jdata = 1;
+		else if (find_anno(f->f.annotations, JSON_HEX_ID, &ann))
+			jdata = 2;
+
 		str_addf(&fields, "\t{");
 		add_cstr(&fields, f->f.name.str, f->f.name.len);
-		str_addf(&fields, ", %s, %" PRIu32 "u, %uu, %u, 0x%" PRIx64 "ull, %s, %d},\n",
-				lit.str, offset, (unsigned) f->f.discriminantValue, is_group, bits, dtext, dlen);
+		str_addf(&fields, ", %s, %" PRIu32 "u, %uu, %u, 0x%" PRIx64 "ull, %s, %d, %s, %d, %s, %d, %s},\n",
+				lit.str, offset, (unsigned) f->f.discriminantValue, is_group, bits, dtext, dlen,
+				jname, jflatten, jprefix, jdata, dexpr.str ? dexpr.str : "NULL");
 		str_release(&lit);
 		str_release(&tb);
 		str_release(&dtbuf);
+		str_release(&dexpr);
+		str_release(&jnbuf);
+		str_release(&jpbuf);
 	}
 
 	if (nf == 0) {
 		/* ISO C has no empty initialiser list; keep one inert entry that
 		 * nfields excludes. */
-		str_addf(&fields, "\t{\"\", {CAPN_DYN_VOID, NULL, NULL, NULL, NULL, 0ull, 0u}, 0u, 0xffffu, 0, 0ull, NULL, 0}\n");
+		str_addf(&fields, "\t{\"\", {CAPN_DYN_VOID, NULL, NULL, NULL, NULL, 0ull, 0u}, 0u, 0xffffu, 0, 0ull, NULL, 0, NULL, 0, NULL, 0, NULL}\n");
 	}
 
 	str_addf(src, "%s", pre.str);
@@ -284,32 +516,85 @@ static void emit_struct(struct str *src, struct node *n, int group) {
 		str_addf(src, "const struct capn_dyn_struct %s_dyn = {", n->name.str);
 	}
 	add_cstr(src, name, (int) strlen(name));
-	str_addf(src, ", 0x%" PRIx64 "ull, %u, %u, %u, %" PRIu32 "u, %d, capn_dyn_f%" PRIx64 "};\n\n",
-			n->n.id, (unsigned) n->n._struct.dataWordCount, (unsigned) n->n._struct.pointerCount,
-			(unsigned) n->n._struct.discriminantCount, (uint32_t) n->n._struct.discriminantOffset,
-			nf, n->n.id);
+	{
+		struct field *gf = group ? find_group_field(n) : NULL;
+		struct Annotation ann;
+		struct str dname = STR_INIT, dval = STR_INIT;
+		const char *dn = "NULL", *dv = "NULL";
+		int has_disc = 0;
+		capn_text jt;
+		int set = 0;
+
+		if (gf && find_anno(gf->f.annotations, JSON_DISC_ID, &ann))
+			has_disc = 1;
+		else if (find_anno(n->n.annotations, JSON_DISC_ID, &ann))
+			has_disc = 1;
+		if (has_disc) {
+			struct Annotation disc = ann;
+			if (anno_field_text(&disc, 0, &jt, &set) && set && jt.len > 0) {
+				add_cstr(&dname, jt.str, jt.len);
+				dn = dname.str;
+			} else if (gf && find_anno(gf->f.annotations, JSON_FLATTEN_ID, &ann)) {
+				add_cstr(&dname, gf->f.name.str, gf->f.name.len);
+				dn = dname.str;
+			}
+			set = 0;
+			if (anno_field_text(&disc, 1, &jt, &set) && set && jt.len > 0) {
+				add_cstr(&dval, jt.str, jt.len);
+				dv = dval.str;
+			}
+		}
+		str_addf(src, ", 0x%" PRIx64 "ull, %u, %u, %u, %" PRIu32 "u, %d, capn_dyn_f%" PRIx64 ", %s, %s, %d};\n\n",
+				n->n.id, (unsigned) n->n._struct.dataWordCount, (unsigned) n->n._struct.pointerCount,
+				(unsigned) n->n._struct.discriminantCount, (uint32_t) n->n._struct.discriminantOffset,
+				nf, n->n.id, dn, dv, has_disc);
+		str_release(&dname);
+		str_release(&dval);
+	}
 	str_release(&pre);
 	str_release(&fields);
 }
 
 static void emit_enum(struct str *src, struct node *n) {
 	int i, ne = capn_len(n->n._enum.enumerants);
+	int any_json = 0;
 	const char *name = n->n.displayName.str + n->n.displayNamePrefixLength;
+	struct str jnames = STR_INIT;
 
 	str_addf(src, "static const char *const capn_dyn_e%" PRIx64 "[] = {\n", n->n.id);
 	for (i = 0; i < ne; i++) {
 		struct Enumerant e;
+		struct Annotation ann;
+		capn_text jt;
 		get_Enumerant(&e, n->n._enum.enumerants, i);
 		str_addf(src, "\t");
 		add_cstr(src, e.name.str, e.name.len);
 		str_addf(src, ",\n");
+		str_addf(&jnames, "\t");
+		if (find_anno(e.annotations, JSON_NAME_ID, &ann) && anno_text(&ann, &jt)) {
+			add_cstr(&jnames, jt.str, jt.len);
+			any_json = 1;
+		} else {
+			str_addf(&jnames, "NULL");
+		}
+		str_addf(&jnames, ",\n");
 	}
 	if (ne == 0)
 		str_addf(src, "\tNULL\n");
 	str_addf(src, "};\n");
+	if (any_json) {
+		str_addf(src, "static const char *const capn_dyn_ej%" PRIx64 "[] = {\n%s};\n",
+		         n->n.id, jnames.str);
+	}
 	str_addf(src, "const struct capn_dyn_enum %s_dyn = {", n->name.str);
 	add_cstr(src, name, (int) strlen(name));
-	str_addf(src, ", 0x%" PRIx64 "ull, %d, capn_dyn_e%" PRIx64 "};\n\n", n->n.id, ne, n->n.id);
+	if (any_json)
+		str_addf(src, ", 0x%" PRIx64 "ull, %d, capn_dyn_e%" PRIx64 ", capn_dyn_ej%" PRIx64 "};\n\n",
+		         n->n.id, ne, n->n.id, n->n.id);
+	else
+		str_addf(src, ", 0x%" PRIx64 "ull, %d, capn_dyn_e%" PRIx64 ", NULL};\n\n",
+		         n->n.id, ne, n->n.id);
+	str_release(&jnames);
 }
 
 static void collect_groups(struct node *n, struct node ***list, int *count, int *cap) {
@@ -355,6 +640,7 @@ void define_reflect(capnp_ctx_t *ctx, struct node *file_node) {
 	int ngroups = 0, cap = 0, i;
 
 	g_tcount = 0;
+	g_dcount = 0;
 
 	for (n = file_node->file_nodes; n != NULL; n = n->next_file_node) {
 		if (n->n.which == Node__struct && !n->n._struct.isGroup)

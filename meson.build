@@ -52,7 +52,7 @@ libcapnp_c = library(
   include_directories: include_directories(['lib', 'compiler']),
   implicit_include_directories: false,
   override_options: lib_override,
-  soversion: '1',
+  soversion: '2',
   install: true,
 )
 
@@ -265,8 +265,15 @@ if get_option('enable_tests') and not meson.is_subproject()
   )
   test('gate-r5-test', gate_r5_test)
 
-  capnp = find_program('capnp', required: false)
-  if capnp.found()
+  # A cross build must not run the host capnp against the target
+  # capnpc-c plugin. The CLI parity tests stay on native builds.
+  if meson.is_cross_build()
+    have_host_capnp = false
+  else
+    capnp = find_program('capnp', native: true, required: false)
+    have_host_capnp = capnp.found()
+  endif
+  if have_host_capnp
     codec_c_args = common_c_args + ['-D_POSIX_C_SOURCE=200809L']
 
     test(
@@ -293,10 +300,12 @@ if get_option('enable_tests') and not meson.is_subproject()
     # tests that compare capn-dyn output with the official tool.
     reflect_gen = custom_target(
       'reflect-capnp',
-      input: ['tests' / 'reflect.capnp', 'tests' / 'reflect-other.capnp'],
+      input: ['tests' / 'reflect.capnp', 'tests' / 'reflect-other.capnp',
+              'tests' / 'jsonann.capnp'],
       output: [
         'reflect.capnp.c', 'reflect.capnp.h',
         'reflect-other.capnp.c', 'reflect-other.capnp.h',
+        'jsonann.capnp.c', 'jsonann.capnp.h',
       ],
       command: [
         capnp, 'compile',
@@ -313,6 +322,8 @@ if get_option('enable_tests') and not meson.is_subproject()
       [
         'tests' / 'capnp-cli-interop-test.cpp',
         'tests' / 'reflect-test.cpp',
+        'tests' / 'json-ann-test.cpp',
+        'tests' / 'brand-test.cpp',
         'tests' / 'addressbook.capnp.c',
         'compiler' / 'test.capnp.c',
         reflect_gen,
@@ -405,6 +416,19 @@ if get_option('enable_tests') and not meson.is_subproject()
         override_options: ['cpp_std=c++17'],
       )
 
+      frame_wrap_test = executable(
+        'frame_wrap_test',
+        'interop' / 'frame_wrap_test.c',
+        c_args: ['-D_POSIX_C_SOURCE=200809L'],
+      )
+      test(
+        'frame_wrap',
+        frame_wrap_test,
+        args: [rpc_client_c.full_path()],
+        depends: [rpc_client_c],
+        timeout: 10,
+      )
+
       test(
         'rpc_interop_cpp',
         bash,
@@ -416,6 +440,27 @@ if get_option('enable_tests') and not meson.is_subproject()
           rpc_peer_client.full_path(),
         ],
         depends: [rpc_peer_server, rpc_client_c, rpc_server_c, rpc_peer_client],
+        timeout: 60,
+      )
+
+      rpc_promise_server = executable(
+        'rpc_promise_server',
+        ['interop' / 'rpc_promise_server.c', 'compiler' / 'adder.capnp.c'],
+        include_directories: include_directories(['lib', 'compiler']),
+        dependencies: [libcapnp_dep],
+        c_args: ['-D_POSIX_C_SOURCE=200809L'],
+        implicit_include_directories: false,
+      )
+
+      test(
+        'rpc_interop_cpp_promise',
+        bash,
+        args: [
+          meson.current_source_dir() / 'interop' / 'run_rpc_promise.sh',
+          rpc_promise_server.full_path(),
+          rpc_peer_server.full_path(),
+        ],
+        depends: [rpc_promise_server, rpc_peer_server],
         timeout: 60,
       )
     else
@@ -637,9 +682,14 @@ if get_option('fuzz')
   # otherwise use the checked-in seed. Not unbounded AFL.
   fs = import('fs')
   fuzz_seed = meson.project_source_root() / 'fuzz' / 'in' / 'Person.bin'
-  capnp_fuzz = find_program('capnp', required: false)
+  if meson.is_cross_build()
+    have_fuzz_capnp = false
+  else
+    capnp_fuzz = find_program('capnp', native: true, required: false)
+    have_fuzz_capnp = capnp_fuzz.found()
+  endif
   sh = find_program('sh', required: false)
-  if capnp_fuzz.found() and sh.found()
+  if have_fuzz_capnp and sh.found()
     fuzz_person_bin = custom_target(
       'fuzz-person-bin',
       input: files('fuzz' / 'Person.txt'),
