@@ -61,9 +61,18 @@ int capn_deflate(struct capn_stream* s) {
 
 			s->next_out[0] = 0;
 			for (sz = 1; sz < min(s->avail_in/8, 256); sz++) {
-				if (((uint64_t*) s->next_in)[sz] != 0) {
-					break;
+				const uint8_t *w = s->next_in + sz * 8;
+				int b, nonzero = 0;
+				/* Byte compare: next_in is not guaranteed to be
+				 * aligned, and a uint64_t load is undefined then. */
+				for (b = 0; b < 8; b++) {
+					if (w[b]) {
+						nonzero = 1;
+						break;
+					}
 				}
+				if (nonzero)
+					break;
 			}
 
 			s->next_out[1] = (uint8_t) (sz-1);

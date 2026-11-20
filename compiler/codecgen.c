@@ -127,7 +127,7 @@ static void mk_simple_list_decoder(struct str *func, const char *tab,
     str_add(func, tab, -1);
     str_addf(func, "\tcapn_resolve(&(s->%s.p));\n", svar);
     str_add(func, tab, -1);
-    str_addf(func, "\tnc_ = s->%s.p.len;\n", svar);
+    str_addf(func, "\tnc_ = capn_ptr_len(s->%s.p);\n", svar);
     str_add(func, tab, -1);
     str_addf(func, "\tif (nc_ == 0) {\n");
     str_add(func, tab, -1);
@@ -138,6 +138,10 @@ static void mk_simple_list_decoder(struct str *func, const char *tab,
     str_addf(func, "\telse {\n");
     str_add(func, tab, -1);
     str_addf(func, "\t\td->%s = (char **)calloc(nc_, sizeof(char *));\n", dvar);
+    str_add(func, tab, -1);
+    str_addf(func, "\t\tif (d->%s == NULL)\n", dvar);
+    str_add(func, tab, -1);
+    str_addf(func, "\t\t\tnc_ = 0;\n");
     str_add(func, tab, -1);
     str_addf(func, "\t\tfor(i_ = 0; i_ < nc_; i_ ++) {\n");
     str_add(func, tab, -1);
@@ -154,7 +158,7 @@ static void mk_simple_list_decoder(struct str *func, const char *tab,
     str_add(func, tab, -1);
     str_addf(func, "\tcapn_resolve(&(s->%s.p));\n", svar);
     str_add(func, tab, -1);
-    str_addf(func, "\tnc_ = s->%s.p.len;\n", svar);
+    str_addf(func, "\tnc_ = capn_ptr_len(s->%s.p);\n", svar);
     str_add(func, tab, -1);
     str_addf(func, "\tif (nc_ == 0) {\n");
     str_add(func, tab, -1);
@@ -168,21 +172,28 @@ static void mk_simple_list_decoder(struct str *func, const char *tab,
              "\t\td->%s = (capnp_data_t *)calloc(nc_, sizeof(capnp_data_t));\n",
              dvar);
     str_add(func, tab, -1);
+    str_addf(func, "\t\tif (d->%s == NULL)\n", dvar);
+    str_add(func, tab, -1);
+    str_addf(func, "\t\t\tnc_ = 0;\n");
+    str_add(func, tab, -1);
     str_addf(func, "\t\tfor(i_ = 0; i_ < nc_; i_ ++) {\n");
     str_add(func, tab, -1);
     str_addf(func, "\t\t\tcapn_ptr item_ = capn_getp(s->%s.p, i_, 1);\n", svar);
     str_add(func, tab, -1);
-    str_addf(func, "\t\t\td->%s[i_].len = item_.len;\n", dvar);
+    str_addf(func, "\t\t\td->%s[i_].len = (item_.type == CAPN_LIST) ? item_.len : 0;\n", dvar);
     str_add(func, tab, -1);
-    str_addf(func, "\t\t\tif (item_.len > 0) {\n");
-    str_add(func, tab, -1);
-    str_addf(func,
-             "\t\t\t\td->%s[i_].data = (uint8_t *)malloc(item_.len);\n", dvar);
+    str_addf(func, "\t\t\tif (d->%s[i_].len > 0) {\n", dvar);
     str_add(func, tab, -1);
     str_addf(func,
-             "\t\t\t\tcapn_getv8((capn_list8){item_}, 0, d->%s[i_].data, "
-             "item_.len);\n",
-             dvar);
+             "\t\t\t\td->%s[i_].data = (uint8_t *)malloc((size_t) d->%s[i_].len);\n",
+             dvar, dvar);
+    str_add(func, tab, -1);
+    str_addf(func, "\t\t\t\tif (d->%s[i_].data != NULL)\n", dvar);
+    str_add(func, tab, -1);
+    str_addf(func,
+             "\t\t\t\t\tcapn_getv8((capn_list8){item_}, 0, d->%s[i_].data, "
+             "d->%s[i_].len);\n",
+             dvar, dvar);
     str_add(func, tab, -1);
     str_addf(func, "\t\t\t}\n");
     str_add(func, tab, -1);
@@ -193,7 +204,7 @@ static void mk_simple_list_decoder(struct str *func, const char *tab,
     str_add(func, tab, -1);
     str_addf(func, "\tcapn_resolve(&(s->%s.p));\n", svar);
     str_add(func, tab, -1);
-    str_addf(func, "\tnc_ = s->%s.p.len;\n", svar);
+    str_addf(func, "\tnc_ = capn_ptr_len(s->%s.p);\n", svar);
     str_add(func, tab, -1);
     str_addf(func, "\tif (nc_ == 0) {\n");
     str_add(func, tab, -1);
@@ -205,6 +216,10 @@ static void mk_simple_list_decoder(struct str *func, const char *tab,
     str_add(func, tab, -1);
     str_addf(func, "\t\td->%s = (%s *)calloc(nc_, sizeof(%s));\n", dvar,
              list_type, list_type);
+    str_add(func, tab, -1);
+    str_addf(func, "\t\tif (d->%s == NULL)\n", dvar);
+    str_add(func, tab, -1);
+    str_addf(func, "\t\t\tnc_ = 0;\n");
     str_add(func, tab, -1);
     str_addf(func, "\t\tfor(i_ = 0; i_ < nc_; i_ ++) {\n");
     str_add(func, tab, -1);
@@ -535,16 +550,22 @@ void decode_member(capnp_ctx_t *ctx, struct str *func, struct field *f,
     str_add(func, tab, -1);
     str_addf(func, "\tcapn_resolve(&(s->%s.p));\n", var);
     str_add(func, tab, -1);
-    str_addf(func, "\tnc_ = s->%s.p.len;\n", var);
+    str_addf(func, "\tnc_ = capn_ptr_len(s->%s.p);\n", var);
     str_add(func, tab, -1);
     str_addf(func, "\td->%s = nc_;\n", buf.str);
     str_add(func, tab, -1);
     str_addf(func, "\tif (nc_ > 0) {\n");
     str_add(func, tab, -1);
-    str_addf(func, "\t\td->%s = (uint8_t *)malloc(nc_);\n", var2);
+    str_addf(func, "\t\td->%s = (uint8_t *)malloc((size_t) nc_);\n", var2);
     str_add(func, tab, -1);
-    str_addf(func, "\t\tcapn_getv8((capn_list8){s->%s.p}, 0, d->%s, nc_);\n",
+    str_addf(func, "\t\tif (d->%s != NULL)\n", var2);
+    str_add(func, tab, -1);
+    str_addf(func, "\t\t\tcapn_getv8((capn_list8){s->%s.p}, 0, d->%s, nc_);\n",
              var, var2);
+    str_add(func, tab, -1);
+    str_addf(func, "\t\telse\n");
+    str_add(func, tab, -1);
+    str_addf(func, "\t\t\td->%s = 0;\n", buf.str);
     str_add(func, tab, -1);
     str_addf(func, "\t} else {\n");
     str_add(func, tab, -1);
@@ -799,7 +820,7 @@ void mk_struct_list_decoder(capnp_ctx_t *ctx, struct node *n) {
     str_addf(ctx->SRC, "\tint nc;\n");
     str_addf(ctx->SRC, "\t%s **ptr;\n", buf.str);
     str_addf(ctx->SRC, "\tcapn_resolve(&(list.p));\n");
-    str_addf(ctx->SRC, "\tnc = list.p.len;\n");
+    str_addf(ctx->SRC, "\tnc = capn_ptr_len(list.p);\n");
     str_addf(ctx->SRC, "\tif (nc == 0) {\n");
     str_addf(ctx->SRC, "\t\t(*d) = NULL;\n");
     str_addf(ctx->SRC, "\t\t(*pcount) = 0;\n");
@@ -807,11 +828,18 @@ void mk_struct_list_decoder(capnp_ctx_t *ctx, struct node *n) {
     str_addf(ctx->SRC, "\t}\n");
     str_addf(ctx->SRC, "\tptr = (%s **)calloc(nc, sizeof(%s *));\n", buf.str,
              buf.str);
+    str_addf(ctx->SRC, "\tif (ptr == NULL) {\n");
+    str_addf(ctx->SRC, "\t\t(*d) = NULL;\n");
+    str_addf(ctx->SRC, "\t\t(*pcount) = 0;\n");
+    str_addf(ctx->SRC, "\t\treturn;\n");
+    str_addf(ctx->SRC, "\t}\n");
     str_addf(ctx->SRC, "\tfor(i = 0; i < nc; i ++) {\n");
     str_addf(ctx->SRC, "\t\tstruct %s s;\n", n->name.str);
     str_addf(ctx->SRC, "\t\tget_%s(&s, list, i);\n", n->name.str);
     str_addf(ctx->SRC, "\t\tptr[i] = (%s *)calloc(1, sizeof(%s));\n", buf.str,
              buf.str);
+    str_addf(ctx->SRC, "\t\tif (ptr[i] == NULL)\n");
+    str_addf(ctx->SRC, "\t\t\tcontinue;\n");
     str_addf(ctx->SRC, "\t\tdecode_%s(ptr[i], &s);\n", n->name.str);
     str_addf(ctx->SRC, "\t}\n");
     str_addf(ctx->SRC, "\t(*d) = ptr;\n");

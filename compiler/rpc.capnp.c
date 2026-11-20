@@ -8,8 +8,10 @@
 # define capnp_use(x)
 #endif
 
-static const capn_text capn_val0 = {0,"",0};
+static const char capn_val0_str[1] = {0};
+static const capn_text capn_val0 = {0,capn_val0_str,0};
 static const capn_ptr capn_null = {CAPN_NULL};
+static const capn_text capn_text_null = {0,0,0};
 
 Message_ptr new_Message(struct capn_segment *s) {
 	Message_ptr p;
@@ -870,11 +872,11 @@ void read_Exception(struct Exception *s capnp_unused, Exception_ptr p) {
 void write_Exception(const struct Exception *s capnp_unused, Exception_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
-	capn_set_text(p.p, 0, s->reason);
+	capn_set_text(p.p, 0, (s->reason.str != capn_val0.str) ? s->reason : capn_text_null);
 	capn_write16(p.p, 4, (uint16_t) (s->type));
 	capn_write1(p.p, 0, s->obsoleteIsCallersFault != 0);
 	capn_write16(p.p, 2, s->obsoleteDurability);
-	capn_set_text(p.p, 1, s->trace);
+	capn_set_text(p.p, 1, (s->trace.str != capn_val0.str) ? s->trace : capn_text_null);
 }
 void get_Exception(struct Exception *s, Exception_list l, int i) {
 	Exception_ptr p;

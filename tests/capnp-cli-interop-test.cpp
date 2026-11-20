@@ -28,229 +28,7 @@
 #include "addressbook.capnp.h"
 #include "test.capnp.h"
 
-#ifndef CAPNP_CLI
-#define CAPNP_CLI ""
-#endif
-
-#ifndef CAPNP_SOURCE_ROOT
-#define CAPNP_SOURCE_ROOT ""
-#endif
-
-static capn_text chars_to_text(const char *chars) {
-  return (capn_text) {
-    .len = (int) strlen(chars),
-    .str = chars,
-    .seg = NULL,
-  };
-}
-
-#define EXPECT_CAPN_TEXT_EQ(expected, t) \
-  do { \
-    EXPECT_EQ(strlen((expected)), (uint32_t) (t).len); \
-    EXPECT_STREQ((expected), (t).str); \
-  } while (0)
-
-static const char *capnp_bin(void) {
-  const char *env = getenv("CAPNP_CLI");
-  if (env && env[0] != '\0') {
-    return env;
-  }
-  if (CAPNP_CLI[0] != '\0') {
-    return CAPNP_CLI;
-  }
-  return NULL;
-}
-
-static std::string source_root(void) {
-  const char *env = getenv("CAPNP_SOURCE_ROOT");
-  if (env && env[0] != '\0') {
-    return env;
-  }
-  if (CAPNP_SOURCE_ROOT[0] != '\0') {
-    return CAPNP_SOURCE_ROOT;
-  }
-  return ".";
-}
-
-static std::string join_path(const std::string &dir, const char *name) {
-  if (dir.empty()) {
-    return name;
-  }
-  char last = dir[dir.size() - 1];
-  if (last == '/' || last == '\\') {
-    return dir + name;
-  }
-  return dir + "/" + name;
-}
-
-static std::string include_dir(void) {
-  return join_path(source_root(), "compiler");
-}
-
-static std::string addressbook_schema(void) {
-  return join_path(source_root(), "tests/addressbook.capnp");
-}
-
-static std::string testalltypes_schema(void) {
-  return join_path(source_root(), "compiler/test.capnp");
-}
-
-static std::string fixture_path(const char *name) {
-  return join_path(source_root(), (std::string("tests/fixtures/") + name).c_str());
-}
-
-static bool capnp_present(void) {
-  const char *bin = capnp_bin();
-  return bin != NULL && access(bin, X_OK) == 0;
-}
-
-struct CmdResult {
-  int status;
-  std::string out;
-  std::string err;
-};
-
-static void close_fd(int *fd) {
-  if (*fd >= 0) {
-    close(*fd);
-    *fd = -1;
-  }
-}
-
-static bool read_all_fd(int fd, std::string *out) {
-  char buf[4096];
-  ssize_t n;
-  while ((n = read(fd, buf, sizeof(buf))) > 0) {
-    out->append(buf, (size_t) n);
-  }
-  return n == 0;
-}
-
-static CmdResult run_argv(const std::vector<std::string> &argv,
-                          const void *stdin_data, size_t stdin_len) {
-  CmdResult r;
-  r.status = -1;
-  if (argv.empty()) {
-    r.err = "empty argv";
-    return r;
-  }
-
-  int in_pipe[2] = {-1, -1};
-  int out_pipe[2] = {-1, -1};
-  int err_pipe[2] = {-1, -1};
-  if (pipe(in_pipe) != 0 || pipe(out_pipe) != 0 || pipe(err_pipe) != 0) {
-    r.err = "pipe failed";
-    close_fd(&in_pipe[0]);
-    close_fd(&in_pipe[1]);
-    close_fd(&out_pipe[0]);
-    close_fd(&out_pipe[1]);
-    close_fd(&err_pipe[0]);
-    close_fd(&err_pipe[1]);
-    return r;
-  }
-
-  pid_t pid = fork();
-  if (pid < 0) {
-    r.err = "fork failed";
-    close_fd(&in_pipe[0]);
-    close_fd(&in_pipe[1]);
-    close_fd(&out_pipe[0]);
-    close_fd(&out_pipe[1]);
-    close_fd(&err_pipe[0]);
-    close_fd(&err_pipe[1]);
-    return r;
-  }
-
-  if (pid == 0) {
-    if (dup2(in_pipe[0], STDIN_FILENO) < 0 ||
-        dup2(out_pipe[1], STDOUT_FILENO) < 0 ||
-        dup2(err_pipe[1], STDERR_FILENO) < 0) {
-      _exit(127);
-    }
-    close(in_pipe[0]);
-    close(in_pipe[1]);
-    close(out_pipe[0]);
-    close(out_pipe[1]);
-    close(err_pipe[0]);
-    close(err_pipe[1]);
-    std::vector<char *> cargv;
-    cargv.reserve(argv.size() + 1);
-    for (size_t i = 0; i < argv.size(); i++) {
-      cargv.push_back(const_cast<char *>(argv[i].c_str()));
-    }
-    cargv.push_back(NULL);
-    execv(argv[0].c_str(), cargv.data());
-    _exit(127);
-  }
-
-  close_fd(&in_pipe[0]);
-  close_fd(&out_pipe[1]);
-  close_fd(&err_pipe[1]);
-
-  void (*old_pipe)(int) = signal(SIGPIPE, SIG_IGN);
-  const uint8_t *p = (const uint8_t *) stdin_data;
-  size_t left = stdin_len;
-  while (left > 0) {
-    ssize_t n = write(in_pipe[1], p, left);
-    if (n < 0) {
-      if (errno == EINTR) {
-        continue;
-      }
-      break;
-    }
-    p += (size_t) n;
-    left -= (size_t) n;
-  }
-  close_fd(&in_pipe[1]);
-  signal(SIGPIPE, old_pipe);
-
-  read_all_fd(out_pipe[0], &r.out);
-  read_all_fd(err_pipe[0], &r.err);
-  close_fd(&out_pipe[0]);
-  close_fd(&err_pipe[0]);
-
-  int st = 0;
-  if (waitpid(pid, &st, 0) < 0) {
-    r.status = -1;
-    return r;
-  }
-  if (WIFEXITED(st)) {
-    r.status = WEXITSTATUS(st);
-  } else if (WIFSIGNALED(st)) {
-    r.status = 128 + WTERMSIG(st);
-  } else {
-    r.status = -1;
-  }
-  return r;
-}
-
-static std::vector<std::string> capnp_cmd(const char *verb,
-                                          const std::string &schema,
-                                          const char *typ) {
-  std::vector<std::string> argv;
-  argv.push_back(capnp_bin());
-  argv.push_back(verb);
-  argv.push_back("-I");
-  argv.push_back(include_dir());
-  argv.push_back(schema);
-  argv.push_back(typ);
-  return argv;
-}
-
-static std::string read_file_text(const std::string &path) {
-  FILE *f = fopen(path.c_str(), "rb");
-  if (!f) {
-    return "";
-  }
-  std::string out;
-  char buf[512];
-  size_t n;
-  while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
-    out.append(buf, n);
-  }
-  fclose(f);
-  return out;
-}
+#include "capnp-cli.h"
 
 static void expect_alice_bob(struct AddressBook *book, const char *label) {
   ASSERT_EQ(2, capn_len(book->people)) << label << ": two people";
@@ -581,51 +359,6 @@ TEST_F(CapnpCli, CapnpEncodeTestAllTypesText_CReadMatches) {
   read_TestAllTypes(&t, root);
   expect_testalltypes(&t, "capnp-encode");
   capn_free(&rc);
-}
-
-static std::string hex_span(const void *p, size_t n, size_t maxn) {
-  const uint8_t *b = (const uint8_t *) p;
-  if (n > maxn) {
-    n = maxn;
-  }
-  std::string s;
-  char tmp[8];
-  for (size_t i = 0; i < n; i++) {
-    snprintf(tmp, sizeof(tmp), "%02x%s", b[i], ((i + 1) % 8) == 0 ? " " : "");
-    s += tmp;
-  }
-  return s;
-}
-
-static void expect_bytes_eq(const void *got, size_t got_n, const void *want,
-                            size_t want_n, const char *label) {
-  const uint8_t *g = (const uint8_t *) got;
-  const uint8_t *w = (const uint8_t *) want;
-  if (got_n == want_n && memcmp(g, w, got_n) == 0) {
-    return;
-  }
-  size_t n = got_n < want_n ? got_n : want_n;
-  size_t first = 0;
-  while (first < n && g[first] == w[first]) {
-    first++;
-  }
-  ADD_FAILURE() << label << ": size got " << got_n << " want " << want_n
-                << " first differ at " << first
-                << "\ngot  " << hex_span(g, got_n, 160)
-                << "\nwant " << hex_span(w, want_n, 160);
-}
-
-static CmdResult capnp_encode_text(const std::string &schema, const char *typ,
-                                   const char *text) {
-  return run_argv(capnp_cmd("encode", schema, typ), text, strlen(text));
-}
-
-static CmdResult capnp_convert(const char *spec, const void *data, size_t len) {
-  std::vector<std::string> argv;
-  argv.push_back(capnp_bin());
-  argv.push_back("convert");
-  argv.push_back(spec);
-  return run_argv(argv, data, len);
 }
 
 static Person_ptr person_at(Person_list l, int i) {
@@ -1126,4 +859,120 @@ TEST_F(CapnpCli, EmptyPeopleListMatchesEncode) {
   ASSERT_GT(sz, 0);
   expect_bytes_eq(buf, (size_t) sz, want.out.data(), want.out.size(),
                   "empty-people");
+}
+
+/* A read of a message with unset fields followed by a write must leave the
+ * message meaning the same thing: canonical forms are equal only if every
+ * default was written back as the null the reader saw. */
+static std::string canonical_via_cli(const std::string &framed) {
+  CmdResult r = capnp_convert("binary:canonical", framed.data(), framed.size());
+  EXPECT_EQ(0, r.status) << r.err;
+  return r.out;
+}
+
+static std::string round_trip_test_defaults(const std::string &framed) {
+  struct capn in;
+  EXPECT_EQ(0, capn_init_mem(&in, (const uint8_t *) framed.data(),
+                             framed.size(), 0));
+  TestDefaults_ptr rp;
+  rp.p = capn_getp(capn_root(&in), 0, 1);
+  struct TestDefaults d;
+  memset(&d, 0, sizeof(d));
+  read_TestDefaults(&d, rp);
+
+  struct capn out;
+  capn_init_malloc(&out);
+  TestDefaults_ptr np = new_TestDefaults(capn_root(&out).seg);
+  write_TestDefaults(&d, np);
+  EXPECT_EQ(0, capn_set_root(&out, np.p));
+  uint8_t buf[8192];
+  ssize_t sz = capn_write_mem(&out, buf, sizeof(buf), 0);
+  capn_free(&out);
+  capn_free(&in);
+  return sz > 0 ? std::string((const char *) buf, (size_t) sz) : std::string();
+}
+
+TEST_F(CapnpCli, ReadWriteOfAnEmptyDefaultsStructKeepsItsMeaning) {
+  CmdResult enc = capnp_encode_text(testalltypes_schema(), "TestDefaults", "()");
+  ASSERT_EQ(0, enc.status) << enc.err;
+  std::string out = round_trip_test_defaults(enc.out);
+  ASSERT_FALSE(out.empty());
+  std::string a = canonical_via_cli(enc.out);
+  std::string b = canonical_via_cli(out);
+  expect_bytes_eq(b.data(), b.size(), a.data(), a.size(),
+                  "empty TestDefaults after read/write");
+}
+
+TEST_F(CapnpCli, ReadWriteOfAPartlySetDefaultsStructKeepsItsMeaning) {
+  CmdResult enc = capnp_encode_text(
+      testalltypes_schema(), "TestDefaults",
+      "(int32Field = 7, float64Field = 2.5, dataField = \"zz\","
+      " int32List = [4, 5], textList = [\"a\", \"b\"],"
+      " structField = (textField = \"inner\"))");
+  ASSERT_EQ(0, enc.status) << enc.err;
+  std::string out = round_trip_test_defaults(enc.out);
+  ASSERT_FALSE(out.empty());
+  std::string a = canonical_via_cli(enc.out);
+  std::string b = canonical_via_cli(out);
+  expect_bytes_eq(b.data(), b.size(), a.data(), a.size(),
+                  "partly set TestDefaults after read/write");
+}
+
+static struct capn_segment *one_segment_per_object(void *, uint32_t, int sz) {
+  sz += (int) sizeof(struct capn_segment);
+  struct capn_segment *s = (struct capn_segment *) calloc(1, (size_t) sz);
+  s->data = (char *) (s + 1);
+  s->cap = (size_t) sz - sizeof(*s);
+  s->user = s;
+  return s;
+}
+
+TEST_F(CapnpCli, FarPointerMessageDecodesAndCanonicalizesLikeTheOfficialTool) {
+  struct capn c;
+  capn_init_malloc(&c);
+  c.create = one_segment_per_object;
+
+  struct capn_segment *cs = capn_root(&c).seg;
+  struct TestAllTypes t;
+  memset(&t, 0, sizeof(t));
+  t.int32Field = -5;
+  t.textField = chars_to_text("far text");
+  t.int32List = capn_new_list32(cs, 3);
+  capn_set32(t.int32List, 0, 10);
+  capn_set32(t.int32List, 1, 20);
+  capn_set32(t.int32List, 2, 30);
+  t.textList = (capn_ptr_list) {capn_new_ptr_list(cs, 2)};
+  capn_set_text(t.textList.p, 0, chars_to_text("x"));
+  capn_set_text(t.textList.p, 1, chars_to_text("yy"));
+  t.structList = new_TestAllTypes_list(cs, 2);
+  struct TestAllTypes e;
+  memset(&e, 0, sizeof(e));
+  e.textField = chars_to_text("e0");
+  set_TestAllTypes(&e, t.structList, 0);
+  e.textField = chars_to_text("e1");
+  set_TestAllTypes(&e, t.structList, 1);
+  TestAllTypes_ptr tp = new_TestAllTypes(cs);
+  write_TestAllTypes(&t, tp);
+  ASSERT_EQ(0, capn_set_root(&c, tp.p));
+  ASSERT_GT(c.segnum, 4u) << "no far pointers were produced";
+
+  uint8_t buf[16384];
+  ssize_t sz = capn_write_mem(&c, buf, sizeof(buf), 0);
+  ASSERT_GT(sz, 0);
+
+  CmdResult dec = run_argv(
+      capnp_cmd("decode", testalltypes_schema(), "TestAllTypes"), buf,
+      (size_t) sz);
+  ASSERT_EQ(0, dec.status) << dec.err;
+  expect_contains(dec.out, "far text");
+  expect_contains(dec.out, "int32Field = -5");
+  expect_contains(dec.out, "\"e1\"");
+
+  CmdResult want = capnp_convert("binary:canonical", buf, (size_t) sz);
+  ASSERT_EQ(0, want.status) << want.err;
+  std::string got = canonicalize_unframed(&c);
+  ASSERT_FALSE(got.empty());
+  expect_bytes_eq(got.data(), got.size(), want.out.data(), want.out.size(),
+                  "far-pointer message canonical form");
+  capn_free(&c);
 }

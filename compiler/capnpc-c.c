@@ -10,6 +10,7 @@
 #include "schema.capnp.h"
 #include "str.h"
 #include "codecgen.h"
+#include "reflectgen.h"
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -37,10 +38,17 @@ static struct str SRC = STR_INIT, HDR = STR_INIT;
 static struct capn g_valcapn;
 static struct capn_segment g_valseg;
 static int g_valc;
-static int g_val0used, g_nullused;
+static int g_val0used, g_nullused, g_textnullused;
+
+/* capnp/stream.capnp */
+#define CAPNP_STREAM_FILE_ID 0x86c366a91393f3f8ULL
+
+#define ANNOTATION_RPCSTUBS	0xe5f6071829304a5bUL
 
 static int g_fieldgetset = 0;
 static int g_codecgen = 0;
+static int g_reflect = 0;
+static int g_rpcstubs = 0;
 static capnp_ctx_t g_ctx;
 
 static void bind_codec_ctx(void) {
@@ -174,6 +182,48 @@ static void free_string_list(struct string_list * list)
 }
 
 
+static int file_has_annotation(struct node *file, uint64_t id) {
+	int i;
+	for (i = 0; file && i < capn_len(file->n.annotations); i++) {
+		struct Annotation a;
+		get_Annotation(&a, file->n.annotations, i);
+		if (a.id == id)
+			return 1;
+	}
+	return 0;
+}
+
+/* Mark every method's parameter and result struct so rpc stubs are
+ * generated for it. A parameter list is a detached struct (scopeId 0)
+ * with no name of its own: give it <Interface>_<method>_params or
+ * _results and list it with the file's nodes. A named struct already
+ * belongs to the file (scopeId != 0, or resolve_names has named it)
+ * and only needs the flag. */
+static void name_method_structs(struct node *n, struct node *file) {
+	int i, k, count = capn_len(n->n._interface.methods);
+	for (i = 0; i < count; i++) {
+		struct Method m;
+		get_Method(&m, n->n._interface.methods, i);
+		for (k = 0; k < 2; k++) {
+			struct node *sn = find_node_mayfail(k ? m.resultStructType : m.paramStructType);
+			if (sn == NULL || sn->n.which != Node__struct || sn->n._struct.isGroup)
+				continue;
+			/* `-> stream` names capnp/stream.capnp:StreamResult. That
+			 * file has no generated header, and the handler takes no
+			 * results struct. */
+			if (sn->n.scopeId == CAPNP_STREAM_FILE_ID)
+				continue;
+			sn->rpc_struct = 1;
+			if (sn->name.len != 0 || sn->n.scopeId != 0)
+				continue;
+			str_addf(&sn->name, "%s_%.*s_%s", n->name.str, m.name.len, m.name.str,
+					k ? "results" : "params");
+			sn->next_file_node = file->file_nodes;
+			file->file_nodes = sn;
+		}
+	}
+}
+
 /* resolve_names recursively follows the nestedNodes tree in order to
  * set node->name.
  * It also builds up the list of nodes within a file (file_nodes and
@@ -206,6 +256,9 @@ static void resolve_names(struct str *b, struct node *n, capn_text name, struct 
 		n->next_file_node = file->file_nodes;
 		file->file_nodes = n;
 	}
+
+	if (n->n.which == Node__interface && file_has_annotation(file, ANNOTATION_RPCSTUBS))
+		name_method_structs(n, file);
 
 	str_setlen(b, sz);
 }
@@ -438,7 +491,7 @@ static void decode_value(struct value* v, Type_ptr type, Value_ptr value, const 
 				str_addf(&SRC, "{");
 
 			if (use_buf) {
-				str_addf(&SRC, "%d,%d,%d,%d,%d,%d,%d,(char*)&capn_buf[%d],(struct capn_segment*)&capn_seg",
+				str_addf(&SRC, "%d,%d,%d,%d,%d,%d,%d,(char*)&capn_buf[%d],(struct capn_segment*)&capn_seg,0,0",
 						p.type,
 						p.has_ptr_tag,
 						p.is_list_member,
@@ -676,13 +729,14 @@ static void set_member(struct str *func, struct field *f, const char *ptr, const
 		str_addf(func, "capn_write64(%s, %d, capn_from_f64(%s)%s);\n", ptr, 8*f->f.slot.offset, var, xor);
 		break;
 	case Type_text:
+		g_textnullused = 1;
 		if (f->v.ptrval.type) {
-			g_val0used = 1;
-			str_addf(func, "capn_set_text(%s, %d, (%s.str != capn_val%d.str) ? %s : capn_val0);\n",
+			str_addf(func, "capn_set_text(%s, %d, (%s.str != capn_val%d.str) ? %s : capn_text_null);\n",
 					ptr, f->f.slot.offset, var, (int)f->v.intval, var);
 		} else {
-			str_addf(func, "capn_set_text(%s, %d, %s);\n",
-					ptr, f->f.slot.offset, var);
+			g_val0used = 1;
+			str_addf(func, "capn_set_text(%s, %d, (%s.str != capn_val0.str) ? %s : capn_text_null);\n",
+					ptr, f->f.slot.offset, var, var);
 		}
 		break;
 	case Type_data:
@@ -839,6 +893,12 @@ static const char *field_name(struct field *f) {
 		"_Thread_local",
 		/* capn reserved for parameter names */
 		"p",
+		/* the discriminant member of a struct with a union */
+		"which",
+		/* object-like macros from libc and the compiler that would
+		 * expand inside a member declaration */
+		"errno", "stdin", "stdout", "stderr", "unix", "linux", "i386",
+		"noreturn", "complex", "imaginary",
 	};
 
 	size_t i;
@@ -939,6 +999,7 @@ static void do_union(struct strings *s, struct node *n, struct field *first_fiel
 	struct field *f;
 	static struct str tag = STR_INIT;
 	struct str enums = STR_INIT;
+	int union_start, union_body;
 
 	str_reset(&tag);
 
@@ -990,7 +1051,9 @@ static void do_union(struct strings *s, struct node *n, struct field *first_fiel
 	union_cases(s, n, first_field, (1 << Type_data));
 	union_cases(s, n, first_field, (1 << Type__struct) | (1 << Type__interface) | (1 << Type_anyPointer) | (1 << Type__list));
 
+	union_start = s->decl.len;
 	str_addf(&s->decl, "%scapnp_nowarn union {\n", s->dtab.str);
+	union_body = s->decl.len;
 	str_add(&s->dtab, "\t", -1);
 
 	/* when we have defaults or groups we have to emit each case separately */
@@ -1048,7 +1111,11 @@ static void do_union(struct strings *s, struct node *n, struct field *first_fiel
 
 	str_setlen(&s->dtab, s->dtab.len - 1);
 
-	if (union_name) {
+	/* A union whose members are all Void has nothing to store, and an
+	 * empty union is not valid ISO C. */
+	if (s->decl.len == union_body) {
+		str_setlen(&s->decl, union_start);
+	} else if (union_name) {
 		str_addf(&s->decl, "%s} %s;\n", s->dtab.str, union_name);
 	} else {
 		str_addf(&s->decl, "%s};\n", s->dtab.str);
@@ -1415,7 +1482,7 @@ static void define_struct(struct node *n, const char *extattr, const char *extat
 		else
 			str_add(&buf, mapname, -1);
 
-		str_addf(&SRC, "\nvoid encode_%s(struct capn_segment *cs,struct %s *d, %s *s) {\n",
+		str_addf(&SRC, "\nvoid encode_%s(struct capn_segment *cs capnp_unused,struct %s *d, %s *s) {\n",
 			 n->name.str, n->name.str, buf.str);
 		str_addf(&SRC, "%s\n", s.encoder.str ? s.encoder.str : "");
 		str_addf(&SRC, "}\n");
@@ -1650,6 +1717,214 @@ static void define_interface_methods(struct node *n)
 	}
 }
 
+/* Emit `interface_id == X` for `iface` and every interface it extends.
+ * capnpc-c++ dispatchCall switches on each transitive superclass id and
+ * runs that interface's own methods. The handlers here live on the
+ * server object behind the direct superclass pointer, so that
+ * superclass's dispatch receives the ancestor id. */
+static void emit_ancestor_id_tests(struct node *iface, int *first, int depth)
+{
+	int i;
+
+	if (iface == NULL || iface->n.which != Node__interface || depth > 64)
+		return;
+	if (!*first)
+		str_addf(&SRC, " || ");
+	*first = 0;
+	str_addf(&SRC, "interface_id == %s_INTERFACE_ID", iface->name.str);
+	for (i = 0; i < capn_len(iface->n._interface.superclasses); i++) {
+		struct Superclass superclass;
+		struct node *older;
+
+		get_Superclass(&superclass, iface->n._interface.superclasses, i);
+		older = find_node_mayfail(superclass.id);
+		emit_ancestor_id_tests(older, first, depth + 1);
+	}
+}
+
+/* Largest result a method of `iface` or any interface it extends will
+ * write. A subclass connection sizes its results from the subclass
+ * macros, and an inherited method writes into that same struct. */
+static void consider_result_bounds(struct node *iface, int *maxd, int *maxp, int depth)
+{
+	int i;
+
+	if (iface == NULL || iface->n.which != Node__interface || depth > 64)
+		return;
+	for (i = 0; i < capn_len(iface->n._interface.methods); i++) {
+		struct Method m;
+		struct node *rn;
+
+		get_Method(&m, iface->n._interface.methods, i);
+		rn = find_node_mayfail(m.resultStructType);
+		if (rn == NULL || !rn->rpc_struct)
+			continue;
+		if ((int) rn->n._struct.dataWordCount * 8 > *maxd)
+			*maxd = (int) rn->n._struct.dataWordCount * 8;
+		if ((int) rn->n._struct.pointerCount > *maxp)
+			*maxp = (int) rn->n._struct.pointerCount;
+	}
+	for (i = 0; i < capn_len(iface->n._interface.superclasses); i++) {
+		struct Superclass superclass;
+		struct node *parent;
+
+		get_Superclass(&superclass, iface->n._interface.superclasses, i);
+		parent = find_node_mayfail(superclass.id);
+		consider_result_bounds(parent, maxd, maxp, depth + 1);
+	}
+}
+
+static int interface_has_superclass(struct node *n)
+{
+	int i;
+
+	for (i = 0; i < capn_len(n->n._interface.superclasses); i++) {
+		struct Superclass superclass;
+		struct node *parent;
+
+		get_Superclass(&superclass, n->n._interface.superclasses, i);
+		parent = find_node_mayfail(superclass.id);
+		if (parent && parent->n.which == Node__interface)
+			return 1;
+	}
+	return 0;
+}
+
+/* Typed RPC stubs ($C.rpcstubs): for each method a client call helper, a
+ * reader for its results, and a slot in a server vtable that
+ * <Interface>_dispatch routes to. */
+static void define_rpcstubs(struct node *n)
+{
+	int i, count = capn_len(n->n._interface.methods);
+	const char *I = n->name.str;
+	int maxd = 0, maxp = 0;
+
+	/* An interface that only inherits still needs a dispatcher and result
+	 * sizes. A further subclass forwards a grandparent id to it, and a
+	 * connection sized from this interface serves those inherited methods. */
+	if (count == 0 && !interface_has_superclass(n))
+		return;
+	consider_result_bounds(n, &maxd, &maxp, 0);
+
+	/* A `-> stream` method answers with the library's StreamResult, which
+	 * has no struct here: its handler takes no results and its stub has no
+	 * result reader. */
+	str_addf(&HDR, "\n/* RPC stubs for %s. */\n", I);
+	str_addf(&HDR, "struct %s_server {\n\tvoid *self;\n", I);
+	for (i = 0; i < capn_len(n->n._interface.superclasses); i++) {
+		struct Superclass superclass;
+		struct node *parent;
+
+		get_Superclass(&superclass, n->n._interface.superclasses, i);
+		parent = find_node_mayfail(superclass.id);
+		if (parent && parent->n.which == Node__interface)
+			str_addf(&HDR, "\tconst struct %s_server *super_%s;\n",
+				 parent->name.str, parent->name.str);
+	}
+	for (i = 0; i < count; i++) {
+		struct Method m;
+		struct node *pn, *rn;
+		get_Method(&m, n->n._interface.methods, i);
+		pn = find_node_mayfail(m.paramStructType);
+		rn = find_node_mayfail(m.resultStructType);
+		if (!pn || !pn->rpc_struct)
+			continue;
+		if (rn && rn->rpc_struct) {
+			str_addf(&HDR, "\tint (*on_%.*s)(void *self, const struct %s *in, struct %s *out, struct capn_segment *seg);\n",
+					m.name.len, m.name.str, pn->name.str, rn->name.str);
+		} else {
+			str_addf(&HDR, "\tint (*on_%.*s)(void *self, const struct %s *in, struct capn_segment *seg);\n",
+					m.name.len, m.name.str, pn->name.str);
+		}
+	}
+	str_addf(&HDR, "};\n");
+	str_addf(&HDR, "/* Pass these to capn_rpc_set_result_size so results fit. */\n"
+			"#define %s_RESULT_DATASZ %d\n#define %s_RESULT_PTRS %d\n", I, maxd, I, maxp);
+	str_addf(&HDR, "int %s_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn_ptr params, capn_ptr results);\n", I);
+
+	str_addf(&SRC, "\nint %s_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn_ptr params, capn_ptr results) {\n", I);
+	str_addf(&SRC, "\tconst struct %s_server *srv = (const struct %s_server *) server;\n", I, I);
+	str_addf(&SRC, "\tcapnp_use(srv);\n\tcapnp_use(results);\n");
+	str_addf(&SRC, "\tif (interface_id != %s_INTERFACE_ID) {\n", I);
+	for (i = 0; i < capn_len(n->n._interface.superclasses); i++) {
+		struct Superclass superclass;
+		struct node *parent;
+		int first = 1;
+
+		get_Superclass(&superclass, n->n._interface.superclasses, i);
+		parent = find_node_mayfail(superclass.id);
+		if (!parent || parent->n.which != Node__interface)
+			continue;
+		str_addf(&SRC, "\t\tif (srv->super_%s != NULL && (", parent->name.str);
+		emit_ancestor_id_tests(parent, &first, 0);
+		str_addf(&SRC,
+			 "))\n\t\t\treturn %s_dispatch((void *) srv->super_%s, interface_id, method_id, params, results);\n",
+			 parent->name.str, parent->name.str);
+	}
+	str_addf(&SRC, "\t\treturn -1;\n\t}\n\tswitch (method_id) {\n");
+
+	for (i = 0; i < count; i++) {
+		struct Method m;
+		struct node *pn, *rn;
+		int has_results;
+		get_Method(&m, n->n._interface.methods, i);
+		pn = find_node_mayfail(m.paramStructType);
+		rn = find_node_mayfail(m.resultStructType);
+		if (!pn || !pn->rpc_struct)
+			continue;
+		has_results = rn && rn->rpc_struct;
+
+		str_addf(&HDR, "uint32_t %s_call_%.*s(struct capn_rpc_conn *c, uint32_t cap, const struct %s *in);\n",
+				I, m.name.len, m.name.str, pn->name.str);
+		if (has_results)
+			str_addf(&HDR, "int %s_results_%.*s(struct capn_rpc_conn *c, uint32_t question, struct %s *out, struct capn *msg);\n",
+					I, m.name.len, m.name.str, rn->name.str);
+
+		str_addf(&SRC, "\tcase %d: {\n\t\tstruct %s in;\n\t\t%s_ptr pp;\n\t\tint rc;\n", i, pn->name.str, pn->name.str);
+		if (has_results)
+			str_addf(&SRC, "\t\tstruct %s out;\n\t\t%s_ptr rp;\n", rn->name.str, rn->name.str);
+		str_addf(&SRC, "\t\tif (srv->on_%.*s == NULL)\n\t\t\treturn -1;\n", m.name.len, m.name.str);
+		str_addf(&SRC, "\t\tmemset(&in, 0, sizeof in);\n");
+		if (has_results)
+			str_addf(&SRC, "\t\tmemset(&out, 0, sizeof out);\n");
+		str_addf(&SRC, "\t\tpp.p = params;\n\t\tread_%s(&in, pp);\n", pn->name.str);
+		if (has_results) {
+			str_addf(&SRC, "\t\trc = srv->on_%.*s(srv->self, &in, &out, results.seg);\n\t\tif (rc != 0)\n\t\t\treturn rc;\n",
+					m.name.len, m.name.str);
+			str_addf(&SRC, "\t\trp.p = results;\n\t\twrite_%s(&out, rp);\n\t\treturn 0;\n\t}\n", rn->name.str);
+		} else {
+			str_addf(&SRC, "\t\trc = srv->on_%.*s(srv->self, &in, results.seg);\n\t\treturn rc;\n\t}\n",
+					m.name.len, m.name.str);
+		}
+	}
+	str_addf(&SRC, "\tdefault:\n\t\treturn -1;\n\t}\n}\n");
+
+	for (i = 0; i < count; i++) {
+		struct Method m;
+		struct node *pn, *rn;
+		get_Method(&m, n->n._interface.methods, i);
+		pn = find_node_mayfail(m.paramStructType);
+		rn = find_node_mayfail(m.resultStructType);
+		if (!pn || !pn->rpc_struct)
+			continue;
+		str_addf(&SRC, "\nstatic void %s_%.*s_fill(void *ctx, capn_ptr params) {\n\t%s_ptr pp;\n\tpp.p = params;\n\twrite_%s((const struct %s *) ctx, pp);\n}\n",
+				I, m.name.len, m.name.str, pn->name.str, pn->name.str, pn->name.str);
+		str_addf(&SRC, "uint32_t %s_call_%.*s(struct capn_rpc_conn *c, uint32_t cap, const struct %s *in) {\n",
+				I, m.name.len, m.name.str, pn->name.str);
+		/* params_datasz is the data section only. struct_bytes_count
+		 * also counts the pointer section and would shift it. */
+		str_addf(&SRC, "\treturn capn_rpc_send_call(c, cap, %s_INTERFACE_ID, %d, (int) (%s_word_count * 8), (int) %s_pointer_count, %s_%.*s_fill, (void *) in);\n}\n",
+				I, i, pn->name.str, pn->name.str, I, m.name.len, m.name.str);
+		if (rn && rn->rpc_struct) {
+			str_addf(&SRC, "int %s_results_%.*s(struct capn_rpc_conn *c, uint32_t question, struct %s *out, struct capn *msg) {\n",
+					I, m.name.len, m.name.str, rn->name.str);
+			str_addf(&SRC, "\tcapn_ptr content;\n\t%s_ptr rp;\n\tif (capn_rpc_answer_content(c, question, msg, &content) != 0)\n\t\treturn -1;\n",
+					rn->name.str);
+			str_addf(&SRC, "\trp.p = content;\n\tread_%s(out, rp);\n\treturn 0;\n}\n", rn->name.str);
+		}
+	}
+}
+
 static void define_interface(struct node *n, const char *extattr, const char *extattr_space) {
 	/* Capability pointer: no struct body. List(Interface) is a pointer list. */
 	str_addf(&SRC, "\n%s%s%s_ptr new_%s(struct capn_segment *s) {\n",
@@ -1667,6 +1942,8 @@ static void define_interface(struct node *n, const char *extattr, const char *ex
 	str_addf(&SRC, "}\n");
 
 	define_interface_methods(n);
+	if (g_rpcstubs)
+		define_rpcstubs(n);
 }
 
 static void declare_interface_news(struct node *file_node,
@@ -1885,7 +2162,10 @@ int main() {
 		g_valseg.len = 0;
 		g_val0used = 0;
 		g_nullused = 0;
+		g_textnullused = 0;
 		g_codecgen = 0;
+		g_reflect = 0;
+		g_rpcstubs = 0;
 		capn_init_malloc(&g_valcapn);
 		capn_append_segment(&g_valcapn, &g_valseg);
 
@@ -1919,6 +2199,12 @@ int main() {
 				break;
 			case ANNOTATION_CODECGEN:	/* $C::codecgen */
 				g_codecgen = 1;
+				break;
+			case ANNOTATION_REFLECT:	/* $C::reflect */
+				g_reflect = 1;
+				break;
+			case ANNOTATION_RPCSTUBS:	/* $C::rpcstubs */
+				g_rpcstubs = 1;
 				break;
 			case 0x8c99797357b357e9UL:	/* $C::donotinclude */
 				if (v.which != Value_uint64)
@@ -1965,6 +2251,10 @@ int main() {
 		str_addf(&HDR, "#define CAPN_%X%X\n", (uint32_t) (file_node->n.id >> 32), (uint32_t) file_node->n.id);
 		str_addf(&HDR, "/* AUTO GENERATED - DO NOT EDIT */\n");
 		str_addf(&HDR, "#include <capnp_c.h>\n");
+		if (g_reflect)
+			str_addf(&HDR, "#include <capn-dyn.h>\n");
+		if (g_rpcstubs)
+			str_addf(&HDR, "#include <capn-rpc.h>\n");
 		/* Do [extraheader] in declaration order. */
 		{
 			struct string_list ** current = &extraheader_strings;
@@ -2013,13 +2303,18 @@ int main() {
 				continue;
 			}
 
+			// capnp adds this import itself for `-> stream` methods, and
+			// no generated header for it ships with the runtime.
+			if (im.id == CAPNP_STREAM_FILE_ID) {
+				continue;
+			}
+
 			// Ignore leading slashes when generating C file #include's.
 			// This signifies an absolute import in a library directory.
 			const char *base_path = im.name.str[0] == '/' ? &im.name.str[1] : im.name.str;
 			str_addf(&HDR, "#include \"%s%s.h\"\n", base_path, nameinfix);
 		}
 
-		free_id_bst(used_import_ids);
 		free_id_bst(donotinclude_ids);
 		free_string_list(extraheader_strings);
 
@@ -2071,6 +2366,10 @@ int main() {
 
 		if (g_codecgen)
 			declare_codec(&g_ctx, file_node);
+		if (g_reflect) {
+			declare_reflect(&g_ctx, file_node);
+			define_reflect(&g_ctx, file_node);
+		}
 
 		str_addf(&HDR, "\n#ifdef __cplusplus\n}\n#endif\n#endif\n");
 
@@ -2105,12 +2404,20 @@ int main() {
 		if (g_codecgen) {
 			fprintf(srcf, "#include <stdlib.h>\n"
 					"#include <string.h>\n");
+		} else if (g_rpcstubs) {
+			fprintf(srcf, "#include <string.h>\n");
 		}
 
 		if (g_val0used)
-			fprintf(srcf, "static const capn_text capn_val0 = {0,\"\",0};\n");
+			/* A named object, not a string literal: the compiler may merge
+			 * equal literals across translation units, and the writer
+			 * tells this placeholder from a caller's own "" by address. */
+			fprintf(srcf, "static const char capn_val0_str[1] = {0};\n"
+					"static const capn_text capn_val0 = {0,capn_val0_str,0};\n");
 		if (g_nullused)
 			fprintf(srcf, "static const capn_ptr capn_null = {CAPN_NULL};\n");
+		if (g_textnullused)
+			fprintf(srcf, "static const capn_text capn_text_null = {0,0,0};\n");
 
 		if (g_valseg.len > 8) {
 			size_t k;
@@ -2134,5 +2441,7 @@ int main() {
 		capn_free(&g_valcapn);
 	}
 
+	/* One set serves every requested file, so it outlives the loop. */
+	free_id_bst(used_import_ids);
 	return 0;
 }

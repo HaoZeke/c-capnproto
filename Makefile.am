@@ -9,7 +9,10 @@ noinst_HEADERS =
 include_HEADERS =
 
 
-EXTRA_DIST += README.md KERNEL.md CMakeLists.txt
+EXTRA_DIST += README.md KERNEL.md CMakeLists.txt CHANGELOG.md MAINTAINING.md SECURITY.md COPYING \
+	VERSION.txt meson.build meson_options.txt subprojects/gtest.wrap \
+	cmake/c_capnprotoConfig.cmake.in cmake/consumer_smoke/CMakeLists.txt \
+	cmake/consumer_smoke/smoke.c
 EXTRA_DIST += \
 	examples/kernel/GNUmakefile \
 	examples/kernel/Kbuild \
@@ -20,20 +23,21 @@ EXTRA_DIST += c-capnproto.pc.in
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = c-capnproto.pc
 
-EXTRA_DIST += compiler/c.capnp
+EXTRA_DIST += compiler/c.capnp compiler/capnp/stream.capnp
 capnp_DATA = compiler/c.capnp
 AM_CPPFLAGS = \
 	-I${srcdir}/compiler \
 	-I${srcdir}/lib
 
 lib_LTLIBRARIES += libcapnp_c.la
-libcapnp_c_la_LDFLAGS = -version-info 0:0:0
+libcapnp_c_la_LDFLAGS = -version-info 1:0:0
 libcapnp_c_la_CPPFLAGS = $(AM_CPPFLAGS) -DCAPNP_C_BUILDING
 libcapnp_c_la_SOURCES = \
 	lib/capn-malloc.c \
 	lib/capn-stream.c \
 	lib/capn.c \
 	lib/capn-rpc.c \
+	lib/capn-dyn.c \
 	compiler/rpc.capnp.c \
 	compiler/rpc-threeparty.capnp.c
 EXTRA_DIST += \
@@ -43,18 +47,21 @@ bin_PROGRAMS += capnpc-c
 capnpc_c_SOURCES = \
 	compiler/capnpc-c.c \
 	compiler/codecgen.c \
+	compiler/reflectgen.c \
 	compiler/schema.capnp.c \
 	compiler/str.c
 capnpc_c_LDADD = libcapnp_c.la
 include_HEADERS += \
 	lib/capnp_c.h \
 	lib/capn-rpc.h \
+	lib/capn-dyn.h \
 	compiler/c.capnp.h
 
 noinst_HEADERS += \
 	lib/capnp_priv.h \
 	compiler/str.h \
 	compiler/codecgen.h \
+	compiler/reflectgen.h \
 	compiler/schema.capnp.h \
 	compiler/c++.capnp.h
 
@@ -62,12 +69,17 @@ noinst_HEADERS += \
 # from *.capnp.c and fails.
 %.capnp: ;
 
-# googletest
+# googletest. A release tarball has no submodule, so use the system
+# library there. An in-tree checkout keeps building the bundled copy.
+if BUNDLED_GTEST
 GTEST_LDADD = gtest/googletest/lib/libgtest.la
 gtest/googletest/lib/libgtest.la:
 	make -C gtest/googletest lib/libgtest.la
 GTEST_CPPFLAGS = -I${srcdir}/gtest/googletest/include
-DIST_SUBDIRS = gtest/googletest
+else
+GTEST_LDADD = -lgtest
+GTEST_CPPFLAGS =
+endif
 
 # Tests
 check_PROGRAMS += \
@@ -83,6 +95,8 @@ capn_test_SOURCES = \
 	tests/bounds-test.cpp \
 	tests/interface-test.cpp \
 	tests/list-c6-upgrade-test.cpp \
+	tests/constants-test.cpp \
+	tests/testunion-union1-test.cpp \
 	tests/addressbook.capnp.c \
 	tests/extraheader.capnp.c \
 	tests/fieldgetset.capnp.c \
@@ -99,7 +113,11 @@ noinst_HEADERS += \
 	tests/codegen-defaults.capnp.h
 EXTRA_DIST += \
 	compiler/c.capnp \
+	compiler/capnp/stream.capnp \
 	compiler/c++.capnp \
+	scripts/check-stream-schema.sh \
+	scripts/check-rpc-listen-wait.sh \
+	scripts/check-const-name.sh \
 	compiler/schema.capnp \
 	compiler/test.capnp \
 	tests/addressbook.capnp \
@@ -114,24 +132,79 @@ EXTRA_DIST += \
 	tests/fieldgetset.capnp \
 	tests/create-min-sz-test.cpp \
 	tests/fortran-golden.md \
+	compiler/adder.capnp \
+	compiler/adder.capnp.c \
+	compiler/adder.capnp.h \
+	compiler/c.capnp.c \
+	compiler/c++.capnp.c \
+	compiler/rpc.capnp \
+	compiler/rpc.capnp.h \
+	compiler/rpc-threeparty.capnp \
+	compiler/rpc-threeparty.capnp.h \
+	compiler/rpc-threeparty-frames.capnp \
+	compiler/rpc-twoparty.capnp \
+	compiler/rpc-twoparty.capnp.c \
+	compiler/rpc-twoparty.capnp.h \
+	compiler/update-notes.md \
+	interop/rpc_client.c \
+	interop/rpc_peer_server.c++ \
+	interop/run_rpc_interop.sh \
+	scripts/gen-rpc-frames.sh \
+	scripts/packaging-smoke.sh \
+	scripts/regen-generated.sh \
+	scripts/smoke-m32.sh \
+	tests/compiler-str-test.c \
+	tests/data-codec.capnp \
+	tests/data-codec.h \
+	tests/data-codec-test.cpp \
+	tests/empty-list.capnp \
+	tests/empty-list.h \
+	tests/empty-list-test.cpp \
+	tests/list-decode-srcdest.capnp \
+	tests/list-decode-srcdest.h \
+	tests/list-decode-srcdest-test.cpp \
+	tests/null-text.capnp \
+	tests/null-text.h \
+	tests/null-text-test.cpp \
+	tests/rpc-client-test.cpp \
+	tests/rpc-handoff-test.cpp \
+	tests/rpc-join-test.cpp \
+	tests/fixtures/rpc-accept.bin \
+	tests/fixtures/rpc-introduce.bin \
+	tests/fixtures/rpc-provide.bin \
 	tests/fixtures/addressbook.bin \
 	tests/fixtures/addressbook.packed.bin \
 	tests/fixtures/addressbook.canonical.bin \
 	tests/fixtures/addressbook.txt \
 	tests/fixtures/testalltypes.txt \
 	tests/capnp-cli-interop-test.cpp \
+	tests/capnp-cli.h \
+	tests/reflect-test.cpp \
+	tests/reflect.capnp \
+	tests/rpcstubs.capnp \
+	tests/rpcstubs-test.cpp \
+	tests/reflect-other.capnp \
 	tests/interface-field.capnp \
 	tests/interface-field-test.cpp \
 	fuzz/Person.txt \
 	fuzz/in/Person.bin \
 	fuzz/read_mem.c \
-	fuzz/read_fp.c
+	fuzz/read_fp.c \
+	fuzz/read_message.c \
+	fuzz/rpc_frame.c \
+	fuzz/dyn_text.c \
+	fuzz/in/cap-index-frame.bin \
+	fuzz/in/dyn-cap-16.bin \
+	scripts/fuzz-smoke.sh \
+	interop/rpc_server.c \
+	interop/rpc_peer_client.c++
 capn_test_CPPFLAGS = $(AM_CPPFLAGS) $(GTEST_CPPFLAGS) \
 	-DEXTRAHEADER_GENERATED_H=\"$(abs_srcdir)/tests/extraheader.capnp.h\" \
 	-DCODEGEN_DEFAULTS_GENERATED_C=\"$(abs_srcdir)/tests/codegen-defaults.capnp.c\" \
 	-DCODEGEN_DEFAULTS_GENERATED_H=\"$(abs_srcdir)/tests/codegen-defaults.capnp.h\" \
+	-DTEST_CAPNP_GENERATED_C=\"$(abs_srcdir)/compiler/test.capnp.c\" \
 	-DFORTRAN_GOLDEN_DIR=\"$(abs_srcdir)/tests/fixtures\"
-capn_test_CXXFLAGS = -std=gnu++11 -pthread
+capn_test_CXXFLAGS = -std=gnu++14 -pthread
 capn_test_LDADD = libcapnp_c.la $(GTEST_LDADD)
 capn_test_LDFLAGS = -pthread
 TESTS = capn-test

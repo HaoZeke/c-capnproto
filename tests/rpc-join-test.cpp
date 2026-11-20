@@ -136,119 +136,6 @@ JoinReply read_join_reply(const std::vector<uint8_t> &frame)
 }
 
 
-/* A call whose target is `promisedAnswer`: the answer to
- * `answer_question_id`, optionally walked by getPointerField ops. */
-void send_pipelined_call(struct capn_rpc_conn *c, uint32_t qid,
-                         uint32_t answer_question_id,
-                         const std::vector<uint16_t> &ops)
-{
-	struct capn msg;
-	capn_init_malloc(&msg);
-	struct capn_segment *cs = capn_root(&msg).seg;
-
-	struct PromisedAnswer pa;
-	memset(&pa, 0, sizeof pa);
-	pa.questionId = answer_question_id;
-	pa.transform = new_PromisedAnswer_Op_list(cs, (int)ops.size());
-	for (size_t i = 0; i < ops.size(); i++) {
-		struct PromisedAnswer_Op op;
-		memset(&op, 0, sizeof op);
-		op.which = PromisedAnswer_Op_getPointerField;
-		op.getPointerField = ops[i];
-		set_PromisedAnswer_Op(&op, pa.transform, (int)i);
-	}
-	PromisedAnswer_ptr pap = new_PromisedAnswer(cs);
-	write_PromisedAnswer(&pa, pap);
-
-	struct MessageTarget t;
-	memset(&t, 0, sizeof t);
-	t.which = MessageTarget_promisedAnswer;
-	t.promisedAnswer = pap;
-	MessageTarget_ptr tp = new_MessageTarget(cs);
-	write_MessageTarget(&t, tp);
-
-	struct Call call;
-	memset(&call, 0, sizeof call);
-	call.questionId = qid;
-	call.target = tp;
-	call.params = new_Payload(cs);
-	Call_ptr cp = new_Call(cs);
-	write_Call(&call, cp);
-
-	struct Message m;
-	memset(&m, 0, sizeof m);
-	m.which = Message_call;
-	m.call = cp;
-	Message_ptr mp = new_Message(cs);
-	write_Message(&m, mp);
-	capn_setp(capn_root(&msg), 0, mp.p);
-
-	uint8_t buf[4096];
-	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
-	capn_free(&msg);
-	ASSERT_GT(sz, 0);
-	capn_rpc_handle(c, buf, static_cast<size_t>(sz));
-}
-
-void send_finish(struct capn_rpc_conn *c, uint32_t qid)
-{
-	struct capn msg;
-	capn_init_malloc(&msg);
-	struct capn_segment *cs = capn_root(&msg).seg;
-	struct Finish f;
-	memset(&f, 0, sizeof f);
-	f.questionId = qid;
-	Finish_ptr fp = new_Finish(cs);
-	write_Finish(&f, fp);
-	struct Message m;
-	memset(&m, 0, sizeof m);
-	m.which = Message_finish;
-	m.finish = fp;
-	Message_ptr mp = new_Message(cs);
-	write_Message(&m, mp);
-	capn_setp(capn_root(&msg), 0, mp.p);
-	uint8_t buf[4096];
-	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
-	capn_free(&msg);
-	ASSERT_GT(sz, 0);
-	ASSERT_EQ(0, capn_rpc_handle(c, buf, static_cast<size_t>(sz)));
-}
-
-/* Return union tag and, for results, the first u32 of the content. */
-struct ReturnInfo {
-	uint32_t answer_id;
-	int which;
-	uint32_t value;
-};
-
-ReturnInfo read_return(const std::vector<uint8_t> &frame)
-{
-	struct capn msg;
-	EXPECT_EQ(0, capn_init_mem(&msg, frame.data(), frame.size(), 0));
-	Message_ptr mp;
-	mp.p = capn_getp(capn_root(&msg), 0, 1);
-	struct Message m;
-	read_Message(&m, mp);
-	EXPECT_EQ(Message__return, m.which);
-	struct Return r;
-	read_Return(&r, m._return);
-
-	ReturnInfo out;
-	out.answer_id = r.answerId;
-	out.which = (int)r.which;
-	out.value = 0;
-	if (r.which == Return_results) {
-		struct Payload pl;
-		read_Payload(&pl, r.results);
-		capn_ptr content = pl.content;
-		capn_resolve(&content);
-		if (content.type == CAPN_STRUCT)
-			out.value = capn_read32(content, 0);
-	}
-	capn_free(&msg);
-	return out;
-}
-
 /* Bootstrap once so the vat holds a live export. */
 uint32_t bootstrap_export(struct capn_rpc_conn *c, Outbox *out)
 {
@@ -293,6 +180,11 @@ class RpcJoin : public ::testing::Test {
 	Outbox out;
 	int calls;
 	uint32_t live;
+
+	void TearDown() override
+	{
+		capn_rpc_free(&conn);
+	}
 };
 
 TEST_F(RpcJoin, SameCapabilityJoinsAndOneResultCarriesTheCap)
@@ -937,6 +829,55 @@ TEST_F(RpcJoin, TwoProvisionsOfTheSameCapabilityAreIndependent)
 	EXPECT_FALSE(read_l3(out.frames[0]).is_exception);
 	/* Claiming one leaves the other standing. */
 	EXPECT_EQ(1, capn_rpc_pending_provisions(&conn, NULL, 0));
+}
+
+void send_release(struct capn_rpc_conn *c, uint32_t id, uint32_t count)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+
+	struct Release rel;
+	memset(&rel, 0, sizeof rel);
+	rel.id = id;
+	rel.referenceCount = count;
+	Release_ptr rp = new_Release(cs);
+	write_Release(&rel, rp);
+
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_release;
+	m.release = rp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+
+	uint8_t buf[512];
+	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
+	capn_free(&msg);
+	ASSERT_GT(sz, 0);
+	ASSERT_EQ(0, capn_rpc_handle(c, buf, static_cast<size_t>(sz)));
+}
+
+TEST_F(RpcJoin, ReleasingMoreReferencesThanHeldAborts)
+{
+	ASSERT_TRUE(conn.exports[live].used);
+	int held = conn.exports[live].refcount;
+	send_release(&conn, live, 0xffffffffu);
+	EXPECT_TRUE(capn_rpc_is_aborted(&conn));
+	EXPECT_TRUE(conn.exports[live].used);
+	EXPECT_EQ(held, conn.exports[live].refcount);
+}
+
+TEST_F(RpcJoin, ReleasingFewerReferencesKeepsTheExport)
+{
+	ASSERT_GE(conn.exports[live].refcount, 1);
+	conn.exports[live].refcount = 3;
+	send_release(&conn, live, 2);
+	EXPECT_TRUE(conn.exports[live].used);
+	EXPECT_EQ(1, conn.exports[live].refcount);
+	send_release(&conn, live, 1);
+	EXPECT_FALSE(conn.exports[live].used);
 }
 
 } // namespace

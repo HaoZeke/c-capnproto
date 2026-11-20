@@ -52,8 +52,10 @@ cmake --install build-cmake   # optional: libcapnp_c, capnpc-c, header, c.capnp,
 ctest --test-dir build-cmake  # only if CMake found an installed GTest
 ```
 
-Tests are skipped when GTest is not installed. Use meson (or autotools
-with the existing `gtest/` submodule) for the full suite.
+Tests are skipped when GTest is not installed. CMake and autotools run
+only `capn-test`, the one binary that needs no schema compiled at build
+time; use meson for the full suite (the RPC, codec and `capnp` CLI interop
+programs).
 
 ## Building (autotools)
 
@@ -63,7 +65,7 @@ cd c-capnproto
 autoreconf -f -i -s
 ./configure
 make
-make check
+make check          # runs capn-test only; meson runs the whole suite
 ```
 
 ## Usage
@@ -183,6 +185,30 @@ The project [`quagga-capnproto`](https://github.com/opensourcerouting/quagga-cap
 * Serialization in function [`bgp_notify_send()`](https://github.com/opensourcerouting/quagga-capnproto/blob/27061648f3418fac0d217b16a46add534343e841/bgpd/bgp_zmq.c#L81-L96) in file `quagga-capnproto/bgpd/bgp_zmq.c`
 * Deserialization in function [`qzc_callback()`](https://github.com/opensourcerouting/quagga-capnproto/blob/27061648f3418fac0d217b16a46add534343e841/lib/qzc.c#L249-L257) in file `quagga-capnproto/lib/qzc.c`
 
+## Reflection, text and JSON (optional)
+
+Add `$C.reflect;` to a schema file and `capnpc-c` also emits a const
+descriptor per struct, group and enum, `<Name>_dyn`. With those,
+[`lib/capn-dyn.h`](lib/capn-dyn.h) reads, prints and builds messages
+without the generated per-type code, the way C++ uses `DynamicStruct`,
+the text format and `JsonCodec`:
+
+```c
+char *text = capn_dyn_to_text(&Person_dyn, root);            /* capnp decode --short */
+char *json = capn_dyn_to_json(&Person_dyn, root, CAPN_DYN_COMPACT); /* binary:json --short */
+capn_dyn_from_json(&Person_dyn, json, strlen(json), seg, &st, &err);  /* json:binary */
+capn_dyn_from_text(&Person_dyn, text, strlen(text), seg, &st, &err);  /* capnp encode */
+```
+
+Output is compared byte for byte with the official tool in
+`tests/reflect-test.cpp`, and the decoders rebuild the same canonical
+message `capnp encode` does. Field access by name
+(`capn_dyn_find_field`, `capn_dyn_get_bits`, `capn_dyn_which`, the
+setters) works on any message. Interface and AnyPointer fields are
+opaque, and defaults of Struct, List and Data fields are not recorded
+(an unset pointer is absent from a message's value). Compile
+`lib/capn-dyn.c` as well as the three runtime files.
+
 ## Linux kernel (optional)
 
 The runtime can be compiled into a kernel module (`__KERNEL__`). This is
@@ -236,8 +262,8 @@ make fuzz-fp     # FILE* reader
 
 | Level | What | Here |
 |-------|------|------|
-| 1 | Calls, cap tables, promise pipelining, embargoes | yes |
-| 2 | Persistence hooks (application-defined SturdyRefs) | yes |
+| 1 | Calls, cap tables, promise pipelining, Disembargo echo | yes; `Resolve` is answered `Unimplemented`, so this vat never raises an embargo |
+| 2 | Persistence: `Persistent.save` as ordinary dispatch, SturdyRefs left to the application | no vat code needed |
 | 3 | Three-party handoff (`Provide` / `Accept`, vines) | yes |
 | 4 | `Join`, reference equality | yes |
 
@@ -249,6 +275,28 @@ vat by host and port and keys a handoff by a nonce, shared verbatim with
 capnp-fortran, capnp-janet and capnp-ts. It carries the join keys as
 well, so the vat speaks it instead of `rpc-twoparty.capnp`, not
 alongside -- both declare the same C names.
+
+Capabilities travel in params and results: inside a `fill` callback or
+`dispatch`, `capn_rpc_new_export_cap` hands the peer one of this vat's
+objects and `capn_rpc_new_import_cap` hands back one the peer hosts; the
+receiver reads them with `capn_rpc_param_cap` or `capn_rpc_answer_cap`.
+`capn_rpc_send_pipelined_call` calls a capability inside an answer that
+has not arrived yet. A `dispatch` that cannot answer yet returns
+`CAPN_RPC_PENDING` and answers later with `capn_rpc_return` (a `Finish` in
+the meantime cancels the call); `Resolve` is answered `Unimplemented`, and `capn_rpc_send_abort` / `capn_rpc_is_aborted` end a
+connection. For a stream socket or pipe, `capn_rpc_fd_send` and
+`capn_rpc_fd_pump` are a blocking transport (Unix-like systems only).
+
+With `$C.rpcstubs;` in a schema file, `capnpc-c` also generates, for each
+interface, the parameter and result structs of every method, a client
+helper `<Interface>_call_<method>` and result reader
+`<Interface>_results_<method>`, and `struct <Interface>_server`, a vtable of
+`on_<method>` handlers that `<Interface>_dispatch` routes to (set the
+connection's result size from `<Interface>_RESULT_DATASZ` and
+`_RESULT_PTRS`). `-> stream` methods get a call helper and a handler
+without results. A subclass dispatch forwards a call whose interface
+id is a superclass, including a grandparent, to the server stored in
+`super_<Superclass>`.
 
 A handoff is arranged on one connection and claimed on another, so the
 arrangement belongs to the vat rather than the connection:

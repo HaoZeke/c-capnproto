@@ -21,6 +21,7 @@ libcapnp_src = [
   'lib' / 'capn-stream.c',
   'lib' / 'capn.c',
   'lib' / 'capn-rpc.c',
+  'lib' / 'capn-dyn.c',
   # RPC needs the rpc.capnp / rpc-twoparty.capnp readers; they are checked
   # in beside the other generated schema code.
   'compiler' / 'rpc.capnp.c',
@@ -36,6 +37,12 @@ if get_option('default_library') == 'static'
 endif
 
 # Library name libcapnp_c matches historical pc and avoids clashing with C++ libcapnp.
+# Sanitizer runtimes are resolved when the executable is linked.
+# --no-undefined fails the shared library on those symbols under clang.
+lib_override = []
+if get_option('b_sanitize') != 'none'
+  lib_override += 'b_lundef=false'
+endif
 libcapnp_c = library(
   'capnp_c',
   libcapnp_src,
@@ -44,6 +51,8 @@ libcapnp_c = library(
   c_static_args: ['-DCAPNP_C_STATIC'],
   include_directories: include_directories(['lib', 'compiler']),
   implicit_include_directories: false,
+  override_options: lib_override,
+  soversion: '1',
   install: true,
 )
 
@@ -51,6 +60,7 @@ libcapnp_c = library(
 install_headers(
   'lib' / 'capnp_c.h',
   'lib' / 'capn-rpc.h',
+  'lib' / 'capn-dyn.h',
   'compiler' / 'c.capnp.h',
 )
 
@@ -72,6 +82,7 @@ pkg.generate(
   description: 'Cap\'n Proto pure-C runtime (HaoZeke fork)',
   filebase: 'c-capnproto',
   url: 'https://github.com/HaoZeke/c-capnproto',
+  variables: ['codegen=${prefix}/' + get_option('bindir') / 'capnpc-c'],
 )
 
 capnpc_src = [
@@ -79,6 +90,7 @@ capnpc_src = [
   'compiler' / 'codecgen.c',
   'compiler' / 'schema.capnp.c',
   'compiler' / 'str.c',
+  'compiler' / 'reflectgen.c',
 ]
 
 capnpc_c = executable(
@@ -88,6 +100,9 @@ capnpc_c = executable(
   dependencies: [libcapnp_dep],
   c_args: common_c_args,
   install: true,
+  # The plugin links the shared runtime, which installs outside the
+  # default loader path on multiarch systems.
+  install_rpath: get_option('prefix') / get_option('libdir'),
 )
 
 # Schema annotations used by generators / fieldgetset.
@@ -126,6 +141,7 @@ if get_option('enable_tests') and not meson.is_subproject()
     'tests' / 'interface-test.cpp',
     'tests' / 'testunion-union1-test.cpp',
     'tests' / 'list-c6-upgrade-test.cpp',
+    'tests' / 'constants-test.cpp',
     'tests' / 'addressbook.capnp.c',
     'tests' / 'extraheader.capnp.c',
     'tests' / 'fieldgetset.capnp.c',
@@ -157,7 +173,16 @@ if get_option('enable_tests') and not meson.is_subproject()
     install: false,
     implicit_include_directories: false,
   )
-  test('capn-test', exe)
+  test(
+    'capn-test',
+    exe,
+    env: {
+      'CAPNP_SOURCE_ROOT': meson.project_source_root(),
+      # A huge list is refused with NULL. ASan aborts that allocation
+      # unless it is allowed to return NULL.
+      'ASAN_OPTIONS': 'halt_on_error=1:abort_on_error=1:print_summary=1:allocator_may_return_null=1',
+    },
+  )
 
   compiler_str_test = executable(
     'compiler-str-test',
@@ -229,21 +254,70 @@ if get_option('enable_tests') and not meson.is_subproject()
   )
   test('rpc-client-test', rpc_client_test)
 
+  gate_r5_test = executable(
+    'gate-r5-test',
+    'tests' / 'gate-r5-test.cpp',
+    include_directories: include_directories(['lib', 'tests', 'compiler']),
+    dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
+    cpp_args: common_cpp_args,
+    implicit_include_directories: false,
+    install: false,
+  )
+  test('gate-r5-test', gate_r5_test)
+
   capnp = find_program('capnp', required: false)
   if capnp.found()
     codec_c_args = common_c_args + ['-D_POSIX_C_SOURCE=200809L']
 
+    test(
+      'stream-schema',
+      find_program('sh'),
+      args: [meson.project_source_root() / 'scripts' / 'check-stream-schema.sh'],
+    )
+    test(
+      'rpc-listen-wait',
+      find_program('bash'),
+      args: [meson.project_source_root() / 'scripts' / 'check-rpc-listen-wait.sh'],
+      timeout: 30,
+    )
+    test(
+      'const-name',
+      find_program('sh'),
+      args: [meson.project_source_root() / 'scripts' / 'check-const-name.sh'],
+    )
+
     # Official `capnp` CLI interop. Skip these tests only when the
     # binary is missing (this branch is not taken). Do not GTEST_SKIP
     # when meson found capnp.
+    # Schemas compiled with $C.reflect, for the reflection, text and JSON
+    # tests that compare capn-dyn output with the official tool.
+    reflect_gen = custom_target(
+      'reflect-capnp',
+      input: ['tests' / 'reflect.capnp', 'tests' / 'reflect-other.capnp'],
+      output: [
+        'reflect.capnp.c', 'reflect.capnp.h',
+        'reflect-other.capnp.c', 'reflect-other.capnp.h',
+      ],
+      command: [
+        capnp, 'compile',
+        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-I', meson.current_source_dir() / 'compiler',
+        '--src-prefix', meson.current_source_dir() / 'tests',
+        '@INPUT@',
+      ],
+      depends: [capnpc_c],
+    )
+
     cli_interop_test = executable(
       'capnp-cli-interop-test',
       [
         'tests' / 'capnp-cli-interop-test.cpp',
+        'tests' / 'reflect-test.cpp',
         'tests' / 'addressbook.capnp.c',
         'compiler' / 'test.capnp.c',
+        reflect_gen,
       ],
-      include_directories: include_directories(['lib', 'tests', 'compiler']),
+      include_directories: include_directories(['.', 'lib', 'tests', 'compiler']),
       dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
       cpp_args: common_cpp_args + [
         '-DCAPNP_CLI="' + capnp.full_path() + '"',
@@ -280,6 +354,7 @@ if get_option('enable_tests') and not meson.is_subproject()
         command: [
           capnp, 'compile',
           '--src-prefix=' + meson.current_source_dir() / 'compiler',
+          '-I', meson.current_source_dir() / 'compiler',
           '-o' + capnpc_cpp.full_path() + ':@OUTDIR@',
           '@INPUT@',
         ],
@@ -306,6 +381,29 @@ if get_option('enable_tests') and not meson.is_subproject()
         c_args: ['-D_POSIX_C_SOURCE=200809L'],
         implicit_include_directories: false,
       )
+      frame_wrap_test = executable(
+        'frame-wrap-test',
+        'interop' / 'frame_wrap_test.c',
+        c_args: ['-D_POSIX_C_SOURCE=200809L'],
+        implicit_include_directories: false,
+      )
+      test('frame-wrap', frame_wrap_test, args: [rpc_client_c.full_path()],
+           depends: [rpc_client_c])
+
+      rpc_server_c = executable(
+        'rpc_server_c',
+        ['interop' / 'rpc_server.c', 'compiler' / 'adder.capnp.c'],
+        include_directories: include_directories(['lib', 'compiler']),
+        dependencies: [libcapnp_dep],
+        c_args: ['-D_POSIX_C_SOURCE=200809L'],
+        implicit_include_directories: false,
+      )
+      rpc_peer_client = executable(
+        'rpc_peer_client',
+        ['interop' / 'rpc_peer_client.c++', adder_cpp],
+        dependencies: capnp_rpc_dep,
+        override_options: ['cpp_std=c++17'],
+      )
 
       test(
         'rpc_interop_cpp',
@@ -314,8 +412,10 @@ if get_option('enable_tests') and not meson.is_subproject()
           meson.current_source_dir() / 'interop' / 'run_rpc_interop.sh',
           rpc_peer_server.full_path(),
           rpc_client_c.full_path(),
+          rpc_server_c.full_path(),
+          rpc_peer_client.full_path(),
         ],
-        depends: [rpc_peer_server, rpc_client_c],
+        depends: [rpc_peer_server, rpc_client_c, rpc_server_c, rpc_peer_client],
         timeout: 60,
       )
     else
@@ -347,6 +447,32 @@ if get_option('enable_tests') and not meson.is_subproject()
       install: false,
     )
     test('codec-roundtrip-test', codec_roundtrip_test)
+
+    rpcstubs_gen = custom_target(
+      'rpcstubs-capnp',
+      input: 'tests' / 'rpcstubs.capnp',
+      output: ['rpcstubs.capnp.c', 'rpcstubs.capnp.h'],
+      command: [
+        capnp, 'compile',
+        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-I', meson.current_source_dir() / 'compiler',
+        '--src-prefix', meson.current_source_dir() / 'tests',
+        '@INPUT@',
+      ],
+      depends: [capnpc_c],
+    )
+
+    rpcstubs_test = executable(
+      'rpcstubs-test',
+      'tests' / 'rpcstubs-test.cpp',
+      rpcstubs_gen,
+      include_directories: include_directories(['lib', 'tests', 'compiler']),
+      dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
+      c_args: codec_c_args,
+      cpp_args: common_cpp_args,
+      install: false,
+    )
+    test('rpcstubs-test', rpcstubs_test)
 
     group_in_union_gen = custom_target(
       'group-in-union-capnp',
@@ -457,6 +583,15 @@ endif
 
 if get_option('fuzz')
   fuzz_inc = include_directories(['lib', 'tests', 'compiler'])
+  fuzz_reader = executable(
+    'fuzz-reader',
+    'fuzz' / 'read_message.c',
+    include_directories: fuzz_inc,
+    dependencies: [libcapnp_dep],
+    c_args: common_c_args,
+    install: false,
+    implicit_include_directories: false,
+  )
   # read_mem.c uses lstat; strict c99 hides POSIX declarations.
   fuzz_mem = executable(
     'fuzz-mem',
@@ -475,6 +610,24 @@ if get_option('fuzz')
     dependencies: [libcapnp_dep],
     c_args: common_c_args,
     override_options: ['c_std=gnu99'],
+    install: false,
+    implicit_include_directories: false,
+  )
+  fuzz_rpc = executable(
+    'fuzz-rpc-frame',
+    'fuzz' / 'rpc_frame.c',
+    include_directories: fuzz_inc,
+    dependencies: [libcapnp_dep],
+    c_args: common_c_args,
+    install: false,
+    implicit_include_directories: false,
+  )
+  fuzz_dyn = executable(
+    'fuzz-dyn-text',
+    'fuzz' / 'dyn_text.c',
+    include_directories: fuzz_inc,
+    dependencies: [libcapnp_dep],
+    c_args: common_c_args,
     install: false,
     implicit_include_directories: false,
   )
@@ -505,8 +658,36 @@ if get_option('fuzz')
     )
     test('fuzz-mem-smoke', fuzz_mem, args: [fuzz_person_bin])
     test('fuzz-fp-smoke', fuzz_fp, args: [fuzz_person_bin])
+    test('fuzz-reader-smoke', fuzz_reader, args: [fuzz_person_bin])
+    test('fuzz-rpc-frame-smoke', fuzz_rpc,
+         args: [meson.project_source_root() / 'tests' / 'fixtures' / 'rpc-accept.bin'])
   elif fs.exists(fuzz_seed)
     test('fuzz-mem-smoke', fuzz_mem, args: [fuzz_seed])
     test('fuzz-fp-smoke', fuzz_fp, args: [fuzz_seed])
+    test('fuzz-reader-smoke', fuzz_reader, args: [fuzz_seed])
+    test('fuzz-rpc-frame-smoke', fuzz_rpc,
+         args: [meson.project_source_root() / 'tests' / 'fixtures' / 'rpc-accept.bin'])
+  endif
+  if sh.found()
+    smoke = meson.project_source_root() / 'scripts' / 'fuzz-smoke.sh'
+    person = meson.project_source_root() / 'fuzz' / 'in' / 'Person.bin'
+    cap_frame = meson.project_source_root() / 'fuzz' / 'in' / 'cap-index-frame.bin'
+    dyn16 = meson.project_source_root() / 'fuzz' / 'in' / 'dyn-cap-16.bin'
+    rpc_fix = meson.project_source_root() / 'tests' / 'fixtures' / 'rpc-accept.bin'
+    test('fuzz-reader-60s', sh,
+         args: [smoke, '60', fuzz_reader, '--mutate', '3016077', '60', person, cap_frame, dyn16],
+         timeout: 120)
+    test('fuzz-mem-60s', sh,
+         args: [smoke, '60', fuzz_mem, '--mutate', '3016077', '60', person],
+         timeout: 120)
+    test('fuzz-fp-60s', sh,
+         args: [smoke, '60', fuzz_fp, '--mutate', '3016077', '60', person],
+         timeout: 120)
+    test('fuzz-rpc-60s', sh,
+         args: [smoke, '60', fuzz_rpc, '--mutate', '3016077', '60', cap_frame, rpc_fix],
+         timeout: 120)
+    test('fuzz-dyn-60s', sh,
+         args: [smoke, '60', fuzz_dyn, '--mutate', '3016077', '60', dyn16, cap_frame],
+         timeout: 120)
   endif
 endif

@@ -29,12 +29,13 @@ TEST(InterfaceField, GetSetCapability) {
   Holder_ptr h = new_Holder(cs);
   Echo_ptr e = new_Echo(cs);
   EXPECT_EQ(CAPN_INTERFACE, e.p.type);
-  e.p.len = 3;
+  e.p.cap_idx = 3;
   Holder_set_cap(h, e);
 
   Echo_ptr got = Holder_get_cap(h);
   EXPECT_EQ(CAPN_INTERFACE, got.p.type);
-  EXPECT_EQ(3, got.p.len);
+  EXPECT_EQ(0, got.p.len);
+  EXPECT_EQ(3u, got.p.cap_idx);
 
   capn_free(&c);
 }
@@ -49,7 +50,7 @@ TEST(InterfaceField, WriteReadRoundTrip) {
     struct capn_segment *cs = capn_root(&c).seg;
     Holder_ptr h = new_Holder(cs);
     Echo_ptr e = new_Echo(cs);
-    e.p.len = 11;
+    e.p.cap_idx = 11;
     Holder_set_cap(h, e);
     ASSERT_EQ(0, capn_set_root(&c, h.p));
     sz = capn_write_mem(&c, buf, sizeof(buf), 0);
@@ -65,7 +66,8 @@ TEST(InterfaceField, WriteReadRoundTrip) {
     ASSERT_EQ(CAPN_STRUCT, h.p.type);
     Echo_ptr got = Holder_get_cap(h);
     EXPECT_EQ(CAPN_INTERFACE, got.p.type);
-    EXPECT_EQ(11, got.p.len);
+    EXPECT_EQ(0, got.p.len);
+    EXPECT_EQ(11u, got.p.cap_idx);
     capn_free(&c);
   }
 }
@@ -81,10 +83,10 @@ TEST(InterfaceField, ListOfInterfaces) {
   ASSERT_EQ(2, ls.p.len);
 
   Echo_ptr e0 = new_Echo(cs);
-  e0.p.len = 1;
+  e0.p.cap_idx = 1;
   ASSERT_EQ(0, capn_setp(ls.p, 0, e0.p));
   Echo_ptr e1 = new_Echo(cs);
-  e1.p.len = 2;
+  e1.p.cap_idx = 2;
   ASSERT_EQ(0, capn_setp(ls.p, 1, e1.p));
   Holder_set_caps(h, ls);
 
@@ -94,9 +96,16 @@ TEST(InterfaceField, ListOfInterfaces) {
   capn_ptr g0 = capn_getp(got.p, 0, 1);
   capn_ptr g1 = capn_getp(got.p, 1, 1);
   EXPECT_EQ(CAPN_INTERFACE, g0.type);
-  EXPECT_EQ(1, g0.len);
+  EXPECT_EQ(0, g0.len);
+  EXPECT_EQ(1u, g0.cap_idx);
   EXPECT_EQ(CAPN_INTERFACE, g1.type);
-  EXPECT_EQ(2, g1.len);
+  EXPECT_EQ(0, g1.len);
+  EXPECT_EQ(2u, g1.cap_idx);
 
   capn_free(&c);
+}
+
+TEST(InterfaceField, StreamMethodHeaderIsSelfContained) {
+  EXPECT_EQ(0, Sink_write_method.ordinal);
+  EXPECT_EQ(1, Sink_done_method.ordinal);
 }

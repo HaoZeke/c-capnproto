@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 #include <stdio.h>
 #include <string.h>
+#include <vector>
 #ifndef _MSC_VER
 #include <unistd.h>
 #endif
@@ -21,6 +22,23 @@ union AlignedData {
   uint64_t words[wordCount];
 };
 
+TEST(Stream, PackedZerosFromAnUnalignedAddress) {
+  uint8_t raw[1 + 24];
+  uint8_t packed[8];
+  struct capn_stream s;
+  memset(raw, 0xab, sizeof raw);
+  memset(raw + 1, 0, 24);
+  memset(&s, 0, sizeof s);
+  s.next_in = raw + 1;
+  s.avail_in = 24;
+  s.next_out = packed;
+  s.avail_out = sizeof packed;
+  ASSERT_EQ(0, capn_deflate(&s));
+  EXPECT_EQ(0u, s.avail_in);
+  EXPECT_EQ(0x00, packed[0]);
+  EXPECT_EQ(0x02, packed[1]);
+}
+
 TEST(Stream, ReadRejectsTooManySegments) {
   /* Wire word 0 is (segnum - 1). 1024 => 1025 segments, above CAPN_MAX_SEGS. */
   AlignedData<1> data = {{
@@ -29,6 +47,32 @@ TEST(Stream, ReadRejectsTooManySegments) {
   }};
   struct capn ctx;
   EXPECT_NE(0, capn_init_mem(&ctx, data.bytes, sizeof(data.bytes), 0));
+}
+
+TEST(Stream, ReadRejectsASegmentLongerThanTheBuffer) {
+  /* One segment claiming 0x1fffffff words with eight bytes behind it. */
+  AlignedData<2> data = {{
+    0, 0, 0, 0,
+    0xff, 0xff, 0xff, 0x1f,
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+  }};
+  struct capn ctx;
+  EXPECT_NE(0, capn_init_mem(&ctx, data.bytes, sizeof(data.bytes), 0));
+}
+
+TEST(Stream, ReadRejectsAMessageOverTheSizeLimitEvenWhenPresent) {
+  const size_t limit_words = 8u * 1024u * 1024u;
+  std::vector<uint8_t> buf(8 + (limit_words + 1) * 8, 0);
+  uint32_t claimed = (uint32_t) (limit_words + 1);
+  memcpy(&buf[4], &claimed, 4);
+  struct capn ctx;
+  EXPECT_NE(0, capn_init_mem(&ctx, buf.data(), buf.size(), 0));
+
+  claimed = (uint32_t) limit_words;
+  memcpy(&buf[4], &claimed, 4);
+  ASSERT_EQ(0, capn_init_mem(&ctx, buf.data(), buf.size() - 8, 0));
+  capn_free(&ctx);
 }
 
 TEST(Stream, ReadEmptyStream_Even) {

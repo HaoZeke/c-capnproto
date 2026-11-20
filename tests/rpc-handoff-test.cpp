@@ -304,6 +304,12 @@ TEST(RpcHandoff, CarolEndsUpHoldingTheCapabilityBobHosts)
 
 	(void)tell_carol_where_to_go;
 	(void)provide;
+	capn_rpc_free(&alice_to_bob);
+	capn_rpc_free(&bob_to_alice);
+	capn_rpc_free(&carol_to_bob);
+	capn_rpc_free(&bob_to_carol);
+	capn_rpc_free(&alice_to_carol);
+	capn_rpc_free(&carol_to_alice);
 }
 
 } // namespace

@@ -8,8 +8,10 @@
 # define capnp_use(x)
 #endif
 
-static const capn_text capn_val0 = {0,"",0};
+static const char capn_val0_str[1] = {0};
+static const capn_text capn_val0 = {0,capn_val0_str,0};
 static const capn_ptr capn_null = {CAPN_NULL};
+static const capn_text capn_text_null = {0,0,0};
 
 VatId_ptr new_VatId(struct capn_segment *s) {
 	VatId_ptr p;
@@ -30,7 +32,7 @@ void read_VatId(struct VatId *s capnp_unused, VatId_ptr p) {
 void write_VatId(const struct VatId *s capnp_unused, VatId_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
-	capn_set_text(p.p, 0, s->host);
+	capn_set_text(p.p, 0, (s->host.str != capn_val0.str) ? s->host : capn_text_null);
 	capn_write16(p.p, 0, s->port);
 }
 void get_VatId(struct VatId *s, VatId_list l, int i) {
