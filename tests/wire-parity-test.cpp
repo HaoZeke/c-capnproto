@@ -944,3 +944,31 @@ TEST(WireParity, ASegmentWithNoRootPointerIsRejected) {
 	EXPECT_EQ(1, capn_ok(&c));
 	capn_free(&c);
 }
+
+TEST(WireParity, CanonicalFormRequiresAStructRoot) {
+	/* A list is a valid message and an invalid canonical root.
+	 * A null root stays canonical. */
+	const uint8_t listroot[] = {
+		0x00,0,0,0, 0x02,0,0,0,
+		0x01,0,0,0, 0x0a,0,0,0,
+		0x41,0,0,0, 0x00,0,0,0,
+	};
+	const uint8_t nullroot[] = {
+		0,0,0,0, 1,0,0,0,
+		0,0,0,0, 0,0,0,0,
+	};
+	struct capn c, dst;
+
+	ASSERT_EQ(0, load_frame(&c, listroot, sizeof listroot));
+	EXPECT_EQ(0, capn_validate(&c));
+	capn_init_malloc(&dst);
+	EXPECT_NE(0, capn_canonicalize(&c, &dst));
+	capn_free(&dst);
+	capn_free(&c);
+
+	ASSERT_EQ(0, load_frame(&c, nullroot, sizeof nullroot));
+	capn_init_malloc(&dst);
+	EXPECT_EQ(0, capn_canonicalize(&c, &dst));
+	capn_free(&dst);
+	capn_free(&c);
+}

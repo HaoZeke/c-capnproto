@@ -361,7 +361,7 @@ TEST(Canonicalize, NullArgsAndUsedDstFail) {
   capn_free(&dst);
 }
 
-TEST(Canonicalize, NullRootIsEightZeroBytes) {
+TEST(Canonicalize, NullRootIsAnEmptyStruct) {
   struct capn src, dst;
   capn_init_malloc(&src);
   (void) capn_root(&src);
@@ -369,7 +369,7 @@ TEST(Canonicalize, NullRootIsEightZeroBytes) {
   ASSERT_EQ(0, capn_canonicalize(&src, &dst));
   ASSERT_EQ(1u, dst.segnum);
   ASSERT_EQ((size_t) 8, dst.seglist->len);
-  EXPECT_EQ(0, memcmp(dst.seglist->data, "\0\0\0\0\0\0\0\0", 8));
+  EXPECT_EQ(0, memcmp(dst.seglist->data, "\xfc\xff\xff\xff\0\0\0\0", 8));
   capn_free(&src);
   capn_free(&dst);
 }

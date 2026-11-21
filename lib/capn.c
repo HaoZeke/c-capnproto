@@ -2548,10 +2548,14 @@ int capn_canonicalize(struct capn *src, struct capn *dst)
 	first = read_ptr(root.seg, root.data, nest);
 	if (first.type == CAPN_NULL)
 		goto done;
+	/* Only a struct root can be canonicalized. Lists can be canonical
+	 * messages, but C++ exposes canonicalize() only for structs. */
+	if (first.type != CAPN_STRUCT)
+		goto done;
 	/* C++ totalSize() gives the root struct body back. The copy
 	 * then charges each child, including one word per void element,
 	 * and does not charge that body again. */
-	if (first.type == CAPN_STRUCT) {
+	{
 		size_t body = (size_t) first.datasz + 8u * (size_t) first.ptrs;
 		if (src->traversal_used >= body)
 			src->traversal_used -= body;
@@ -2580,6 +2584,8 @@ alloc:
 	s->len = 8;
 
 	if (first.type == CAPN_NULL) {
+		/* C++ canonicalize writes an empty struct for a null root. */
+		*(uint64_t *) s->data = capn_flip64(0x00000000fffffffcULL);
 		rc = 0;
 		goto done;
 	}
