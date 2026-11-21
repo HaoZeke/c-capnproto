@@ -166,7 +166,9 @@ EXTRA_DIST += \
 	interop/tail_server.c++ \
 	tests/nested-const.capnp \
 	tests/nested-const-test.c \
-	tests/uses-nested.capnp
+	tests/uses-nested.capnp \
+	interop/frame_le.h \
+	tests/frame-le-test.c
 
 EXTRA_DIST += \
 	compiler/c.capnp \

@@ -403,6 +403,19 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
     ],
   )
 
+  frame_le_test = executable(
+    'frame-le-test',
+    'tests' / 'frame-le-test.c',
+    include_directories: include_directories(['interop']),
+    c_args: [
+      '-DRPC_CLIENT_SOURCE="' + meson.project_source_root() / 'interop' / 'rpc_client.c' + '"',
+      '-DTAIL_CLIENT_SOURCE="' + meson.project_source_root() / 'interop' / 'tail_client.c' + '"',
+    ],
+    implicit_include_directories: false,
+    install: false,
+  )
+  test('frame-le-test', frame_le_test)
+
   spell_finish_test = executable(
     'spell-finish-test',
     'tests' / 'spell-finish-test.c',

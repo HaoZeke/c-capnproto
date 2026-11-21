@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 #include "capn-rpc.h"
+#include "frame_le.h"
 #include "capnp_c.h"
 
 /* interop/tail.capnp Hub @0xe401c0ffee000002 relay @0 (cb, n :Int32). */
@@ -57,8 +58,7 @@ static ssize_t read_frame(int fd, uint8_t *buf, size_t cap)
 	uint32_t nsegs, i, table_bytes, total_words = 0;
 	if (read_all(fd, buf, 4) != 4)
 		return -1;
-	memcpy(&nsegs, buf, 4);
-	nsegs = capn_flip32(nsegs);
+	nsegs = frame_le32(buf);
 	if (nsegs >= 64)
 		return -1;
 	nsegs += 1;
@@ -71,8 +71,7 @@ static ssize_t read_frame(int fd, uint8_t *buf, size_t cap)
 		return -1;
 	for (i = 0; i < nsegs; i++) {
 		uint32_t w;
-		memcpy(&w, buf + 4 + i * 4, 4);
-		w = capn_flip32(w);
+		w = frame_le32(buf + 4 + i * 4);
 		total_words += w;
 	}
 	if (table_bytes + (size_t) total_words * 8 > cap)

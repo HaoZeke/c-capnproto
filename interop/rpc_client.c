@@ -18,6 +18,7 @@
 
 #include "adder.capnp.h"
 #include "capn-rpc.h"
+#include "frame_le.h"
 #include "capnp_c.h"
 #include "rpc.capnp.h"
 
@@ -141,7 +142,7 @@ static ssize_t read_frame(int fd, uint8_t *buf, size_t cap)
 	size_t nsegs, total_words = 0;
 	if (read_all(fd, buf, 4) != 4)
 		return -1;
-	memcpy(&count, buf, 4);
+	count = frame_le32(buf);
 	/* The count is one less than the number of segments. Adding one in
 	 * a uint32 wraps 0xffffffff to 0 and the bound never fires. */
 	if (count >= 64u)
@@ -156,7 +157,7 @@ static ssize_t read_frame(int fd, uint8_t *buf, size_t cap)
 		return -1;
 	for (i = 0; i < nsegs; i++) {
 		uint32_t w;
-		memcpy(&w, buf + 4 + i * 4, 4);
+		w = frame_le32(buf + 4 + i * 4);
 		if ((size_t) w > SIZE_MAX - total_words)
 			return -1;
 		total_words += w;
