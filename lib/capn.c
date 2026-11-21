@@ -2434,8 +2434,9 @@ static int load_child(struct capn_segment *s, char *d, int rem, capn_ptr *out)
 {
 	int z;
 
-	if (rem == 0)
-		return -1;
+	/* A null word ends the chain. C++ copyPointer returns before the
+	 * nesting check on a null pointer, so the word at the limit is
+	 * legal. A non-null word at rem 0 still fails. */
 	z = ptr_word_null(s, d);
 	if (z < 0)
 		return -1;
@@ -2443,6 +2444,8 @@ static int load_child(struct capn_segment *s, char *d, int rem, capn_ptr *out)
 		memset(out, 0, sizeof(*out));
 		return 0;
 	}
+	if (rem <= 0)
+		return -1;
 	*out = read_ptr(s, d, rem);
 	if (out->type == CAPN_NULL)
 		return -1;

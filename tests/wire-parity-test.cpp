@@ -1774,6 +1774,50 @@ TEST(WireParity, PackedRunStopsAtASegmentBoundary) {
 	capn_free(&w);
 }
 
+TEST(WireParity, NullRootIsCanonical) {
+	/* One word, and that word is a null root. C++ 1.4.0
+	 * MessageReader::isCanonical returns true. Eight zero bytes
+	 * with no segment are a different message. */
+	const uint8_t frame[] = {
+		0x00,0x00,0x00,0x00, 0x01,0x00,0x00,0x00,
+		0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,
+	};
+	struct capn c;
+
+	ASSERT_EQ(0, capn_init_mem(&c, (uint8_t *) frame, sizeof frame, 0));
+	EXPECT_EQ(1, capn_is_canonical(&c));
+	capn_free(&c);
+}
+
+static std::vector<uint8_t> framed_alt_full(int depth) {
+	std::vector<uint8_t> b;
+	auto push32 = [&](uint32_t v) {
+		for (int i = 0; i < 4; i++)
+			b.push_back((uint8_t) ((v >> (8 * i)) & 0xff));
+	};
+	push32(0);
+	push32((uint32_t) depth + 1);
+	for (int i = 0; i < depth; i++) {
+		if ((i % 2) == 0) {
+			push32(0);
+			push32(0x00010000);
+		} else {
+			push32(1);
+			push32(0x0e);
+		}
+	}
+	push32(0);
+	push32(0);
+	return b;
+}
+
+TEST(WireParity, AlternatingChainCanonicalisesAtTheLimit) {
+	/* depth pointer words and a trailing null. C++ 1.4.0
+	 * canonicalises depth 64 and rejects 65. */
+	EXPECT_EQ(0, canon_frame(framed_alt_full(64)));
+	EXPECT_NE(0, canon_frame(framed_alt_full(65)));
+}
+
 TEST(WireParity, PackedRunCrossesASegmentBoundary) {
 	/* Two one-word segments. The zero run covers both bodies.
 	 * C++ 1.4.0 reads that as one packed stream. */
