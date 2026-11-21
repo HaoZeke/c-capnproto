@@ -18,6 +18,7 @@ Pre-1.0 minor releases may include breaking wire or API changes.
   `v0.4.1` from their changelog sections. It does not create tags.
 - A pull request that changes the library must add a `CHANGELOG.md`
   bullet. A docs-only or CI-only diff is skipped.
+- Sanitizer jobs run ASan and UBSan with gcc and clang.
 
 ### Fixed
 

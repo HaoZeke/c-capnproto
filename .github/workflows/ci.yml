@@ -120,8 +120,17 @@ jobs:
           find destdir -name 'c.capnp' | grep .
 
   sanitizers:
-    name: ASan+UBSan
+    name: ASan+UBSan (${{ matrix.cc }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { cc: gcc, cxx: g++ }
+          - { cc: clang, cxx: clang++ }
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -132,9 +141,15 @@ jobs:
       - name: Install meson ninja
         run: pip install meson ninja
       - name: Install capnproto
-        run: sudo apt-get update && sudo apt-get install -y capnproto
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y capnproto clang
+          rt="libclang-rt-$(clang -dumpversion | cut -d. -f1)-dev"
+          sudo apt-get install -y "$rt"
       - name: Configure
-        run: meson setup build -Dbuildtype=debugoptimized -Db_sanitize=address,undefined -Denable_tests=true
+        run: meson setup build -Dbuildtype=debugoptimized -Db_sanitize=address,undefined -Db_lundef=false -Denable_tests=true
+      - name: Unit tests are registered
+        run: test "$(meson test -C build --list | wc -l)" -ge 17
       - name: Build
         run: meson compile -C build
       - name: Test

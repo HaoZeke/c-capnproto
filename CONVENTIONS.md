@@ -34,7 +34,7 @@ exists, and `## [X.Y.Z]` otherwise. It fails when neither section exists.
 Cut the release by tagging `vX.Y.Z` on `main`. `release.yml` runs for tags
 that match `v*`. Before publishing it runs the Ubuntu checks from CI:
 meson tests, the capnp CLI parity guard, `scripts/gen-rpc-frames.sh --check`,
-the fuzz and install smokes, ASan+UBSan with the default compiler,
+the fuzz and install smokes, ASan+UBSan with gcc and clang,
 `scripts/packaging-smoke.sh`, and the live C++ peer linked with
 `libcapnp-dev`. It also builds and tests with autotools and CMake. CI
 runs those two builds on pull requests. The meson job builds a
