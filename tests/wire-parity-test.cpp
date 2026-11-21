@@ -243,6 +243,57 @@ TEST(WireParity, CanonicalFormRefusesACapability) {
 	capn_free(&c);
 }
 
+static capn_text text_def(void) {
+	capn_text t;
+	memset(&t, 0, sizeof t);
+	t.str = "hi";
+	t.len = 2;
+	return t;
+}
+
+TEST(WireParity, TextWithoutATerminatorSetsDecodeErr) {
+	/* One byte, no NUL. C++ 1.4.0 throws. A wire-null pointer
+	 * still returns the default and leaves capn_ok set. */
+	const uint8_t bad[] = {
+		0x00, 0, 0, 0, 0x00, 0, 0x01, 0,
+		0x01, 0, 0, 0, 0x0a, 0, 0, 0,
+		0x41, 0, 0, 0, 0, 0, 0, 0,
+	};
+	const uint8_t good[] = {
+		0x00, 0, 0, 0, 0x00, 0, 0x01, 0,
+		0x01, 0, 0, 0, 0x12, 0, 0, 0,
+		0x41, 0, 0, 0, 0, 0, 0, 0,
+	};
+	const uint8_t absent[] = {
+		0x00, 0, 0, 0, 0x00, 0, 0x01, 0,
+		0x00, 0, 0, 0, 0x00, 0, 0, 0,
+	};
+	uint8_t framed[64];
+	struct capn c;
+	capn_text got;
+
+	ASSERT_EQ(0, init_one_seg(&c, bad, sizeof bad, framed, sizeof framed));
+	got = capn_get_text(capn_getp(capn_root(&c), 0, 1), 0, text_def());
+	EXPECT_EQ(0, capn_ok(&c));
+	EXPECT_STREQ("hi", got.str);
+	EXPECT_EQ(2, got.len);
+	capn_free(&c);
+
+	ASSERT_EQ(0, init_one_seg(&c, good, sizeof good, framed, sizeof framed));
+	got = capn_get_text(capn_getp(capn_root(&c), 0, 1), 0, text_def());
+	EXPECT_EQ(1, capn_ok(&c));
+	ASSERT_NE(nullptr, got.str);
+	EXPECT_EQ(1, got.len);
+	EXPECT_EQ('A', got.str[0]);
+	capn_free(&c);
+
+	ASSERT_EQ(0, init_one_seg(&c, absent, sizeof absent, framed, sizeof framed));
+	got = capn_get_text(capn_getp(capn_root(&c), 0, 1), 0, text_def());
+	EXPECT_EQ(1, capn_ok(&c));
+	EXPECT_STREQ("hi", got.str);
+	capn_free(&c);
+}
+
 TEST(WireParity, BuilderMessagesMatchTheCapnpTool) {
 	std::mt19937 rng(0xC0FFEE);
 	for (int n = 0; n < 20; n++) {

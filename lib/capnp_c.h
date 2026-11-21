@@ -332,6 +332,9 @@ CAPN_INLINE int capn_checked_len(capn_ptr *p) {
 CAPN_EXPORT capn_ptr capn_getp(capn_ptr p, int off, int resolve);
 CAPN_EXPORT int capn_setp(capn_ptr p, int off, capn_ptr tgt);
 
+/* A wire-null pointer returns def and leaves decode_err alone. A
+ * pointer that is present but is not a nonempty byte list ending in
+ * NUL also returns def and sets decode_err. An interior NUL is kept. */
 CAPN_EXPORT capn_text capn_get_text(capn_ptr p, int off, capn_text def);
 CAPN_EXPORT capn_data capn_get_data(capn_ptr p, int off);
 CAPN_EXPORT int capn_set_text(capn_ptr p, int off, capn_text tgt);

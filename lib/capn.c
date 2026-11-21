@@ -2669,10 +2669,23 @@ capn_ptr capn_new_string(struct capn_segment *seg, const char *str, ssize_t sz) 
 capn_text capn_get_text(capn_ptr p, int off, capn_text def) {
 	capn_ptr m = capn_getp(p, off, 1);
 	capn_text ret = def;
-	if (m.type == CAPN_LIST && m.datasz == 1 && m.len && m.data[m.len - 1] == 0) {
+	struct capn *c;
+
+	/* A byte list whose last byte is NUL. An interior NUL is
+	 * allowed, matching Text::Reader in C++ 1.4.0. */
+	if (m.type == CAPN_LIST && m.datasz == 1 && m.len && m.data
+	    && m.data[m.len - 1] == 0) {
 		ret.seg = m.seg;
 		ret.str = m.data;
 		ret.len = m.len - 1;
+		return ret;
+	}
+	/* A wire-null pointer is the default and is not an error.
+	 * Any other pointer is text C++ 1.4.0 throws on. */
+	if (m.type != CAPN_NULL) {
+		c = m.seg ? m.seg->capn : (p.seg ? p.seg->capn : NULL);
+		if (c)
+			c->decode_err = 1;
 	}
 	return ret;
 }
