@@ -1685,3 +1685,31 @@ TEST(WireParity, NonZeroCompositeChargesTheTagWord) {
 	EXPECT_EQ(1, canon_limited(framed_word_composite(8), 80));
 	EXPECT_EQ(0, canon_limited(framed_word_composite(9), 80));
 }
+
+TEST(WireParity, ByteListChargesAWholeWord) {
+	/* One root byte. C++ boundsCheck rounds it up to a word, so the
+	 * read costs the two root words plus that word. */
+	const uint8_t frame[] = {
+		0x00,0x00,0x00,0x00, 0x02,0x00,0x00,0x00,
+		0x01,0x00,0x00,0x00, 0x0a,0x00,0x00,0x00,
+		0x7f,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,
+	};
+	struct capn c;
+	capn_ptr root;
+
+	ASSERT_EQ(0, capn_init_mem(&c, (uint8_t *) frame, sizeof frame, 0));
+	c.traversal_limit = 1024;
+	c.traversal_used = 0;
+	root = capn_getp(capn_root(&c), 0, 1);
+	EXPECT_EQ(CAPN_LIST, root.type);
+	EXPECT_EQ(1, capn_ok(&c));
+	EXPECT_EQ((size_t) 24, c.traversal_used);
+	capn_free(&c);
+
+	ASSERT_EQ(0, capn_init_mem(&c, (uint8_t *) frame, sizeof frame, 0));
+	c.traversal_limit = 16;
+	c.traversal_used = 0;
+	root = capn_getp(capn_root(&c), 0, 1);
+	EXPECT_EQ(0, capn_ok(&c));
+	capn_free(&c);
+}

@@ -612,21 +612,34 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 			 * Leave datasz 0 and size the object from len. */
 			if (nbytes <= (size_t) CAPN_DATASZ_MAX)
 				ret.datasz = (unsigned) nbytes;
+			/* C++ boundsCheck rounds the bit count up to words. */
+			if (nbytes > (size_t) -1 - 7)
+				goto err;
+			nbytes = (nbytes + 7) & ~(size_t) 7;
 			break;
 		case BYTE_1_LIST:
 			ret.datasz = 1;
 			if (!mul_size((size_t) ret.len, 1, &nbytes))
 				goto err;
+			if (nbytes > (size_t) -1 - 7)
+				goto err;
+			nbytes = (nbytes + 7) & ~(size_t) 7;
 			break;
 		case BYTE_2_LIST:
 			ret.datasz = 2;
 			if (!mul_size((size_t) ret.len, 2, &nbytes))
 				goto err;
+			if (nbytes > (size_t) -1 - 7)
+				goto err;
+			nbytes = (nbytes + 7) & ~(size_t) 7;
 			break;
 		case BYTE_4_LIST:
 			ret.datasz = 4;
 			if (!mul_size((size_t) ret.len, 4, &nbytes))
 				goto err;
+			if (nbytes > (size_t) -1 - 7)
+				goto err;
+			nbytes = (nbytes + 7) & ~(size_t) 7;
 			break;
 		case BYTE_8_LIST:
 			ret.datasz = 8;
