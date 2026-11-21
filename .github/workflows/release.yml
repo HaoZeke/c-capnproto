@@ -42,6 +42,47 @@ jobs:
         run: meson compile -C build
       - name: Test
         run: meson test -C build --print-errorlogs
+      # A skipped CapnpCli fixture still reports the suite as passing, so
+      # assert the upstream-CLI parity tests actually executed.
+      - name: capnp CLI parity tests ran rather than skipped
+        run: |
+          ./build/capnp-cli-interop-test > cli-interop.log 2>&1
+          if grep -q 'SKIPPED' cli-interop.log; then
+            echo "CapnpCli tests skipped; capnp CLI was missing at configure time" >&2
+            grep 'SKIPPED' cli-interop.log >&2
+            exit 1
+          fi
+          grep -E '^\[  PASSED  \]' cli-interop.log
+      # The level 3 frames are evidence of parity only while they are
+      # still what the CLI emits from the schema.
+      - name: level 3 frames still match the capnp CLI
+        run: bash scripts/gen-rpc-frames.sh --check
+      - name: Fuzz smoke
+        run: |
+          # One-shot corpus replay, not unbounded AFL/libFuzzer.
+          mkdir -p fuzz/in
+          if [ ! -s fuzz/in/Person.bin ]; then
+            if ! command -v capnp >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y capnproto
+            fi
+            capnp encode -Icompiler tests/addressbook.capnp Person < fuzz/Person.txt > fuzz/in/Person.bin
+          fi
+          test -s fuzz/in/Person.bin
+          test -x build/fuzz-mem
+          test -x build/fuzz-fp
+          ./build/fuzz-mem fuzz/in/Person.bin
+          ./build/fuzz-fp fuzz/in/Person.bin
+      - name: Install smoke
+        run: |
+          DESTDIR=$PWD/destdir meson install -C build
+          test -x destdir/usr/local/bin/capnpc-c
+          test -f destdir/usr/local/include/capnp_c.h
+          test -f destdir/usr/local/include/c.capnp.h
+          test -f destdir/usr/local/share/c-capnproto/c.capnp
+          test -f destdir/usr/local/lib/pkgconfig/c-capnproto.pc \
+            || test -f destdir/usr/local/lib/*/pkgconfig/c-capnproto.pc \
+            || { find destdir/usr/local/lib -print | head -40; exit 1; }
       - name: Source tarball
         run: |
           meson dist -C build --no-tests
@@ -62,6 +103,7 @@ jobs:
             autoreconf -fi
             ./configure
             make -j"$(nproc)"
+            make -j"$(nproc)" check
           )
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -113,8 +155,74 @@ jobs:
           ctest --test-dir build --output-on-failure
           ctest --test-dir build -N | grep -E 'Test #.*capn-test'
 
+  sanitizers:
+    name: ASan+UBSan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Install meson ninja
+        run: pip install meson ninja
+      - name: Install capnproto
+        run: sudo apt-get update && sudo apt-get install -y capnproto
+      - name: Configure
+        run: meson setup build -Dbuildtype=debugoptimized -Db_sanitize=address,undefined -Denable_tests=true
+      - name: Build
+        run: meson compile -C build
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=0,detect_odr_violation=0,allocator_may_return_null=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: meson test -C build --print-errorlogs
+
+  packaging:
+    name: downstream consumption
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Install meson ninja
+        run: pip install meson ninja
+      - name: CMake, find_package, pkg-config and meson subproject
+        run: bash scripts/packaging-smoke.sh
+
+  rpc-interop:
+    name: live capnp-C++ RPC peer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Install meson ninja
+        run: pip install meson ninja
+      # libcapnp-dev brings the C++ RPC library the peer server links.
+      - name: Install capnproto and libcapnp-rpc
+        run: sudo apt-get update && sudo apt-get install -y capnproto libcapnp-dev
+      - name: Configure
+        run: meson setup build -Denable_tests=true
+      - name: Build
+        run: meson compile -C build
+      - name: The interop test ran rather than being skipped
+        run: |
+          meson test -C build rpc_interop_cpp --print-errorlogs
+          test -x build/rpc_peer_server
+
   github-release:
-    needs: [meson, autotools, cmake]
+    needs: [meson, autotools, cmake, sanitizers, packaging, rpc-interop]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -139,16 +247,14 @@ jobs:
             echo "meson dist produced no tarball" >&2
             exit 1
           fi
-          args=(--repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file notes/notes.md)
           if [ "$PRE" = "true" ]; then
-            args+=(--prerelease)
+            pre_args=(--prerelease)
+          else
+            pre_args=(--prerelease=false)
           fi
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes/notes.md
-            if [ "$PRE" = "true" ]; then
-              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease
-            fi
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file notes/notes.md "${pre_args[@]}"
             gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "${tarballs[@]}"
           else
-            gh release create "$TAG" "${args[@]}" "${tarballs[@]}"
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file notes/notes.md "${pre_args[@]}" "${tarballs[@]}"
           fi
