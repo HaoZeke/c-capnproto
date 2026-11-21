@@ -194,6 +194,17 @@ if get_option('enable_tests') and not meson.is_subproject()
   )
   test('compiler-str-test', compiler_str_test)
 
+  null_ptr_write_test = executable(
+    'null-ptr-write-test',
+    'tests' / 'null-ptr-write-test.c',
+    include_directories: include_directories(['lib', 'compiler']),
+    dependencies: test_dependencies,
+    c_args: common_c_args,
+    install: false,
+    implicit_include_directories: false,
+  )
+  test('null-ptr-write-test', null_ptr_write_test)
+
   create_min_sz_test = executable(
     'create-min-sz-test',
     [
