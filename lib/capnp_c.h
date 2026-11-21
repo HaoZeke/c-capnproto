@@ -279,6 +279,8 @@ CAPN_EXPORT void capn_resolve(capn_ptr *p);
  * Returns 0 if landings are in-segment, nesting stays within
  * nesting_limit (0 means CAPN_NESTING_DEFAULT), the traversal budget
  * is not exceeded, and the graph has no cycles. Returns -1 otherwise.
+ * A far pointer into a segment with no words is an error, the same
+ * way following that pointer sets decode_err.
  * Does not consume traversal_used. A failed hop may set decode_err
  * (same as getp). Generated accessors still trust a capn_ptr that has
  * already been decoded and do not check capn_ok.

@@ -377,7 +377,8 @@ static uint64_t lookup_double(struct capn_segment **s, char **d, uint64_t val) {
 
 	off = (size_t) (U32(val) >> 3) * 8;
 	seg = lookup_segment((*s)->capn, *s, U32(val >> 32));
-	if (!seg) {
+	/* A segment of zero words is not a segment C++ will return. */
+	if (!seg || seg->len == 0) {
 		*s = NULL;
 		return 0;
 	}
@@ -405,7 +406,8 @@ static uint64_t lookup_double(struct capn_segment **s, char **d, uint64_t val) {
 	}
 
 	seg = lookup_segment(seg->capn, seg, U32(far >> 32));
-	if (!seg) {
+	/* A far into a zero-word segment is an error, not an empty object. */
+	if (!seg || seg->len == 0) {
 		*s = NULL;
 		return 0;
 	}
@@ -455,7 +457,8 @@ static uint64_t lookup_far(struct capn_segment **s, char **d, uint64_t val) {
 
 	off = (size_t) (U32(val) >> 3) * 8;
 	seg = lookup_segment((*s)->capn, *s, U32(val >> 32));
-	if (!seg) {
+	/* A zero-word segment is absent, the way C++ reports it. */
+	if (!seg || seg->len == 0) {
 		*s = NULL;
 		return 0;
 	}
@@ -967,6 +970,42 @@ static int ptr_word_null(struct capn_segment *s, char *d)
 	return capn_flip64(*(uint64_t *) d) == 0;
 }
 
+/* A far or double-far whose target segment has no words. Following
+ * it fails. Walking the message does not, because the pointer has
+ * not been followed yet. */
+static int pointer_far_into_empty(struct capn_segment *s, const char *d)
+{
+	uint64_t val, far;
+	uint32_t id;
+	size_t off, at;
+	struct capn_segment *t, *t2;
+	const char *p;
+
+	if (!s || !d || !s->data || s->len < 8)
+		return 0;
+	at = (size_t) (d - s->data);
+	if (d < s->data || at > s->len || s->len - at < 8)
+		return 0;
+	val = capn_flip64(*(const uint64_t *) d);
+	if ((val & 3) != FAR_PTR)
+		return 0;
+	id = U32(val >> 32);
+	t = lookup_segment(s->capn, s, id);
+	if (t && t->len == 0)
+		return 1;
+	if ((val & 4) == 0 || !t)
+		return 0;
+	off = (size_t) (U32(val) >> 3) * 8;
+	if (off > t->len || t->len - off < 16)
+		return 0;
+	p = t->data + off;
+	far = capn_flip64(*(const uint64_t *) p);
+	if ((far & 3) != FAR_PTR)
+		return 0;
+	t2 = lookup_segment(t->capn, t, U32(far >> 32));
+	return t2 != NULL && t2->len == 0;
+}
+
 int capn_validate(struct capn *c)
 {
 	size_t saved;
@@ -1001,6 +1040,8 @@ int capn_validate(struct capn *c)
 
 	isnull = ptr_word_null(root.seg, root.data);
 	if (isnull < 0)
+		goto done;
+	if (pointer_far_into_empty(root.seg, root.data))
 		goto done;
 	if (isnull) {
 		rc = 0;
@@ -1044,6 +1085,8 @@ int capn_validate(struct capn *c)
 
 		isnull = ptr_word_null(s, d);
 		if (isnull < 0)
+			goto done;
+		if (pointer_far_into_empty(s, d))
 			goto done;
 		if (isnull)
 			continue;

@@ -1334,3 +1334,35 @@ TEST(WireParity, TwoVoidListsShareTheCanonicalBudget) {
 	EXPECT_EQ(1, capn_is_canonical(&c));
 	capn_free(&c);
 }
+
+TEST(WireParity, FarIntoAnEmptySegmentIsRejected) {
+	/* The root is a double-far into a zero-word segment. The
+	 * walk and a later read both fail. */
+	const uint8_t frame[] = {
+		1,0,0,0, 3,0,0,0, 0,0,0,0, 0,0,0,0,
+		0x0e,0,0,0, 0,0,0,0,
+		2,0,0,0, 1,0,0,0,
+		0,0,0,0, 0,0,0,0,
+	};
+	const uint8_t single[] = {
+		1,0,0,0, 1,0,0,0, 0,0,0,0, 0,0,0,0,
+		0x02,0,0,0, 1,0,0,0,
+	};
+	struct capn c;
+	capn_ptr root;
+	ASSERT_EQ(0, load_frame(&c, frame, sizeof frame));
+	EXPECT_NE(0, capn_validate(&c));
+	EXPECT_EQ(1, capn_ok(&c));
+	root = capn_getp(capn_root(&c), 0, 1);
+	EXPECT_EQ(CAPN_NULL, root.type);
+	EXPECT_EQ(0, capn_ok(&c));
+	capn_free(&c);
+
+	ASSERT_EQ(0, load_frame(&c, single, sizeof single));
+	EXPECT_NE(0, capn_validate(&c));
+	EXPECT_EQ(1, capn_ok(&c));
+	root = capn_getp(capn_root(&c), 0, 1);
+	EXPECT_EQ(CAPN_NULL, root.type);
+	EXPECT_EQ(0, capn_ok(&c));
+	capn_free(&c);
+}
