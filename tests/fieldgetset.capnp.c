@@ -72,7 +72,9 @@ void read_Inner(struct Inner *s capnp_unused, Inner_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	s->left.p = capn_getp(p.p, 0, 0);
+if (s->left.p.type == CAPN_FAR_POINTER && s->left.p.data != NULL && *(const uint64_t*)s->left.p.data == 0) s->left.p.type = CAPN_NULL;
 	s->right.p = capn_getp(p.p, 1, 0);
+if (s->right.p.type == CAPN_FAR_POINTER && s->right.p.data != NULL && *(const uint64_t*)s->right.p.data == 0) s->right.p.type = CAPN_NULL;
 }
 void write_Inner(const struct Inner *s capnp_unused, Inner_ptr p) {
 	capn_resolve(&p.p);
@@ -150,7 +152,9 @@ void read_TreeNode(struct TreeNode *s capnp_unused, TreeNode_ptr p) {
 	capnp_use(s);
 	s->nodeType = (int32_t) ((int32_t)capn_read32(p.p, 0));
 	s->leaf.p = capn_getp(p.p, 0, 0);
+if (s->leaf.p.type == CAPN_FAR_POINTER && s->leaf.p.data != NULL && *(const uint64_t*)s->leaf.p.data == 0) s->leaf.p.type = CAPN_NULL;
 	s->inner.p = capn_getp(p.p, 1, 0);
+if (s->inner.p.type == CAPN_FAR_POINTER && s->inner.p.data != NULL && *(const uint64_t*)s->inner.p.data == 0) s->inner.p.type = CAPN_NULL;
 }
 void write_TreeNode(const struct TreeNode *s capnp_unused, TreeNode_ptr p) {
 	capn_resolve(&p.p);

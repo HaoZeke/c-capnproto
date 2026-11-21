@@ -30,6 +30,7 @@ void read_Person(struct Person *s capnp_unused, Person_ptr p) {
 	s->name = capn_get_text(p.p, 0, capn_val0);
 	s->email = capn_get_text(p.p, 1, capn_val0);
 	s->phones.p = capn_getp(p.p, 2, 0);
+if (s->phones.p.type == CAPN_FAR_POINTER && s->phones.p.data != NULL && *(const uint64_t*)s->phones.p.data == 0) s->phones.p.type = CAPN_NULL;
 	s->employment_which = (enum Person_employment_which)(int) capn_read16(p.p, 4);
 	switch (s->employment_which) {
 	case Person_employment_employer:
@@ -235,6 +236,7 @@ void read_AddressBook(struct AddressBook *s capnp_unused, AddressBook_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	s->people.p = capn_getp(p.p, 0, 0);
+if (s->people.p.type == CAPN_FAR_POINTER && s->people.p.data != NULL && *(const uint64_t*)s->people.p.data == 0) s->people.p.type = CAPN_NULL;
 }
 void write_AddressBook(const struct AddressBook *s capnp_unused, AddressBook_ptr p) {
 	capn_resolve(&p.p);

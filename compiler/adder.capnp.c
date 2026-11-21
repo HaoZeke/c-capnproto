@@ -29,6 +29,7 @@ void read_Adder_borrow_results(struct Adder_borrow_results *s capnp_unused, Adde
 	capnp_use(s);
 	s->n = (int32_t) ((int32_t)capn_read32(p.p, 0));
 	s->cap.p = capn_getp(p.p, 0, 0);
+if (s->cap.p.type == CAPN_FAR_POINTER && s->cap.p.data != NULL && *(const uint64_t*)s->cap.p.data == 0) s->cap.p.type = CAPN_NULL;
 }
 void write_Adder_borrow_results(const struct Adder_borrow_results *s capnp_unused, Adder_borrow_results_ptr p) {
 	capn_resolve(&p.p);
@@ -154,6 +155,7 @@ void read_Adder_echo_results(struct Adder_echo_results *s capnp_unused, Adder_ec
 	capn_resolve(&p.p);
 	capnp_use(s);
 	s->cap.p = capn_getp(p.p, 0, 0);
+if (s->cap.p.type == CAPN_FAR_POINTER && s->cap.p.data != NULL && *(const uint64_t*)s->cap.p.data == 0) s->cap.p.type = CAPN_NULL;
 }
 void write_Adder_echo_results(const struct Adder_echo_results *s capnp_unused, Adder_echo_results_ptr p) {
 	capn_resolve(&p.p);
@@ -185,6 +187,7 @@ void read_Adder_echo_params(struct Adder_echo_params *s capnp_unused, Adder_echo
 	capn_resolve(&p.p);
 	capnp_use(s);
 	s->cap.p = capn_getp(p.p, 0, 0);
+if (s->cap.p.type == CAPN_FAR_POINTER && s->cap.p.data != NULL && *(const uint64_t*)s->cap.p.data == 0) s->cap.p.type = CAPN_NULL;
 }
 void write_Adder_echo_params(const struct Adder_echo_params *s capnp_unused, Adder_echo_params_ptr p) {
 	capn_resolve(&p.p);
@@ -245,6 +248,7 @@ void read_Adder_watch_params(struct Adder_watch_params *s capnp_unused, Adder_wa
 	capn_resolve(&p.p);
 	capnp_use(s);
 	s->cap.p = capn_getp(p.p, 0, 0);
+if (s->cap.p.type == CAPN_FAR_POINTER && s->cap.p.data != NULL && *(const uint64_t*)s->cap.p.data == 0) s->cap.p.type = CAPN_NULL;
 }
 void write_Adder_watch_params(const struct Adder_watch_params *s capnp_unused, Adder_watch_params_ptr p) {
 	capn_resolve(&p.p);
@@ -334,6 +338,7 @@ void read_Adder_defer_results(struct Adder_defer_results *s capnp_unused, Adder_
 	capn_resolve(&p.p);
 	capnp_use(s);
 	s->cap.p = capn_getp(p.p, 0, 0);
+if (s->cap.p.type == CAPN_FAR_POINTER && s->cap.p.data != NULL && *(const uint64_t*)s->cap.p.data == 0) s->cap.p.type = CAPN_NULL;
 }
 void write_Adder_defer_results(const struct Adder_defer_results *s capnp_unused, Adder_defer_results_ptr p) {
 	capn_resolve(&p.p);

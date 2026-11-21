@@ -32,9 +32,12 @@ void read_Node(struct Node *s capnp_unused, Node_ptr p) {
 	s->displayNamePrefixLength = capn_read32(p.p, 8);
 	s->scopeId = capn_read64(p.p, 16);
 	s->parameters.p = capn_getp(p.p, 5, 0);
+if (s->parameters.p.type == CAPN_FAR_POINTER && s->parameters.p.data != NULL && *(const uint64_t*)s->parameters.p.data == 0) s->parameters.p.type = CAPN_NULL;
 	s->isGeneric = (capn_read8(p.p, 36) & 1) != 0;
 	s->nestedNodes.p = capn_getp(p.p, 1, 0);
+if (s->nestedNodes.p.type == CAPN_FAR_POINTER && s->nestedNodes.p.data != NULL && *(const uint64_t*)s->nestedNodes.p.data == 0) s->nestedNodes.p.type = CAPN_NULL;
 	s->annotations.p = capn_getp(p.p, 2, 0);
+if (s->annotations.p.type == CAPN_FAR_POINTER && s->annotations.p.data != NULL && *(const uint64_t*)s->annotations.p.data == 0) s->annotations.p.type = CAPN_NULL;
 	s->which = (enum Node_which)(int) capn_read16(p.p, 12);
 	switch (s->which) {
 	case Node__struct:
@@ -45,20 +48,27 @@ void read_Node(struct Node *s capnp_unused, Node_ptr p) {
 		s->_struct.discriminantCount = capn_read16(p.p, 30);
 		s->_struct.discriminantOffset = capn_read32(p.p, 32);
 		s->_struct.fields.p = capn_getp(p.p, 3, 0);
+if (s->_struct.fields.p.type == CAPN_FAR_POINTER && s->_struct.fields.p.data != NULL && *(const uint64_t*)s->_struct.fields.p.data == 0) s->_struct.fields.p.type = CAPN_NULL;
 		break;
 	case Node__enum:
 		s->_enum.enumerants.p = capn_getp(p.p, 3, 0);
+if (s->_enum.enumerants.p.type == CAPN_FAR_POINTER && s->_enum.enumerants.p.data != NULL && *(const uint64_t*)s->_enum.enumerants.p.data == 0) s->_enum.enumerants.p.type = CAPN_NULL;
 		break;
 	case Node__interface:
 		s->_interface.methods.p = capn_getp(p.p, 3, 0);
+if (s->_interface.methods.p.type == CAPN_FAR_POINTER && s->_interface.methods.p.data != NULL && *(const uint64_t*)s->_interface.methods.p.data == 0) s->_interface.methods.p.type = CAPN_NULL;
 		s->_interface.superclasses.p = capn_getp(p.p, 4, 0);
+if (s->_interface.superclasses.p.type == CAPN_FAR_POINTER && s->_interface.superclasses.p.data != NULL && *(const uint64_t*)s->_interface.superclasses.p.data == 0) s->_interface.superclasses.p.type = CAPN_NULL;
 		break;
 	case Node__const:
 		s->_const.type.p = capn_getp(p.p, 3, 0);
+if (s->_const.type.p.type == CAPN_FAR_POINTER && s->_const.type.p.data != NULL && *(const uint64_t*)s->_const.type.p.data == 0) s->_const.type.p.type = CAPN_NULL;
 		s->_const.value.p = capn_getp(p.p, 4, 0);
+if (s->_const.value.p.type == CAPN_FAR_POINTER && s->_const.value.p.data != NULL && *(const uint64_t*)s->_const.value.p.data == 0) s->_const.value.p.type = CAPN_NULL;
 		break;
 	case Node_annotation:
 		s->annotation.type.p = capn_getp(p.p, 3, 0);
+if (s->annotation.type.p.type == CAPN_FAR_POINTER && s->annotation.type.p.data != NULL && *(const uint64_t*)s->annotation.type.p.data == 0) s->annotation.type.p.type = CAPN_NULL;
 		s->annotation.targetsFile = (capn_read8(p.p, 14) & 1) != 0;
 		s->annotation.targetsConst = (capn_read8(p.p, 14) & 2) != 0;
 		s->annotation.targetsEnum = (capn_read8(p.p, 14) & 4) != 0;
@@ -425,6 +435,7 @@ void read_Node_SourceInfo(struct Node_SourceInfo *s capnp_unused, Node_SourceInf
 	s->id = capn_read64(p.p, 0);
 	s->docComment = capn_get_text(p.p, 0, capn_val0);
 	s->members.p = capn_getp(p.p, 1, 0);
+if (s->members.p.type == CAPN_FAR_POINTER && s->members.p.data != NULL && *(const uint64_t*)s->members.p.data == 0) s->members.p.type = CAPN_NULL;
 	s->startByte = capn_read32(p.p, 8);
 	s->endByte = capn_read32(p.p, 12);
 }
@@ -603,13 +614,16 @@ void read_Field(struct Field *s capnp_unused, Field_ptr p) {
 	s->name = capn_get_text(p.p, 0, capn_val0);
 	s->codeOrder = capn_read16(p.p, 0);
 	s->annotations.p = capn_getp(p.p, 1, 0);
+if (s->annotations.p.type == CAPN_FAR_POINTER && s->annotations.p.data != NULL && *(const uint64_t*)s->annotations.p.data == 0) s->annotations.p.type = CAPN_NULL;
 	s->discriminantValue = capn_read16(p.p, 2) ^ 65535u;
 	s->which = (enum Field_which)(int) capn_read16(p.p, 8);
 	switch (s->which) {
 	case Field_slot:
 		s->slot.offset = capn_read32(p.p, 4);
 		s->slot.type.p = capn_getp(p.p, 2, 0);
+if (s->slot.type.p.type == CAPN_FAR_POINTER && s->slot.type.p.data != NULL && *(const uint64_t*)s->slot.type.p.data == 0) s->slot.type.p.type = CAPN_NULL;
 		s->slot.defaultValue.p = capn_getp(p.p, 3, 0);
+if (s->slot.defaultValue.p.type == CAPN_FAR_POINTER && s->slot.defaultValue.p.data != NULL && *(const uint64_t*)s->slot.defaultValue.p.data == 0) s->slot.defaultValue.p.type = CAPN_NULL;
 		s->slot.hadExplicitDefault = (capn_read8(p.p, 16) & 1) != 0;
 		break;
 	case Field_group:
@@ -756,6 +770,7 @@ void read_Enumerant(struct Enumerant *s capnp_unused, Enumerant_ptr p) {
 	s->name = capn_get_text(p.p, 0, capn_val0);
 	s->codeOrder = capn_read16(p.p, 0);
 	s->annotations.p = capn_getp(p.p, 1, 0);
+if (s->annotations.p.type == CAPN_FAR_POINTER && s->annotations.p.data != NULL && *(const uint64_t*)s->annotations.p.data == 0) s->annotations.p.type = CAPN_NULL;
 }
 void write_Enumerant(const struct Enumerant *s capnp_unused, Enumerant_ptr p) {
 	capn_resolve(&p.p);
@@ -848,6 +863,7 @@ void read_Superclass(struct Superclass *s capnp_unused, Superclass_ptr p) {
 	capnp_use(s);
 	s->id = capn_read64(p.p, 0);
 	s->brand.p = capn_getp(p.p, 0, 0);
+if (s->brand.p.type == CAPN_FAR_POINTER && s->brand.p.data != NULL && *(const uint64_t*)s->brand.p.data == 0) s->brand.p.type = CAPN_NULL;
 }
 void write_Superclass(const struct Superclass *s capnp_unused, Superclass_ptr p) {
 	capn_resolve(&p.p);
@@ -918,11 +934,15 @@ void read_Method(struct Method *s capnp_unused, Method_ptr p) {
 	s->name = capn_get_text(p.p, 0, capn_val0);
 	s->codeOrder = capn_read16(p.p, 0);
 	s->implicitParameters.p = capn_getp(p.p, 4, 0);
+if (s->implicitParameters.p.type == CAPN_FAR_POINTER && s->implicitParameters.p.data != NULL && *(const uint64_t*)s->implicitParameters.p.data == 0) s->implicitParameters.p.type = CAPN_NULL;
 	s->paramStructType = capn_read64(p.p, 8);
 	s->paramBrand.p = capn_getp(p.p, 2, 0);
+if (s->paramBrand.p.type == CAPN_FAR_POINTER && s->paramBrand.p.data != NULL && *(const uint64_t*)s->paramBrand.p.data == 0) s->paramBrand.p.type = CAPN_NULL;
 	s->resultStructType = capn_read64(p.p, 16);
 	s->resultBrand.p = capn_getp(p.p, 3, 0);
+if (s->resultBrand.p.type == CAPN_FAR_POINTER && s->resultBrand.p.data != NULL && *(const uint64_t*)s->resultBrand.p.data == 0) s->resultBrand.p.type = CAPN_NULL;
 	s->annotations.p = capn_getp(p.p, 1, 0);
+if (s->annotations.p.type == CAPN_FAR_POINTER && s->annotations.p.data != NULL && *(const uint64_t*)s->annotations.p.data == 0) s->annotations.p.type = CAPN_NULL;
 }
 void write_Method(const struct Method *s capnp_unused, Method_ptr p) {
 	capn_resolve(&p.p);
@@ -1116,18 +1136,22 @@ void read_Type(struct Type *s capnp_unused, Type_ptr p) {
 	switch (s->which) {
 	case Type__list:
 		s->_list.elementType.p = capn_getp(p.p, 0, 0);
+if (s->_list.elementType.p.type == CAPN_FAR_POINTER && s->_list.elementType.p.data != NULL && *(const uint64_t*)s->_list.elementType.p.data == 0) s->_list.elementType.p.type = CAPN_NULL;
 		break;
 	case Type__enum:
 		s->_enum.typeId = capn_read64(p.p, 8);
 		s->_enum.brand.p = capn_getp(p.p, 0, 0);
+if (s->_enum.brand.p.type == CAPN_FAR_POINTER && s->_enum.brand.p.data != NULL && *(const uint64_t*)s->_enum.brand.p.data == 0) s->_enum.brand.p.type = CAPN_NULL;
 		break;
 	case Type__struct:
 		s->_struct.typeId = capn_read64(p.p, 8);
 		s->_struct.brand.p = capn_getp(p.p, 0, 0);
+if (s->_struct.brand.p.type == CAPN_FAR_POINTER && s->_struct.brand.p.data != NULL && *(const uint64_t*)s->_struct.brand.p.data == 0) s->_struct.brand.p.type = CAPN_NULL;
 		break;
 	case Type__interface:
 		s->_interface.typeId = capn_read64(p.p, 8);
 		s->_interface.brand.p = capn_getp(p.p, 0, 0);
+if (s->_interface.brand.p.type == CAPN_FAR_POINTER && s->_interface.brand.p.data != NULL && *(const uint64_t*)s->_interface.brand.p.data == 0) s->_interface.brand.p.type = CAPN_NULL;
 		break;
 	case Type_anyPointer:
 		s->anyPointer.which = (enum Type_anyPointer_which)(int) capn_read16(p.p, 8);
@@ -1224,6 +1248,7 @@ void read_Brand(struct Brand *s capnp_unused, Brand_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	s->scopes.p = capn_getp(p.p, 0, 0);
+if (s->scopes.p.type == CAPN_FAR_POINTER && s->scopes.p.data != NULL && *(const uint64_t*)s->scopes.p.data == 0) s->scopes.p.type = CAPN_NULL;
 }
 void write_Brand(const struct Brand *s capnp_unused, Brand_ptr p) {
 	capn_resolve(&p.p);
@@ -1281,6 +1306,7 @@ void read_Brand_Scope(struct Brand_Scope *s capnp_unused, Brand_Scope_ptr p) {
 	switch (s->which) {
 	case Brand_Scope_bind:
 		s->bind.p = capn_getp(p.p, 0, 0);
+if (s->bind.p.type == CAPN_FAR_POINTER && s->bind.p.data != NULL && *(const uint64_t*)s->bind.p.data == 0) s->bind.p.type = CAPN_NULL;
 		break;
 	default:
 		break;
@@ -1341,6 +1367,7 @@ void read_Brand_Binding(struct Brand_Binding *s capnp_unused, Brand_Binding_ptr 
 	switch (s->which) {
 	case Brand_Binding_type:
 		s->type.p = capn_getp(p.p, 0, 0);
+if (s->type.p.type == CAPN_FAR_POINTER && s->type.p.data != NULL && *(const uint64_t*)s->type.p.data == 0) s->type.p.type = CAPN_NULL;
 		break;
 	default:
 		break;
@@ -1428,12 +1455,15 @@ void read_Value(struct Value *s capnp_unused, Value_ptr p) {
 		break;
 	case Value__list:
 		s->_list = capn_getp(p.p, 0, 0);
+if (s->_list.type == CAPN_FAR_POINTER && s->_list.data != NULL && *(const uint64_t*)s->_list.data == 0) s->_list.type = CAPN_NULL;
 		break;
 	case Value__struct:
 		s->_struct = capn_getp(p.p, 0, 0);
+if (s->_struct.type == CAPN_FAR_POINTER && s->_struct.data != NULL && *(const uint64_t*)s->_struct.data == 0) s->_struct.type = CAPN_NULL;
 		break;
 	case Value_anyPointer:
 		s->anyPointer = capn_getp(p.p, 0, 0);
+if (s->anyPointer.type == CAPN_FAR_POINTER && s->anyPointer.data != NULL && *(const uint64_t*)s->anyPointer.data == 0) s->anyPointer.type = CAPN_NULL;
 		break;
 	default:
 		break;
@@ -1525,7 +1555,9 @@ void read_Annotation(struct Annotation *s capnp_unused, Annotation_ptr p) {
 	capnp_use(s);
 	s->id = capn_read64(p.p, 0);
 	s->brand.p = capn_getp(p.p, 1, 0);
+if (s->brand.p.type == CAPN_FAR_POINTER && s->brand.p.data != NULL && *(const uint64_t*)s->brand.p.data == 0) s->brand.p.type = CAPN_NULL;
 	s->value.p = capn_getp(p.p, 0, 0);
+if (s->value.p.type == CAPN_FAR_POINTER && s->value.p.data != NULL && *(const uint64_t*)s->value.p.data == 0) s->value.p.type = CAPN_NULL;
 }
 void write_Annotation(const struct Annotation *s capnp_unused, Annotation_ptr p) {
 	capn_resolve(&p.p);
@@ -1694,9 +1726,13 @@ void read_CodeGeneratorRequest(struct CodeGeneratorRequest *s capnp_unused, Code
 	capn_resolve(&p.p);
 	capnp_use(s);
 	s->capnpVersion.p = capn_getp(p.p, 2, 0);
+if (s->capnpVersion.p.type == CAPN_FAR_POINTER && s->capnpVersion.p.data != NULL && *(const uint64_t*)s->capnpVersion.p.data == 0) s->capnpVersion.p.type = CAPN_NULL;
 	s->nodes.p = capn_getp(p.p, 0, 0);
+if (s->nodes.p.type == CAPN_FAR_POINTER && s->nodes.p.data != NULL && *(const uint64_t*)s->nodes.p.data == 0) s->nodes.p.type = CAPN_NULL;
 	s->sourceInfo.p = capn_getp(p.p, 3, 0);
+if (s->sourceInfo.p.type == CAPN_FAR_POINTER && s->sourceInfo.p.data != NULL && *(const uint64_t*)s->sourceInfo.p.data == 0) s->sourceInfo.p.type = CAPN_NULL;
 	s->requestedFiles.p = capn_getp(p.p, 1, 0);
+if (s->requestedFiles.p.type == CAPN_FAR_POINTER && s->requestedFiles.p.data != NULL && *(const uint64_t*)s->requestedFiles.p.data == 0) s->requestedFiles.p.type = CAPN_NULL;
 }
 void write_CodeGeneratorRequest(const struct CodeGeneratorRequest *s capnp_unused, CodeGeneratorRequest_ptr p) {
 	capn_resolve(&p.p);
@@ -1821,7 +1857,9 @@ void read_CodeGeneratorRequest_RequestedFile(struct CodeGeneratorRequest_Request
 	s->id = capn_read64(p.p, 0);
 	s->filename = capn_get_text(p.p, 0, capn_val0);
 	s->imports.p = capn_getp(p.p, 1, 0);
+if (s->imports.p.type == CAPN_FAR_POINTER && s->imports.p.data != NULL && *(const uint64_t*)s->imports.p.data == 0) s->imports.p.type = CAPN_NULL;
 	s->fileSourceInfo.p = capn_getp(p.p, 2, 0);
+if (s->fileSourceInfo.p.type == CAPN_FAR_POINTER && s->fileSourceInfo.p.data != NULL && *(const uint64_t*)s->fileSourceInfo.p.data == 0) s->fileSourceInfo.p.type = CAPN_NULL;
 }
 void write_CodeGeneratorRequest_RequestedFile(const struct CodeGeneratorRequest_RequestedFile *s capnp_unused, CodeGeneratorRequest_RequestedFile_ptr p) {
 	capn_resolve(&p.p);
@@ -2005,6 +2043,7 @@ void read_CodeGeneratorRequest_RequestedFile_FileSourceInfo(struct CodeGenerator
 	capn_resolve(&p.p);
 	capnp_use(s);
 	s->identifiers.p = capn_getp(p.p, 0, 0);
+if (s->identifiers.p.type == CAPN_FAR_POINTER && s->identifiers.p.data != NULL && *(const uint64_t*)s->identifiers.p.data == 0) s->identifiers.p.type = CAPN_NULL;
 }
 void write_CodeGeneratorRequest_RequestedFile_FileSourceInfo(const struct CodeGeneratorRequest_RequestedFile_FileSourceInfo *s capnp_unused, CodeGeneratorRequest_RequestedFile_FileSourceInfo_ptr p) {
 	capn_resolve(&p.p);

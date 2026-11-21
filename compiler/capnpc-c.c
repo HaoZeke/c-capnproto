@@ -1146,6 +1146,13 @@ static void get_member(struct str *func, struct field *f, const char *ptr, const
 	case Type_anyPointer:
 	case Type__list:
 		str_addf(func, "%s = capn_getp(%s, %d, %d);\n", pvar, ptr, f->f.slot.offset, resolve);
+		/* read_ leaves the pointer word unresolved. A zero word
+		 * is the null that a default replaces. A word that is
+		 * present stays unread until that field is fetched. */
+		if (!resolve)
+			str_addf(func,
+				"if (%s.type == CAPN_FAR_POINTER && %s.data != NULL && *(const uint64_t*)%s.data == 0) %s.type = CAPN_NULL;\n",
+				pvar, pvar, pvar, pvar);
 		break;
 	default:
 		return;

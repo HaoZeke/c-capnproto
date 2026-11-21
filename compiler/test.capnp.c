@@ -1278,25 +1278,44 @@ void read_TestAllTypes(struct TestAllTypes *s capnp_unused, TestAllTypes_ptr p) 
 	s->textField = capn_get_text(p.p, 0, capn_val0);
 	s->dataField = capn_get_data(p.p, 1);
 	s->structField.p = capn_getp(p.p, 2, 0);
+if (s->structField.p.type == CAPN_FAR_POINTER && s->structField.p.data != NULL && *(const uint64_t*)s->structField.p.data == 0) s->structField.p.type = CAPN_NULL;
 	s->enumField = (enum TestEnum)(int) capn_read16(p.p, 36);
 	s->interfaceField.p = capn_getp(p.p, 3, 0);
+if (s->interfaceField.p.type == CAPN_FAR_POINTER && s->interfaceField.p.data != NULL && *(const uint64_t*)s->interfaceField.p.data == 0) s->interfaceField.p.type = CAPN_NULL;
 	s->voidList = capn_getp(p.p, 4, 0);
+if (s->voidList.type == CAPN_FAR_POINTER && s->voidList.data != NULL && *(const uint64_t*)s->voidList.data == 0) s->voidList.type = CAPN_NULL;
 	s->boolList.p = capn_getp(p.p, 5, 0);
+if (s->boolList.p.type == CAPN_FAR_POINTER && s->boolList.p.data != NULL && *(const uint64_t*)s->boolList.p.data == 0) s->boolList.p.type = CAPN_NULL;
 	s->int8List.p = capn_getp(p.p, 6, 0);
+if (s->int8List.p.type == CAPN_FAR_POINTER && s->int8List.p.data != NULL && *(const uint64_t*)s->int8List.p.data == 0) s->int8List.p.type = CAPN_NULL;
 	s->int16List.p = capn_getp(p.p, 7, 0);
+if (s->int16List.p.type == CAPN_FAR_POINTER && s->int16List.p.data != NULL && *(const uint64_t*)s->int16List.p.data == 0) s->int16List.p.type = CAPN_NULL;
 	s->int32List.p = capn_getp(p.p, 8, 0);
+if (s->int32List.p.type == CAPN_FAR_POINTER && s->int32List.p.data != NULL && *(const uint64_t*)s->int32List.p.data == 0) s->int32List.p.type = CAPN_NULL;
 	s->int64List.p = capn_getp(p.p, 9, 0);
+if (s->int64List.p.type == CAPN_FAR_POINTER && s->int64List.p.data != NULL && *(const uint64_t*)s->int64List.p.data == 0) s->int64List.p.type = CAPN_NULL;
 	s->uInt8List.p = capn_getp(p.p, 10, 0);
+if (s->uInt8List.p.type == CAPN_FAR_POINTER && s->uInt8List.p.data != NULL && *(const uint64_t*)s->uInt8List.p.data == 0) s->uInt8List.p.type = CAPN_NULL;
 	s->uInt16List.p = capn_getp(p.p, 11, 0);
+if (s->uInt16List.p.type == CAPN_FAR_POINTER && s->uInt16List.p.data != NULL && *(const uint64_t*)s->uInt16List.p.data == 0) s->uInt16List.p.type = CAPN_NULL;
 	s->uInt32List.p = capn_getp(p.p, 12, 0);
+if (s->uInt32List.p.type == CAPN_FAR_POINTER && s->uInt32List.p.data != NULL && *(const uint64_t*)s->uInt32List.p.data == 0) s->uInt32List.p.type = CAPN_NULL;
 	s->uInt64List.p = capn_getp(p.p, 13, 0);
+if (s->uInt64List.p.type == CAPN_FAR_POINTER && s->uInt64List.p.data != NULL && *(const uint64_t*)s->uInt64List.p.data == 0) s->uInt64List.p.type = CAPN_NULL;
 	s->float32List.p = capn_getp(p.p, 14, 0);
+if (s->float32List.p.type == CAPN_FAR_POINTER && s->float32List.p.data != NULL && *(const uint64_t*)s->float32List.p.data == 0) s->float32List.p.type = CAPN_NULL;
 	s->float64List.p = capn_getp(p.p, 15, 0);
+if (s->float64List.p.type == CAPN_FAR_POINTER && s->float64List.p.data != NULL && *(const uint64_t*)s->float64List.p.data == 0) s->float64List.p.type = CAPN_NULL;
 	s->textList.p = capn_getp(p.p, 16, 0);
+if (s->textList.p.type == CAPN_FAR_POINTER && s->textList.p.data != NULL && *(const uint64_t*)s->textList.p.data == 0) s->textList.p.type = CAPN_NULL;
 	s->dataList.p = capn_getp(p.p, 17, 0);
+if (s->dataList.p.type == CAPN_FAR_POINTER && s->dataList.p.data != NULL && *(const uint64_t*)s->dataList.p.data == 0) s->dataList.p.type = CAPN_NULL;
 	s->structList.p = capn_getp(p.p, 18, 0);
+if (s->structList.p.type == CAPN_FAR_POINTER && s->structList.p.data != NULL && *(const uint64_t*)s->structList.p.data == 0) s->structList.p.type = CAPN_NULL;
 	s->enumList.p = capn_getp(p.p, 19, 0);
+if (s->enumList.p.type == CAPN_FAR_POINTER && s->enumList.p.data != NULL && *(const uint64_t*)s->enumList.p.data == 0) s->enumList.p.type = CAPN_NULL;
 	s->interfaceList.p = capn_getp(p.p, 20, 0);
+if (s->interfaceList.p.type == CAPN_FAR_POINTER && s->interfaceList.p.data != NULL && *(const uint64_t*)s->interfaceList.p.data == 0) s->interfaceList.p.type = CAPN_NULL;
 }
 void write_TestAllTypes(const struct TestAllTypes *s capnp_unused, TestAllTypes_ptr p) {
 	capn_resolve(&p.p);
@@ -2025,76 +2044,95 @@ void read_TestDefaults(struct TestDefaults *s capnp_unused, TestDefaults_ptr p) 
 		s->dataField = capn_val2;
 	}
 	s->structField.p = capn_getp(p.p, 2, 0);
+if (s->structField.p.type == CAPN_FAR_POINTER && s->structField.p.data != NULL && *(const uint64_t*)s->structField.p.data == 0) s->structField.p.type = CAPN_NULL;
 	if (!s->structField.p.type) {
 		s->structField = capn_val3;
 	}
 	s->enumField = (enum TestEnum)(int) capn_read16(p.p, 36) ^ 5u;
 	s->interfaceField.p = capn_getp(p.p, 3, 0);
+if (s->interfaceField.p.type == CAPN_FAR_POINTER && s->interfaceField.p.data != NULL && *(const uint64_t*)s->interfaceField.p.data == 0) s->interfaceField.p.type = CAPN_NULL;
 	s->voidList = capn_getp(p.p, 4, 0);
+if (s->voidList.type == CAPN_FAR_POINTER && s->voidList.data != NULL && *(const uint64_t*)s->voidList.data == 0) s->voidList.type = CAPN_NULL;
 	if (!s->voidList.type) {
 		s->voidList = capn_val4;
 	}
 	s->boolList.p = capn_getp(p.p, 5, 0);
+if (s->boolList.p.type == CAPN_FAR_POINTER && s->boolList.p.data != NULL && *(const uint64_t*)s->boolList.p.data == 0) s->boolList.p.type = CAPN_NULL;
 	if (!s->boolList.p.type) {
 		s->boolList = capn_val5;
 	}
 	s->int8List.p = capn_getp(p.p, 6, 0);
+if (s->int8List.p.type == CAPN_FAR_POINTER && s->int8List.p.data != NULL && *(const uint64_t*)s->int8List.p.data == 0) s->int8List.p.type = CAPN_NULL;
 	if (!s->int8List.p.type) {
 		s->int8List = capn_val6;
 	}
 	s->int16List.p = capn_getp(p.p, 7, 0);
+if (s->int16List.p.type == CAPN_FAR_POINTER && s->int16List.p.data != NULL && *(const uint64_t*)s->int16List.p.data == 0) s->int16List.p.type = CAPN_NULL;
 	if (!s->int16List.p.type) {
 		s->int16List = capn_val7;
 	}
 	s->int32List.p = capn_getp(p.p, 8, 0);
+if (s->int32List.p.type == CAPN_FAR_POINTER && s->int32List.p.data != NULL && *(const uint64_t*)s->int32List.p.data == 0) s->int32List.p.type = CAPN_NULL;
 	if (!s->int32List.p.type) {
 		s->int32List = capn_val8;
 	}
 	s->int64List.p = capn_getp(p.p, 9, 0);
+if (s->int64List.p.type == CAPN_FAR_POINTER && s->int64List.p.data != NULL && *(const uint64_t*)s->int64List.p.data == 0) s->int64List.p.type = CAPN_NULL;
 	if (!s->int64List.p.type) {
 		s->int64List = capn_val9;
 	}
 	s->uInt8List.p = capn_getp(p.p, 10, 0);
+if (s->uInt8List.p.type == CAPN_FAR_POINTER && s->uInt8List.p.data != NULL && *(const uint64_t*)s->uInt8List.p.data == 0) s->uInt8List.p.type = CAPN_NULL;
 	if (!s->uInt8List.p.type) {
 		s->uInt8List = capn_val10;
 	}
 	s->uInt16List.p = capn_getp(p.p, 11, 0);
+if (s->uInt16List.p.type == CAPN_FAR_POINTER && s->uInt16List.p.data != NULL && *(const uint64_t*)s->uInt16List.p.data == 0) s->uInt16List.p.type = CAPN_NULL;
 	if (!s->uInt16List.p.type) {
 		s->uInt16List = capn_val11;
 	}
 	s->uInt32List.p = capn_getp(p.p, 12, 0);
+if (s->uInt32List.p.type == CAPN_FAR_POINTER && s->uInt32List.p.data != NULL && *(const uint64_t*)s->uInt32List.p.data == 0) s->uInt32List.p.type = CAPN_NULL;
 	if (!s->uInt32List.p.type) {
 		s->uInt32List = capn_val12;
 	}
 	s->uInt64List.p = capn_getp(p.p, 13, 0);
+if (s->uInt64List.p.type == CAPN_FAR_POINTER && s->uInt64List.p.data != NULL && *(const uint64_t*)s->uInt64List.p.data == 0) s->uInt64List.p.type = CAPN_NULL;
 	if (!s->uInt64List.p.type) {
 		s->uInt64List = capn_val13;
 	}
 	s->float32List.p = capn_getp(p.p, 14, 0);
+if (s->float32List.p.type == CAPN_FAR_POINTER && s->float32List.p.data != NULL && *(const uint64_t*)s->float32List.p.data == 0) s->float32List.p.type = CAPN_NULL;
 	if (!s->float32List.p.type) {
 		s->float32List = capn_val14;
 	}
 	s->float64List.p = capn_getp(p.p, 15, 0);
+if (s->float64List.p.type == CAPN_FAR_POINTER && s->float64List.p.data != NULL && *(const uint64_t*)s->float64List.p.data == 0) s->float64List.p.type = CAPN_NULL;
 	if (!s->float64List.p.type) {
 		s->float64List = capn_val15;
 	}
 	s->textList.p = capn_getp(p.p, 16, 0);
+if (s->textList.p.type == CAPN_FAR_POINTER && s->textList.p.data != NULL && *(const uint64_t*)s->textList.p.data == 0) s->textList.p.type = CAPN_NULL;
 	if (!s->textList.p.type) {
 		s->textList = capn_val16;
 	}
 	s->dataList.p = capn_getp(p.p, 17, 0);
+if (s->dataList.p.type == CAPN_FAR_POINTER && s->dataList.p.data != NULL && *(const uint64_t*)s->dataList.p.data == 0) s->dataList.p.type = CAPN_NULL;
 	if (!s->dataList.p.type) {
 		s->dataList = capn_val17;
 	}
 	s->structList.p = capn_getp(p.p, 18, 0);
+if (s->structList.p.type == CAPN_FAR_POINTER && s->structList.p.data != NULL && *(const uint64_t*)s->structList.p.data == 0) s->structList.p.type = CAPN_NULL;
 	if (!s->structList.p.type) {
 		s->structList = capn_val18;
 	}
 	s->enumList.p = capn_getp(p.p, 19, 0);
+if (s->enumList.p.type == CAPN_FAR_POINTER && s->enumList.p.data != NULL && *(const uint64_t*)s->enumList.p.data == 0) s->enumList.p.type = CAPN_NULL;
 	if (!s->enumList.p.type) {
 		s->enumList = capn_val19;
 	}
 	s->interfaceList.p = capn_getp(p.p, 20, 0);
+if (s->interfaceList.p.type == CAPN_FAR_POINTER && s->interfaceList.p.data != NULL && *(const uint64_t*)s->interfaceList.p.data == 0) s->interfaceList.p.type = CAPN_NULL;
 }
 void write_TestDefaults(const struct TestDefaults *s capnp_unused, TestDefaults_ptr p) {
 	capn_resolve(&p.p);
@@ -2842,6 +2880,7 @@ void read_TestAnyPointer(struct TestAnyPointer *s capnp_unused, TestAnyPointer_p
 	capn_resolve(&p.p);
 	capnp_use(s);
 	s->anyPointerField = capn_getp(p.p, 0, 0);
+if (s->anyPointerField.type == CAPN_FAR_POINTER && s->anyPointerField.data != NULL && *(const uint64_t*)s->anyPointerField.data == 0) s->anyPointerField.type = CAPN_NULL;
 }
 void write_TestAnyPointer(const struct TestAnyPointer *s capnp_unused, TestAnyPointer_ptr p) {
 	capn_resolve(&p.p);
@@ -3909,18 +3948,22 @@ void read_TestUnionDefaults(struct TestUnionDefaults *s capnp_unused, TestUnionD
 	capn_resolve(&p.p);
 	capnp_use(s);
 	s->s16s8s64s8Set.p = capn_getp(p.p, 0, 0);
+if (s->s16s8s64s8Set.p.type == CAPN_FAR_POINTER && s->s16s8s64s8Set.p.data != NULL && *(const uint64_t*)s->s16s8s64s8Set.p.data == 0) s->s16s8s64s8Set.p.type = CAPN_NULL;
 	if (!s->s16s8s64s8Set.p.type) {
 		s->s16s8s64s8Set = capn_val20;
 	}
 	s->s0sps1s32Set.p = capn_getp(p.p, 1, 0);
+if (s->s0sps1s32Set.p.type == CAPN_FAR_POINTER && s->s0sps1s32Set.p.data != NULL && *(const uint64_t*)s->s0sps1s32Set.p.data == 0) s->s0sps1s32Set.p.type = CAPN_NULL;
 	if (!s->s0sps1s32Set.p.type) {
 		s->s0sps1s32Set = capn_val21;
 	}
 	s->unnamed1.p = capn_getp(p.p, 2, 0);
+if (s->unnamed1.p.type == CAPN_FAR_POINTER && s->unnamed1.p.data != NULL && *(const uint64_t*)s->unnamed1.p.data == 0) s->unnamed1.p.type = CAPN_NULL;
 	if (!s->unnamed1.p.type) {
 		s->unnamed1 = capn_val22;
 	}
 	s->unnamed2.p = capn_getp(p.p, 3, 0);
+if (s->unnamed2.p.type == CAPN_FAR_POINTER && s->unnamed2.p.data != NULL && *(const uint64_t*)s->unnamed2.p.data == 0) s->unnamed2.p.type = CAPN_NULL;
 	if (!s->unnamed2.p.type) {
 		s->unnamed2 = capn_val23;
 	}
@@ -4058,6 +4101,7 @@ void read_TestNestedTypes(struct TestNestedTypes *s capnp_unused, TestNestedType
 	capn_resolve(&p.p);
 	capnp_use(s);
 	s->nestedStruct.p = capn_getp(p.p, 0, 0);
+if (s->nestedStruct.p.type == CAPN_FAR_POINTER && s->nestedStruct.p.data != NULL && *(const uint64_t*)s->nestedStruct.p.data == 0) s->nestedStruct.p.type = CAPN_NULL;
 	s->outerNestedEnum = (enum TestNestedTypes_NestedEnum)(int) capn_read16(p.p, 0) ^ 1u;
 	s->innerNestedEnum = (enum TestNestedTypes_NestedStruct_NestedEnum)(int) capn_read16(p.p, 2) ^ 2u;
 }
@@ -4265,15 +4309,25 @@ void read_TestLists(struct TestLists *s capnp_unused, TestLists_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	s->list0.p = capn_getp(p.p, 0, 0);
+if (s->list0.p.type == CAPN_FAR_POINTER && s->list0.p.data != NULL && *(const uint64_t*)s->list0.p.data == 0) s->list0.p.type = CAPN_NULL;
 	s->list1.p = capn_getp(p.p, 1, 0);
+if (s->list1.p.type == CAPN_FAR_POINTER && s->list1.p.data != NULL && *(const uint64_t*)s->list1.p.data == 0) s->list1.p.type = CAPN_NULL;
 	s->list8.p = capn_getp(p.p, 2, 0);
+if (s->list8.p.type == CAPN_FAR_POINTER && s->list8.p.data != NULL && *(const uint64_t*)s->list8.p.data == 0) s->list8.p.type = CAPN_NULL;
 	s->list16.p = capn_getp(p.p, 3, 0);
+if (s->list16.p.type == CAPN_FAR_POINTER && s->list16.p.data != NULL && *(const uint64_t*)s->list16.p.data == 0) s->list16.p.type = CAPN_NULL;
 	s->list32.p = capn_getp(p.p, 4, 0);
+if (s->list32.p.type == CAPN_FAR_POINTER && s->list32.p.data != NULL && *(const uint64_t*)s->list32.p.data == 0) s->list32.p.type = CAPN_NULL;
 	s->list64.p = capn_getp(p.p, 5, 0);
+if (s->list64.p.type == CAPN_FAR_POINTER && s->list64.p.data != NULL && *(const uint64_t*)s->list64.p.data == 0) s->list64.p.type = CAPN_NULL;
 	s->listP.p = capn_getp(p.p, 6, 0);
+if (s->listP.p.type == CAPN_FAR_POINTER && s->listP.p.data != NULL && *(const uint64_t*)s->listP.p.data == 0) s->listP.p.type = CAPN_NULL;
 	s->int32ListList.p = capn_getp(p.p, 7, 0);
+if (s->int32ListList.p.type == CAPN_FAR_POINTER && s->int32ListList.p.data != NULL && *(const uint64_t*)s->int32ListList.p.data == 0) s->int32ListList.p.type = CAPN_NULL;
 	s->textListList.p = capn_getp(p.p, 8, 0);
+if (s->textListList.p.type == CAPN_FAR_POINTER && s->textListList.p.data != NULL && *(const uint64_t*)s->textListList.p.data == 0) s->textListList.p.type = CAPN_NULL;
 	s->structListList.p = capn_getp(p.p, 9, 0);
+if (s->structListList.p.type == CAPN_FAR_POINTER && s->structListList.p.data != NULL && *(const uint64_t*)s->structListList.p.data == 0) s->structListList.p.type = CAPN_NULL;
 }
 void write_TestLists(const struct TestLists *s capnp_unused, TestLists_ptr p) {
 	capn_resolve(&p.p);
@@ -5386,6 +5440,7 @@ void read_TestListDefaults(struct TestListDefaults *s capnp_unused, TestListDefa
 	capn_resolve(&p.p);
 	capnp_use(s);
 	s->lists.p = capn_getp(p.p, 0, 0);
+if (s->lists.p.type == CAPN_FAR_POINTER && s->lists.p.data != NULL && *(const uint64_t*)s->lists.p.data == 0) s->lists.p.type = CAPN_NULL;
 	if (!s->lists.p.type) {
 		s->lists = capn_val24;
 	}
@@ -5457,6 +5512,7 @@ void read_TestLateUnion(struct TestLateUnion *s capnp_unused, TestLateUnion_ptr 
 		break;
 	case TestLateUnion_theUnion_corge:
 		s->theUnion.corge.p = capn_getp(p.p, 1, 0);
+if (s->theUnion.corge.p.type == CAPN_FAR_POINTER && s->theUnion.corge.p.data != NULL && *(const uint64_t*)s->theUnion.corge.p.data == 0) s->theUnion.corge.p.type = CAPN_NULL;
 		break;
 	default:
 		break;
@@ -5471,6 +5527,7 @@ void read_TestLateUnion(struct TestLateUnion *s capnp_unused, TestLateUnion_ptr 
 		break;
 	case TestLateUnion_anotherUnion_corge:
 		s->anotherUnion.corge.p = capn_getp(p.p, 2, 0);
+if (s->anotherUnion.corge.p.type == CAPN_FAR_POINTER && s->anotherUnion.corge.p.data != NULL && *(const uint64_t*)s->anotherUnion.corge.p.data == 0) s->anotherUnion.corge.p.type = CAPN_NULL;
 		break;
 	default:
 		break;
@@ -5588,6 +5645,7 @@ void read_TestOldVersion(struct TestOldVersion *s capnp_unused, TestOldVersion_p
 	s->old1 = (int64_t) ((int64_t)(capn_read64(p.p, 0)));
 	s->old2 = capn_get_text(p.p, 0, capn_val0);
 	s->old3.p = capn_getp(p.p, 1, 0);
+if (s->old3.p.type == CAPN_FAR_POINTER && s->old3.p.data != NULL && *(const uint64_t*)s->old3.p.data == 0) s->old3.p.type = CAPN_NULL;
 }
 void write_TestOldVersion(const struct TestOldVersion *s capnp_unused, TestOldVersion_ptr p) {
 	capn_resolve(&p.p);
@@ -5682,6 +5740,7 @@ void read_TestNewVersion(struct TestNewVersion *s capnp_unused, TestNewVersion_p
 	s->old1 = (int64_t) ((int64_t)(capn_read64(p.p, 0)));
 	s->old2 = capn_get_text(p.p, 0, capn_val0);
 	s->old3.p = capn_getp(p.p, 1, 0);
+if (s->old3.p.type == CAPN_FAR_POINTER && s->old3.p.data != NULL && *(const uint64_t*)s->old3.p.data == 0) s->old3.p.type = CAPN_NULL;
 	s->new1 = (int64_t) ((int64_t)(capn_read64(p.p, 8)) ^ ((int64_t)((uint64_t) 0u << 32) ^ 0x3dbu));
 	s->new2 = capn_get_text(p.p, 2, capn_val25);
 }
@@ -5816,9 +5875,11 @@ void read_TestStructUnion(struct TestStructUnion *s capnp_unused, TestStructUnio
 	switch (s->un_which) {
 	case TestStructUnion_un__struct:
 		s->un._struct.p = capn_getp(p.p, 0, 0);
+if (s->un._struct.p.type == CAPN_FAR_POINTER && s->un._struct.p.data != NULL && *(const uint64_t*)s->un._struct.p.data == 0) s->un._struct.p.type = CAPN_NULL;
 		break;
 	case TestStructUnion_un_object:
 		s->un.object.p = capn_getp(p.p, 0, 0);
+if (s->un.object.p.type == CAPN_FAR_POINTER && s->un.object.p.data != NULL && *(const uint64_t*)s->un.object.p.data == 0) s->un.object.p.type = CAPN_NULL;
 		break;
 	default:
 		break;
@@ -5942,6 +6003,7 @@ void read_TestPrintInlineStructs(struct TestPrintInlineStructs *s capnp_unused, 
 	capnp_use(s);
 	s->someText = capn_get_text(p.p, 0, capn_val0);
 	s->structList.p = capn_getp(p.p, 1, 0);
+if (s->structList.p.type == CAPN_FAR_POINTER && s->structList.p.data != NULL && *(const uint64_t*)s->structList.p.data == 0) s->structList.p.type = CAPN_NULL;
 }
 void write_TestPrintInlineStructs(const struct TestPrintInlineStructs *s capnp_unused, TestPrintInlineStructs_ptr p) {
 	capn_resolve(&p.p);
@@ -6206,7 +6268,9 @@ void read_TestSturdyRef(struct TestSturdyRef *s capnp_unused, TestSturdyRef_ptr 
 	capn_resolve(&p.p);
 	capnp_use(s);
 	s->hostId.p = capn_getp(p.p, 0, 0);
+if (s->hostId.p.type == CAPN_FAR_POINTER && s->hostId.p.data != NULL && *(const uint64_t*)s->hostId.p.data == 0) s->hostId.p.type = CAPN_NULL;
 	s->objectId = capn_getp(p.p, 1, 0);
+if (s->objectId.type == CAPN_FAR_POINTER && s->objectId.data != NULL && *(const uint64_t*)s->objectId.data == 0) s->objectId.type = CAPN_NULL;
 }
 void write_TestSturdyRef(const struct TestSturdyRef *s capnp_unused, TestSturdyRef_ptr p) {
 	capn_resolve(&p.p);
@@ -6512,6 +6576,7 @@ void read_TestNameAnnotation(struct TestNameAnnotation *s capnp_unused, TestName
 	switch (s->badlyNamedUnion_which) {
 	case TestNameAnnotation_badlyNamedUnion_baz:
 		s->badlyNamedUnion.baz.p = capn_getp(p.p, 0, 0);
+if (s->badlyNamedUnion.baz.p.type == CAPN_FAR_POINTER && s->badlyNamedUnion.baz.p.data != NULL && *(const uint64_t*)s->badlyNamedUnion.baz.p.data == 0) s->badlyNamedUnion.baz.p.type = CAPN_NULL;
 		break;
 	case TestNameAnnotation_badlyNamedUnion_badlyNamedGroup:
 		break;
@@ -6571,6 +6636,7 @@ void read_TestNameAnnotation_NestedStruct(struct TestNameAnnotation_NestedStruct
 	capnp_use(s);
 	s->badNestedFieldName = (capn_read8(p.p, 0) & 1) != 0;
 	s->anotherBadNestedFieldName.p = capn_getp(p.p, 0, 0);
+if (s->anotherBadNestedFieldName.p.type == CAPN_FAR_POINTER && s->anotherBadNestedFieldName.p.data != NULL && *(const uint64_t*)s->anotherBadNestedFieldName.p.data == 0) s->anotherBadNestedFieldName.p.type = CAPN_NULL;
 }
 void write_TestNameAnnotation_NestedStruct(const struct TestNameAnnotation_NestedStruct *s capnp_unused, TestNameAnnotation_NestedStruct_ptr p) {
 	capn_resolve(&p.p);

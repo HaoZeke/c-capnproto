@@ -413,7 +413,41 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
   test('spell-finish-test', spell_finish_test)
 
   if have_host_capnp
+    test(
+      'regen-generated',
+      find_program('bash'),
+      args: [
+        meson.project_source_root() / 'scripts' / 'regen-generated.sh',
+        '--check',
+        capnpc_c.full_path(),
+      ],
+      workdir: meson.project_source_root(),
+    )
+
     codec_c_args = common_c_args + ['-D_POSIX_C_SOURCE=200809L']
+
+    read_defaults_gen = custom_target(
+      'read-defaults-capnp',
+      input: 'tests' / 'read-defaults.capnp',
+      output: ['read-defaults.capnp.c', 'read-defaults.capnp.h'],
+      command: [
+        capnp, 'compile',
+        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-I', meson.current_source_dir() / 'compiler',
+        '--src-prefix', meson.current_source_dir() / 'tests',
+        '@INPUT@',
+      ],
+      depends: [capnpc_c],
+    )
+    read_defaults_test = executable(
+      'read-defaults-test',
+      ['tests' / 'read-defaults-test.cpp', read_defaults_gen],
+      include_directories: include_directories(['lib', 'tests', 'compiler']),
+      dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
+      cpp_args: common_cpp_args,
+      install: false,
+    )
+    test('read-defaults-test', read_defaults_test)
 
     test(
       'stream-schema',

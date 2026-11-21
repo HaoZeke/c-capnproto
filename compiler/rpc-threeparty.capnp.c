@@ -91,6 +91,7 @@ void read_RecipientId(struct RecipientId *s capnp_unused, RecipientId_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	s->vat.p = capn_getp(p.p, 0, 0);
+if (s->vat.p.type == CAPN_FAR_POINTER && s->vat.p.data != NULL && *(const uint64_t*)s->vat.p.data == 0) s->vat.p.type = CAPN_NULL;
 	s->nonce = capn_read64(p.p, 0);
 }
 void write_RecipientId(const struct RecipientId *s capnp_unused, RecipientId_ptr p) {
@@ -124,6 +125,7 @@ void read_ThirdPartyCapId(struct ThirdPartyCapId *s capnp_unused, ThirdPartyCapI
 	capn_resolve(&p.p);
 	capnp_use(s);
 	s->vat.p = capn_getp(p.p, 0, 0);
+if (s->vat.p.type == CAPN_FAR_POINTER && s->vat.p.data != NULL && *(const uint64_t*)s->vat.p.data == 0) s->vat.p.type = CAPN_NULL;
 	s->nonce = capn_read64(p.p, 0);
 }
 void write_ThirdPartyCapId(const struct ThirdPartyCapId *s capnp_unused, ThirdPartyCapId_ptr p) {
@@ -194,6 +196,7 @@ void read_JoinResult(struct JoinResult *s capnp_unused, JoinResult_ptr p) {
 	s->joinId = capn_read32(p.p, 0);
 	s->succeeded = (capn_read8(p.p, 4) & 1) != 0;
 	s->cap = capn_getp(p.p, 0, 0);
+if (s->cap.type == CAPN_FAR_POINTER && s->cap.data != NULL && *(const uint64_t*)s->cap.data == 0) s->cap.type = CAPN_NULL;
 }
 void write_JoinResult(const struct JoinResult *s capnp_unused, JoinResult_ptr p) {
 	capn_resolve(&p.p);

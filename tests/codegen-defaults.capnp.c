@@ -44,6 +44,7 @@ void read_Rec(struct Rec *s capnp_unused, Rec_ptr p) {
 		s->info = capn_val1;
 	}
 	s->tags.p = capn_getp(p.p, 1, 0);
+if (s->tags.p.type == CAPN_FAR_POINTER && s->tags.p.data != NULL && *(const uint64_t*)s->tags.p.data == 0) s->tags.p.type = CAPN_NULL;
 	if (!s->tags.p.type) {
 		s->tags = capn_val2;
 	}
@@ -318,6 +319,7 @@ void read_Event(struct Event *s capnp_unused, Event_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	s->args.p = capn_getp(p.p, 0, 0);
+if (s->args.p.type == CAPN_FAR_POINTER && s->args.p.data != NULL && *(const uint64_t*)s->args.p.data == 0) s->args.p.type = CAPN_NULL;
 }
 void write_Event(const struct Event *s capnp_unused, Event_ptr p) {
 	capn_resolve(&p.p);
