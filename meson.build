@@ -412,6 +412,16 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
   )
   test('spell-finish-test', spell_finish_test)
 
+  # The struct layout grew, so the shared object name moved with it.
+  test(
+    'soname',
+    find_program('sh'),
+    args: [
+      '-c',
+      'readelf -d "' + libcapnp_c.full_path() + '" | grep -q "libcapnp_c.so.2"',
+    ],
+  )
+
   if have_host_capnp
     test(
       'regen-generated',

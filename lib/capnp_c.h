@@ -111,6 +111,16 @@ extern "C" {
  * lookup, create, create_local, and user can be set by the user. Other values
  * should be zero initialized.
  */
+
+/* Identity of an object a duplicating copy is still walking. */
+struct capn_dup_key {
+	char *data;
+	int type;
+	int len;
+	int datasz;
+	int ptrs;
+};
+
 struct capn {
 	/* user settable */
 	struct capn_segment *(*lookup)(void* /*user*/, uint32_t /*id */);
@@ -132,6 +142,13 @@ struct capn {
 	 * broken (non-null) pointer. Not set for a wire-null pointer word.
 	 * Query with capn_ok; clear with capn_clear_err. */
 	int decode_err;
+	/* When set, a deep copy duplicates a shared object and copies an
+	 * overlapping pointer. A cycle still fails. Zero keeps the
+	 * alias-or-refuse copy. */
+	int dup_copy;
+	struct capn_dup_key dup_busy[64];
+	int dup_at[64];
+	int dup_nbusy;
 };
 
 /* Default decode traversal budget (bytes). 0 in traversal_limit means this. */
@@ -289,7 +306,6 @@ CAPN_EXPORT void capn_clear_err(struct capn *c);
  * budget overflow, or a dst that is not writable.
  */
 CAPN_EXPORT int capn_canonicalize(struct capn *src, struct capn *dst);
-
 /* capn_set_root sets the message root to p (capn_setp(capn_root(c), 0, p)).
  * new_* / write_* only fill a struct in a segment; the message is empty
  * until the root pointer is set. Empty messages are valid. */
@@ -491,6 +507,15 @@ CAPN_EXPORT int64_t capn_size(struct capn *c);
 CAPN_EXPORT int capn_write_fp(struct capn *c, FILE *f, int packed);
 CAPN_EXPORT int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, size_t count), int fd, int packed);
 CAPN_EXPORT int64_t capn_write_mem(struct capn *c, uint8_t *p, size_t sz, int packed);
+
+/* Flat form is one segment and no segment table, the bytes
+ * `capnp convert binary:flat` writes. The object is copied first,
+ * so a dirty list tail is cleared. flat-packed is that segment
+ * in the packed codec, with no segment table. A broken pointer, a
+ * capability root, or a spent traversal budget returns -1. A null
+ * root is the empty-struct pointer. */
+CAPN_EXPORT int64_t capn_write_flat(struct capn *c, uint8_t *p, size_t sz);
+CAPN_EXPORT int64_t capn_write_flat_packed(struct capn *c, uint8_t *p, size_t sz);
 
 CAPN_EXPORT void capn_free(struct capn *c);
 CAPN_EXPORT void capn_reset_copy(struct capn *c);

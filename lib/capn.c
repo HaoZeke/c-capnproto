@@ -1538,6 +1538,31 @@ static int data_size(struct capn_ptr p) {
 	return n > (size_t) INT_MAX ? 0 : (int) n;
 }
 
+static int dup_busy_hit(struct capn *c, const struct capn_ptr *f)
+{
+	int i;
+
+	if (!c || !c->dup_copy)
+		return 0;
+	for (i = 0; i < c->dup_nbusy; i++) {
+		if (c->dup_busy[i].data == f->data &&
+		    c->dup_busy[i].type == f->type &&
+		    c->dup_busy[i].len == f->len &&
+		    c->dup_busy[i].datasz == (int) f->datasz &&
+		    c->dup_busy[i].ptrs == (int) f->ptrs)
+			return 1;
+	}
+	return 0;
+}
+
+static void dup_unwind(struct capn *c, int depth)
+{
+	if (!c || !c->dup_copy)
+		return;
+	while (c->dup_nbusy > 0 && c->dup_at[c->dup_nbusy - 1] >= depth)
+		c->dup_nbusy--;
+}
+
 static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, struct capn_ptr *f, int *dep) {
 	struct capn *c = seg->capn;
 	struct copy *cp = NULL;
@@ -1546,6 +1571,9 @@ static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, st
 	char *fend = fbegin + data_size(*f);
 	int zero_sized = (fend == fbegin)
 		|| (f->type == CAPN_BIT_LIST && f->is_list_member);
+	int dep0 = *dep;
+	int grew = 0;
+	capn_ptr saved = *f;
 
 	/* We always copy list members as it would otherwise be an
 	 * overlapped pointer (the data is owned by the enclosing list).
@@ -1553,7 +1581,19 @@ static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, st
 	 * structures/lists as they never overlap. Nor do we add them to
 	 * the copy list as there is no data to be shared by multiple
 	 * pointers.
+	 *
+	 * A duplicating copy (flat re-encode) skips the alias tree. A
+	 * second pointer to the same object is copied again. A pointer
+	 * back to an object still being copied is a cycle.
 	 */
+
+	if (c && c->dup_copy) {
+		if (f->type == CAPN_INTERFACE)
+			return -1;
+		if (dup_busy_hit(c, f))
+			return -1;
+		goto dup_clone;
+	}
 
 	xcp = &c->copy;
 	while (*xcp && !zero_sized) {
@@ -1572,6 +1612,7 @@ static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, st
 	}
 
 	/* no copy found - have to create a new copy */
+dup_clone:
 	*t = new_clone(seg, *f);
 
 	if (write_ptr(seg, data, *t))
@@ -1579,7 +1620,7 @@ static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, st
 
 	/* add the copy to the copy tree so we can look for overlapping
 	 * source pointers and handle recursive structures */
-	if (!zero_sized) {
+	if (!zero_sized && !(c && c->dup_copy)) {
 		struct copy *n;
 		struct capn_segment *cs = c->copylist;
 
@@ -1623,8 +1664,9 @@ static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, st
 			t->type = CAPN_PTR_LIST;
 			t->len = t->ptrs;
 			(*dep)++;
+			grew = 1;
 		}
-		return 0;
+		goto copy_done;
 
 	case CAPN_BIT_LIST:
 		if (f->is_list_member) {
@@ -1648,13 +1690,14 @@ static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, st
 					t->data[whole] = (char) ((uint8_t) t->data[whole] & keep);
 			}
 		}
-		return 0;
+		goto copy_done;
 
 	case CAPN_LIST:
 		if (!t->len) {
 			/* empty list - nothing to copy */
 		} else if (t->ptrs && t->datasz) {
 			(*dep)++;
+			grew = 1;
 		} else if (t->datasz) {
 			size_t nbytes, tr, fr;
 			if (t->len < 0 ||
@@ -1677,21 +1720,36 @@ static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, st
 			t->type = CAPN_PTR_LIST;
 			t->len = (int) nptr;
 			(*dep)++;
+			grew = 1;
 		}
-		return 0;
+		goto copy_done;
 
 	case CAPN_PTR_LIST:
 		if (t->len) {
 			(*dep)++;
+			grew = 1;
 		}
-		return 0;
+		goto copy_done;
 
 	case CAPN_INTERFACE:
-		return 0;
+		goto copy_done;
 
 	default:
 		return -1;
 	}
+copy_done:
+	if (grew && c && c->dup_copy) {
+		if (c->dup_nbusy >= 64)
+			return -1;
+		c->dup_busy[c->dup_nbusy].data = saved.data;
+		c->dup_busy[c->dup_nbusy].type = saved.type;
+		c->dup_busy[c->dup_nbusy].len = saved.len;
+		c->dup_busy[c->dup_nbusy].datasz = (int) saved.datasz;
+		c->dup_busy[c->dup_nbusy].ptrs = (int) saved.ptrs;
+		c->dup_at[c->dup_nbusy] = dep0;
+		c->dup_nbusy++;
+	}
+	return 0;
 }
 
 static void copy_list_member(capn_ptr* t, capn_ptr *f, int *dep) {
@@ -1830,6 +1888,8 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 
 		if (!tc->len) {
 			dep--;
+			if (p.seg && p.seg->capn)
+				dup_unwind(p.seg->capn, dep);
 			continue;
 		}
 

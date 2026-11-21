@@ -453,6 +453,172 @@ static int64_t capn_write_mem_packed(struct capn *c, uint8_t *p, size_t sz)
 	return (int64_t)(sz - z.avail_out);
 }
 
+/* Copy the root into one segment. A null root leaves dst empty.
+ * A broken pointer, a spent traversal budget, or a capability is an
+ * error. Shared objects are duplicated, which is what a re-encode
+ * does. The first segment starts large enough for the source, and
+ * grows when a shared copy needs more than that. */
+static int copy_for_flat(struct capn *src, struct capn *dst)
+{
+	capn_ptr root, obj;
+	int null_word;
+	size_t guess, saved_used;
+	struct capn_segment *seg;
+	int tries;
+
+	memset(dst, 0, sizeof *dst);
+	if (!src || !src->seglist)
+		return 0;
+	if (capn_validate(src) != 0 || !capn_ok(src))
+		return -1;
+	root = capn_root(src);
+	obj = capn_getp(root, 0, 1);
+	if (!capn_ok(src))
+		return -1;
+	null_word = root.seg && root.data &&
+		capn_flip64(*(uint64_t *) root.data) == 0;
+	if (obj.type == CAPN_NULL) {
+		if (!null_word)
+			return -1;
+		return 0;
+	}
+	if (obj.type == CAPN_INTERFACE || obj.type != CAPN_STRUCT)
+		return -1;
+
+	saved_used = src->traversal_used;
+	guess = 8;
+	for (seg = src->seglist; seg; seg = seg->next) {
+		if (guess > (size_t) -1 - seg->len)
+			return -1;
+		guess += seg->len;
+	}
+	for (tries = 0; tries < 8; tries++) {
+		struct capn_segment *made;
+		size_t used;
+		int req;
+
+		if (guess > (size_t) INT_MAX)
+			return -1;
+		req = (int) guess;
+		src->traversal_used = saved_used;
+		capn_init_malloc(dst);
+		made = dst->create ? dst->create(dst->user, 0, req) : NULL;
+		if (!made) {
+			capn_free(dst);
+			memset(dst, 0, sizeof *dst);
+			return -1;
+		}
+		capn_append_segment(dst, made);
+		dst->dup_copy = 1;
+		if (capn_set_root(dst, obj) != 0 || !capn_ok(src)) {
+			capn_free(dst);
+			memset(dst, 0, sizeof *dst);
+			return -1;
+		}
+		if (dst->segnum == 1)
+			return 0;
+		used = 0;
+		for (seg = dst->seglist; seg; seg = seg->next) {
+			if (used > (size_t) -1 - seg->len) {
+				capn_free(dst);
+				memset(dst, 0, sizeof *dst);
+				return -1;
+			}
+			used += seg->len;
+		}
+		capn_free(dst);
+		memset(dst, 0, sizeof *dst);
+		if (used > (size_t) -1 / 2)
+			return -1;
+		guess = used * 2;
+	}
+	return -1;
+}
+
+int64_t capn_write_flat(struct capn *c, uint8_t *p, size_t sz)
+{
+	struct capn dst;
+	struct capn_segment *seg;
+	int64_t n;
+
+	if (!c || !p)
+		return -1;
+	if (copy_for_flat(c, &dst) != 0)
+		return -1;
+	if (dst.segnum == 0) {
+		/* A null root re-encodes as a canonical empty struct. */
+		static const uint8_t empty_struct[8] = {
+			0xfc, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00
+		};
+		capn_free(&dst);
+		if (sz < 8)
+			return -1;
+		memcpy(p, empty_struct, 8);
+		return 8;
+	}
+	seg = dst.seglist;
+	if (!seg || seg->len > sz) {
+		capn_free(&dst);
+		return -1;
+	}
+	memcpy(p, seg->data, seg->len);
+	n = (int64_t) seg->len;
+	capn_free(&dst);
+	return n;
+}
+
+int64_t capn_write_flat_packed(struct capn *c, uint8_t *p, size_t sz)
+{
+	uint8_t *raw;
+	int64_t n;
+	struct capn_stream z;
+	int ret;
+
+	if (!c || !p)
+		return -1;
+	{
+		struct capn dst;
+		struct capn_segment *one;
+		static const uint8_t empty_struct[8] = {
+			0xfc, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00
+		};
+
+		if (copy_for_flat(c, &dst) != 0)
+			return -1;
+		if (dst.segnum == 0) {
+			raw = (uint8_t *) malloc(8);
+			if (!raw)
+				return -1;
+			memcpy(raw, empty_struct, 8);
+			n = 8;
+		} else {
+			one = dst.seglist;
+			if (!one) {
+				capn_free(&dst);
+				return -1;
+			}
+			raw = (uint8_t *) malloc(one->len ? one->len : 1);
+			if (!raw) {
+				capn_free(&dst);
+				return -1;
+			}
+			memcpy(raw, one->data, one->len);
+			n = (int64_t) one->len;
+			capn_free(&dst);
+		}
+	}
+	memset(&z, 0, sizeof z);
+	z.next_in = raw;
+	z.avail_in = (size_t) n;
+	z.next_out = p;
+	z.avail_out = sz;
+	ret = capn_deflate(&z);
+	free(raw);
+	if (ret != 0 || z.avail_in != 0)
+		return -1;
+	return (int64_t) (sz - z.avail_out);
+}
+
 int64_t
 capn_write_mem(struct capn *c, uint8_t *p, size_t sz, int packed)
 {

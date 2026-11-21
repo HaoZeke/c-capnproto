@@ -994,3 +994,132 @@ TEST(WireParity, CopyClearsUnusedBitsInABitList) {
 	capn_free(&dst);
 	capn_free(&src);
 }
+
+TEST(WireParity, FlatBytesMatchTheCapnpTool) {
+	struct capn c;
+	capn_init_malloc(&c);
+	struct capn_segment *seg = capn_root(&c).seg;
+	capn_ptr st = capn_new_struct(seg, 0, 2);
+	capn_text tx = chars_to_text("hi");
+	capn_list1 bits = capn_new_list1(seg, 3);
+	ASSERT_EQ(CAPN_STRUCT, st.type);
+	ASSERT_EQ(CAPN_BIT_LIST, bits.p.type);
+	bits.p.data[0] = (char) 0xf5;
+	ASSERT_EQ(0, capn_set_text(st, 0, tx));
+	ASSERT_EQ(0, capn_setp(st, 1, bits.p));
+	ASSERT_EQ(0, capn_set_root(&c, st));
+
+	uint8_t flat[256];
+	uint8_t packed[256];
+	int64_t fn = capn_write_flat(&c, flat, sizeof flat);
+	int64_t pn = capn_write_flat_packed(&c, packed, sizeof packed);
+	ASSERT_GT(fn, 8);
+	ASSERT_GT(pn, 0);
+
+	/* A null root re-encodes as a canonical empty struct. */
+	struct capn empty;
+	capn_init_malloc(&empty);
+	uint8_t zeros[8];
+	EXPECT_EQ(8, capn_write_flat(&empty, zeros, sizeof zeros));
+	EXPECT_EQ(0, memcmp(zeros, "\xfc\xff\xff\xff\x00\x00\x00\x00", 8));
+	capn_free(&empty);
+
+	if (capnp_present()) {
+		std::vector<uint8_t> frame = write_frame(&c, 0);
+		ASSERT_FALSE(frame.empty());
+		std::vector<std::string> flat_cmd;
+		flat_cmd.push_back(capnp_bin());
+		flat_cmd.push_back("convert");
+		flat_cmd.push_back("binary:flat");
+		CmdResult fr = run_argv(flat_cmd, frame.data(), frame.size());
+		ASSERT_EQ(0, fr.status) << fr.err;
+		ASSERT_EQ((size_t) fn, fr.out.size());
+		EXPECT_EQ(0, memcmp(flat, fr.out.data(), (size_t) fn));
+
+		std::vector<std::string> pack_cmd;
+		pack_cmd.push_back(capnp_bin());
+		pack_cmd.push_back("convert");
+		pack_cmd.push_back("binary:flat-packed");
+		CmdResult pr = run_argv(pack_cmd, frame.data(), frame.size());
+		ASSERT_EQ(0, pr.status) << pr.err;
+		ASSERT_EQ((size_t) pn, pr.out.size());
+		EXPECT_EQ(0, memcmp(packed, pr.out.data(), (size_t) pn));
+	}
+	capn_free(&c);
+}
+
+TEST(WireParity, FlatWriteRefusesABrokenMessage) {
+	/* The same composite the traversal test refuses. Writing it
+	 * must not report a short success. */
+	const uint8_t huge[] = {
+		0x00,0,0,0, 0x04,0,0,0,
+		0x00,0,0,0, 0x00,0,0x01,0,
+		0x01,0,0,0, 0x0f,0,0,0,
+		0x00,0,0,0x04, 0x00,0,0,0,
+		0x00,0,0,0, 0x00,0,0,0,
+	};
+	struct capn c;
+	uint8_t out[64];
+	ASSERT_EQ(0, capn_init_mem(&c, huge, sizeof huge, 0));
+	EXPECT_EQ(-1, capn_write_flat(&c, out, sizeof out));
+	capn_free(&c);
+
+	const uint8_t root_cap[] = {0x03, 0, 0, 0, 0x04, 0, 0, 0};
+	uint8_t framed[32];
+	ASSERT_EQ(0, init_one_seg(&c, root_cap, sizeof root_cap, framed, sizeof framed));
+	EXPECT_EQ(-1, capn_write_flat(&c, out, sizeof out));
+	capn_free(&c);
+}
+
+TEST(WireParity, FlatWriteFitsPastFourKilobytes) {
+	struct capn c;
+	capn_init_malloc(&c);
+	struct capn_segment *seg = capn_root(&c).seg;
+	capn_list64 nums = capn_new_list64(seg, 600);
+	ASSERT_EQ(CAPN_LIST, nums.p.type);
+	capn_set64(nums, 0, 1);
+	capn_ptr st = capn_new_struct(seg, 0, 1);
+	ASSERT_EQ(0, capn_setp(st, 0, nums.p));
+	ASSERT_EQ(0, capn_set_root(&c, st));
+	std::vector<uint8_t> flat(8192), packed(8192);
+	int64_t n = capn_write_flat(&c, flat.data(), flat.size());
+	int64_t p = capn_write_flat_packed(&c, packed.data(), packed.size());
+	EXPECT_GT(n, 4000);
+	EXPECT_GT(p, 0);
+	capn_free(&c);
+}
+
+TEST(WireParity, FlatPackedSharedStructFits) {
+	struct capn c;
+	capn_init_malloc(&c);
+	struct capn_segment *seg = capn_root(&c).seg;
+	capn_ptr child = capn_new_struct(seg, 8, 0);
+	capn_ptr parent = capn_new_struct(seg, 0, 3);
+	capn_write32(child, 0, 3);
+	ASSERT_EQ(0, capn_setp(parent, 0, child));
+	ASSERT_EQ(0, capn_setp(parent, 1, child));
+	ASSERT_EQ(0, capn_setp(parent, 2, child));
+	ASSERT_EQ(0, capn_set_root(&c, parent));
+	uint8_t flat[256], packed[256];
+	EXPECT_GT(capn_write_flat(&c, flat, sizeof flat), 8);
+	EXPECT_GT(capn_write_flat_packed(&c, packed, sizeof packed), 0);
+	capn_free(&c);
+}
+
+TEST(WireParity, FlatWriteDuplicatesASharedStruct) {
+	struct capn c;
+	capn_init_malloc(&c);
+	struct capn_segment *seg = capn_root(&c).seg;
+	capn_ptr child = capn_new_struct(seg, 8, 0);
+	capn_ptr parent = capn_new_struct(seg, 0, 2);
+	ASSERT_EQ(CAPN_STRUCT, child.type);
+	capn_write32(child, 0, 7);
+	ASSERT_EQ(0, capn_setp(parent, 0, child));
+	ASSERT_EQ(0, capn_setp(parent, 1, child));
+	ASSERT_EQ(0, capn_set_root(&c, parent));
+	uint8_t flat[128];
+	int64_t n = capn_write_flat(&c, flat, sizeof flat);
+	/* One copy of the child is 32 bytes. Both copies are 40. */
+	EXPECT_EQ(40, n);
+	capn_free(&c);
+}
