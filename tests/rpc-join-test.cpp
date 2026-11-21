@@ -294,10 +294,10 @@ TEST_F(RpcJoin, PartNumOutsideTheSetIsRejectedOnItsOwn)
 }
 
 /* Level 3: Alice tells us to hold a capability for Carol, and Carol
- * claims it with the nonce Alice chose. We match on the nonce alone, so
- * we never have to trust Carol's account of who sent her. */
+ * claims it with the nonce Alice chose. handle_accept matches the
+ * nonce. A pointer beside that nonce is ignored. */
 static void send_provide(struct capn_rpc_conn *c, uint32_t qid,
-                         uint32_t export_id, uint64_t nonce)
+                         uint32_t export_id, uint64_t nonce, int with_vat = 1)
 {
 	struct capn msg;
 	capn_init_malloc(&msg);
@@ -311,15 +311,19 @@ static void send_provide(struct capn_rpc_conn *c, uint32_t qid,
 	write_MessageTarget(&t, tp);
 
 	struct VatId vat;
+	VatId_ptr vp;
 	memset(&vat, 0, sizeof vat);
-	vat.host.str = "127.0.0.1";
-	vat.host.len = 9;
-	/* NULL segment: capn_set_text copies into the message. Naming a
-	 * segment would claim the literal already lives there. */
-	vat.host.seg = NULL;
-	vat.port = 4000;
-	VatId_ptr vp = new_VatId(cs);
-	write_VatId(&vat, vp);
+	memset(&vp, 0, sizeof vp);
+	if (with_vat) {
+		vat.host.str = "127.0.0.1";
+		vat.host.len = 9;
+		/* NULL segment: capn_set_text copies into the message. Naming a
+		 * segment would claim the literal already lives there. */
+		vat.host.seg = NULL;
+		vat.port = 4000;
+		vp = new_VatId(cs);
+		write_VatId(&vat, vp);
+	}
 
 	struct RecipientId rid;
 	memset(&rid, 0, sizeof rid);
@@ -1448,6 +1452,73 @@ TEST_F(RpcJoin, ThirdPartyResultsAbort)
 	EXPECT_TRUE(capn_rpc_is_aborted(&conn));
 	ASSERT_FALSE(out.frames.empty());
 	EXPECT_EQ(1, return_which(out.frames.back(), NULL, NULL));
+}
+
+TEST_F(RpcJoin, AcceptMatchesTheNonce)
+{
+	struct capn_rpc_conn vat;
+	Outbox box;
+	const uint64_t nonce = 0x55aaULL;
+	uint32_t answer = 0;
+	std::string reason;
+	int exp;
+
+	memset(&vat, 0, sizeof vat);
+	capn_rpc_init(&vat, collect, &box);
+	exp = capn_rpc_export(&vat, &calls, counting_dispatch);
+	ASSERT_GE(exp, 0);
+	send_provide(&vat, 80, (uint32_t) exp, nonce);
+	{
+		char host[64];
+		uint16_t port = 0;
+		EXPECT_EQ(1, capn_rpc_provision_recipient(&vat, nonce, host,
+		                                          sizeof host, &port));
+		EXPECT_STREQ("127.0.0.1", host);
+		EXPECT_EQ(4000, port);
+	}
+	box.frames.clear();
+
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+	struct VatId id;
+	memset(&id, 0, sizeof id);
+	id.host.str = "other";
+	id.host.len = 5;
+	id.host.seg = NULL;
+	id.port = 9;
+	VatId_ptr vp = new_VatId(cs);
+	write_VatId(&id, vp);
+	struct RecipientId rid;
+	memset(&rid, 0, sizeof rid);
+	rid.vat = vp;
+	rid.nonce = nonce;
+	RecipientId_ptr rp = new_RecipientId(cs);
+	write_RecipientId(&rid, rp);
+	struct Accept ac;
+	memset(&ac, 0, sizeof ac);
+	ac.questionId = 81;
+	ac.provision = rp.p;
+	Accept_ptr ap = new_Accept(cs);
+	write_Accept(&ac, ap);
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_accept;
+	m.accept = ap;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	send_raw(&vat, &msg);
+	capn_free(&msg);
+	ASSERT_FALSE(box.frames.empty());
+	EXPECT_EQ(Return_results, return_which(box.frames.back(), &answer, &reason));
+	EXPECT_EQ(81u, answer);
+	/* The claim freed the slot. A later Provide with no vat must
+	 * not keep the host the previous one stored. */
+	send_provide(&vat, 82, (uint32_t) exp, nonce + 1, 0);
+	EXPECT_EQ(0, capn_rpc_provision_recipient(&vat, nonce + 1, NULL, 0, NULL));
+	EXPECT_EQ(-1, capn_rpc_provision_recipient(&vat, nonce, NULL, 0, NULL));
+	capn_rpc_free(&vat);
 }
 
 } // namespace

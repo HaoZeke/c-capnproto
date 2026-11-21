@@ -4895,6 +4895,25 @@ static int handle_provide(struct capn_rpc_conn *c, Provide_ptr pp)
 			c->vat->provisions[i].embargoed = 0;
 			c->vat->provisions[i].intro_conn = c;
 			c->vat->provisions[i].intro_export = eid;
+			c->vat->provisions[i].has_recipient = 0;
+			c->vat->provisions[i].recipient_port = 0;
+			c->vat->provisions[i].recipient_host[0] = '\0';
+			if (rid.vat.p.type != CAPN_NULL) {
+				struct VatId vat;
+				int n;
+				read_VatId(&vat, rid.vat);
+				c->vat->provisions[i].has_recipient = 1;
+				c->vat->provisions[i].recipient_port = vat.port;
+				n = vat.host.len;
+				if (n < 0)
+					n = 0;
+				if (n >= CAPN_RPC_MAX_HOST)
+					n = CAPN_RPC_MAX_HOST - 1;
+				if (n > 0 && vat.host.str)
+					memcpy(c->vat->provisions[i].recipient_host,
+					       vat.host.str, (size_t) n);
+				c->vat->provisions[i].recipient_host[n] = '\0';
+			}
 			/* Pin the export until Accept. The pin is dropped
 			 * when the recipient takes her own export. */
 			c->exports[eid].refcount++;
@@ -4953,6 +4972,8 @@ static int handle_accept(struct capn_rpc_conn *c, Accept_ptr ap)
 	for (i = 0; i < CAPN_RPC_MAX_PROVISIONS; i++) {
 		if (c->vat->provisions[i].used && !c->vat->provisions[i].embargoed &&
 		    c->vat->provisions[i].nonce == pid.nonce) {
+			/* ProvisionId is the nonce. A pointer beside it is
+			 * not a vat and is not compared. */
 			eid = capn_rpc_export(c, c->vat->provisions[i].server,
 			                      c->vat->provisions[i].dispatch);
 			if (eid < 0)
@@ -4972,6 +4993,9 @@ static int handle_accept(struct capn_rpc_conn *c, Accept_ptr ap)
 				c->vat->provisions[i].accept_conn = c;
 			} else {
 				c->vat->provisions[i].used = 0;
+				c->vat->provisions[i].has_recipient = 0;
+				c->vat->provisions[i].recipient_port = 0;
+				c->vat->provisions[i].recipient_host[0] = '\0';
 			}
 			break;
 		}
@@ -5016,6 +5040,36 @@ int capn_rpc_pending_provisions(struct capn_rpc_conn *c, uint64_t *out, int cap)
 		}
 	}
 	return n;
+}
+
+int capn_rpc_provision_recipient(struct capn_rpc_conn *c, uint64_t nonce,
+                                char *host, size_t hostcap, uint16_t *port)
+{
+	int i;
+
+	if (c == NULL || c->vat == NULL)
+		return -1;
+	for (i = 0; i < CAPN_RPC_MAX_PROVISIONS; i++) {
+		struct capn_rpc_provision *pr = &c->vat->provisions[i];
+		size_t n;
+
+		if (!pr->used || pr->nonce != nonce)
+			continue;
+		if (!pr->has_recipient)
+			return 0;
+		if (port)
+			*port = pr->recipient_port;
+		if (host != NULL && hostcap > 0) {
+			n = strlen(pr->recipient_host);
+			if (n >= hostcap)
+				n = hostcap - 1;
+			if (n)
+				memcpy(host, pr->recipient_host, n);
+			host[n] = '\0';
+		}
+		return 1;
+	}
+	return -1;
 }
 
 /* Fail every question still waiting for a Return. */

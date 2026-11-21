@@ -162,6 +162,11 @@ struct capn_rpc_provision {
 	 * one reference and is dropped when the recipient claims it. */
 	struct capn_rpc_conn *intro_conn;
 	int intro_export;
+	/* Host and port from Provide.recipient, when that message
+	 * named a vat. handle_accept matches the nonce. */
+	int has_recipient;
+	uint16_t recipient_port;
+	char recipient_host[CAPN_RPC_MAX_HOST];
 };
 
 /* An introduction we have been handed but not yet picked up.
@@ -613,6 +618,12 @@ CAPN_EXPORT int capn_rpc_embargoed_accepts(struct capn_rpc_conn *c);
 
 CAPN_EXPORT int capn_rpc_pending_provisions(struct capn_rpc_conn *c, uint64_t *out,
                                 int cap);
+
+/* 1 when the provision for `nonce` stored a recipient, 0 when the
+ * slot is in use and names none, -1 when no such provision exists.
+ * handle_accept matches the nonce and does not call this. */
+CAPN_EXPORT int capn_rpc_provision_recipient(struct capn_rpc_conn *c, uint64_t nonce,
+                                char *host, size_t hostcap, uint16_t *port);
 
 /* --- blocking file descriptor transport -----------------------------------
  *

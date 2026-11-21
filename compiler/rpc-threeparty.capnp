@@ -15,9 +15,8 @@
 #   3. Carol -> Bob   Accept{provision = ProvisionId{nonce}}
 #   4. Bob   -> Carol Return carrying the capability
 #
-# The nonce is what ties the three messages together: Bob matches Carol's
-# Accept against Alice's Provide by nonce alone, so Bob never has to trust
-# Carol's account of who sent her.
+# The nonce ties the three messages together. ProvisionId is only that
+# nonce. The recipient host and port travel on Provide, not on Accept.
 
 struct VatId {
   # Where a vat can be reached. A network with a directory would carry an
