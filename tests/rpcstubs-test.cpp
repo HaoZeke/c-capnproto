@@ -48,14 +48,14 @@ struct Calc {
 };
 
 int on_add(void *self, const struct Calc_add_params *in, struct Calc_add_results *out,
-           struct capn_segment *) {
+           Calc_add_results_ptr) {
   static_cast<Calc *>(self)->adds++;
   out->sum = in->a + in->b;
   return 0;
 }
 
 int on_join(void *, const struct Calc_join_params *in, struct Calc_join_results *out,
-            struct capn_segment *) {
+            Calc_join_results_ptr) {
   std::string joined = std::string(in->left.str ? in->left.str : "") +
                        (in->right.str ? in->right.str : "");
   /* write_ copies a text that does not live in the message. */
@@ -69,11 +69,11 @@ int on_join(void *, const struct Calc_join_params *in, struct Calc_join_results 
 }
 
 int on_noop(void *, const struct Calc_noop_params *, struct Calc_noop_results *,
-            struct capn_segment *) {
+            Calc_noop_results_ptr) {
   return 0;
 }
 
-int on_ticks(void *self, const struct Calc_ticks_params *in, struct capn_segment *) {
+int on_ticks(void *self, const struct Calc_ticks_params *in, capn_ptr) {
   Calc *c = static_cast<Calc *>(self);
   c->ticks++;
   c->last_tick = in->n;
@@ -115,6 +115,27 @@ class RpcStubs : public ::testing::Test {
 
 }  // namespace
 
+struct capn_rpc_conn *g_stub_vat;
+uint32_t g_stub_gen;
+int g_stub_results;
+
+int on_add_direct(void *self, const struct Calc_add_params *in, struct Calc_add_results *out,
+                  Calc_add_results_ptr results) {
+  Calc *c = static_cast<Calc *>(self);
+  c->adds++;
+  c->last_tick = capn_rpc_current_question(g_stub_vat);
+  g_stub_gen = capn_rpc_current_generation(g_stub_vat);
+  g_stub_results = results.p.type == CAPN_STRUCT;
+  out->sum = in->a + in->b;
+  write_Calc_add_results(out, results);
+  return CAPN_RPC_PENDING;
+}
+
+int on_add_one(void *, const struct Calc_add_params *, struct Calc_add_results *,
+               Calc_add_results_ptr) {
+  return 1;
+}
+
 TEST_F(RpcStubs, ScalarCallRoundTrips) {
   struct Calc_add_params in;
   memset(&in, 0, sizeof in);
@@ -131,6 +152,44 @@ TEST_F(RpcStubs, ScalarCallRoundTrips) {
   EXPECT_EQ(42, out.sum);
   EXPECT_EQ(1, calc.adds);
   capn_free(&msg);
+}
+
+TEST_F(RpcStubs, PendingResultWrittenDirectlyIsKept) {
+  struct Calc_add_params in;
+  struct capn msg;
+  struct Calc_add_results out;
+  uint32_t q, gen;
+
+  g_stub_vat = &vat;
+  server.on_add = on_add_direct;
+  memset(&in, 0, sizeof in);
+  in.a = 40;
+  in.b = 2;
+  q = Calc_call_add(&client, 0, &in);
+  ASSERT_NE((uint32_t) -1, q);
+  pump(&vat, wire.to_vat);
+  EXPECT_FALSE(capn_rpc_is_answered(&client, q));
+  EXPECT_EQ(1, calc.adds);
+  EXPECT_EQ(1, g_stub_results);
+  gen = g_stub_gen;
+  ASSERT_EQ(0, capn_rpc_return(&vat, (uint32_t) calc.last_tick, gen));
+  pump(&client, wire.to_client);
+  memset(&out, 0, sizeof out);
+  ASSERT_EQ(0, Calc_results_add(&client, q, &out, &msg));
+  EXPECT_EQ(42, out.sum);
+  capn_free(&msg);
+}
+
+TEST_F(RpcStubs, PlainOneCompletesAsAnError) {
+  struct Calc_add_params in;
+  uint32_t q;
+
+  server.on_add = on_add_one;
+  memset(&in, 0, sizeof in);
+  q = Calc_call_add(&client, 0, &in);
+  settle();
+  EXPECT_TRUE(capn_rpc_is_answered(&client, q));
+  EXPECT_TRUE(capn_rpc_is_failed(&client, q));
 }
 
 TEST_F(RpcStubs, TextParametersAndResults) {
@@ -182,7 +241,7 @@ struct Later {
 };
 
 static int on_add_later(void *self, const struct Calc_add_params *in,
-                        struct Calc_add_results *, struct capn_segment *) {
+                        struct Calc_add_results *, Calc_add_results_ptr) {
   Later *s = static_cast<Later *>(self);
   s->a = in->a;
   s->b = in->b;
@@ -301,7 +360,7 @@ static int content_shape(const std::vector<uint8_t> &frame, int *datasz, int *pt
 
 static std::string g_keep;
 
-static int on_post(void *, const struct Note *in, struct Note *out, struct capn_segment *) {
+static int on_post(void *, const struct Note *in, struct Note *out, Note_ptr) {
   g_keep.assign(in->label.str ? in->label.str : "",
                 in->label.str ? (size_t) in->label.len : 0);
   out->n = in->n;
@@ -312,7 +371,7 @@ static int on_post(void *, const struct Note *in, struct Note *out, struct capn_
 }
 
 static int on_mix(void *, const struct Noted_mix_params *in,
-                  struct Noted_mix_results *out, struct capn_segment *) {
+                  struct Noted_mix_results *out, Noted_mix_results_ptr) {
   g_keep.assign(in->label.str ? in->label.str : "",
                 in->label.str ? (size_t) in->label.len : 0);
   out->n = in->n;
@@ -435,7 +494,7 @@ TEST(RpcStubShapes, SubclassResultHoldsInheritedText) {
 }
 
 static int on_span(void *, const struct WideRoot_span_params *,
-                   struct WideRoot_span_results *out, struct capn_segment *) {
+                   struct WideRoot_span_results *out, WideRoot_span_results_ptr) {
   out->a = 11;
   out->b = 22;
   out->c = 33;
@@ -443,7 +502,7 @@ static int on_span(void *, const struct WideRoot_span_params *,
 }
 
 static int on_text_name(void *, const struct TextRoot_name_params *,
-                        struct TextRoot_name_results *out, struct capn_segment *) {
+                        struct TextRoot_name_results *out, TextRoot_name_results_ptr) {
   g_keep = "leaf";
   out->t.str = g_keep.c_str();
   out->t.len = (int) g_keep.size();
@@ -520,19 +579,19 @@ TEST(RpcStubShapes, GrandchildResultFitsAncestorMethods) {
 }
 
 static int on_chain_inc(void *, const struct ChainRoot_inc_params *in,
-                        struct ChainRoot_inc_results *out, struct capn_segment *) {
+                        struct ChainRoot_inc_results *out, ChainRoot_inc_results_ptr) {
   out->n = in->n + 1;
   return 0;
 }
 
 static int on_chain_twice(void *, const struct ChainMid_twice_params *in,
-                          struct ChainMid_twice_results *out, struct capn_segment *) {
+                          struct ChainMid_twice_results *out, ChainMid_twice_results_ptr) {
   out->n = in->n * 2;
   return 0;
 }
 
 static int on_chain_dec(void *, const struct ChainLeaf_dec_params *in,
-                        struct ChainLeaf_dec_results *out, struct capn_segment *) {
+                        struct ChainLeaf_dec_results *out, ChainLeaf_dec_results_ptr) {
   out->n = in->n - 1;
   return 0;
 }
@@ -608,13 +667,13 @@ static_assert(BareMid_RESULT_PTRS >= 1,
               "empty subclass must fit the inherited text");
 
 static int on_bare_inc(void *, const struct BareRoot_inc_params *in,
-                       struct BareRoot_inc_results *out, struct capn_segment *) {
+                       struct BareRoot_inc_results *out, BareRoot_inc_results_ptr) {
   out->n = in->n + 1;
   return 0;
 }
 
 static int on_bare_label(void *, const struct BareRoot_label_params *in,
-                         struct BareRoot_label_results *out, struct capn_segment *) {
+                         struct BareRoot_label_results *out, BareRoot_label_results_ptr) {
   g_keep.assign(in->t.str ? in->t.str : "", in->t.str ? (size_t) in->t.len : 0);
   out->t.str = g_keep.c_str();
   out->t.len = (int) g_keep.size();
@@ -623,7 +682,7 @@ static int on_bare_label(void *, const struct BareRoot_label_params *in,
 }
 
 static int on_side_ping(void *, const struct SideRoot_ping_params *in,
-                        struct SideRoot_ping_results *out, struct capn_segment *) {
+                        struct SideRoot_ping_results *out, SideRoot_ping_results_ptr) {
   out->n = in->n + 5;
   return 0;
 }

@@ -8,6 +8,12 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- `$C.rpcstubs` handlers receive the results pointer. `CAPN_RPC_PENDING`
+  is `-2` and preserves results written through it; a plain return of
+  `1` is an exception.
+
 ### Added
 
 - `$C.reflect` and `lib/capn-dyn.h`: a descriptor per struct, group and

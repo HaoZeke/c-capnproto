@@ -754,10 +754,12 @@ int Adder_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn
 		memset(&out, 0, sizeof out);
 		pp.p = params;
 		read_Adder_add_params(&in, pp);
-		rc = srv->on_add(srv->self, &in, &out, results.seg);
+		rp.p = results;
+		rc = srv->on_add(srv->self, &in, &out, rp);
+		if (rc == CAPN_RPC_PENDING)
+			return CAPN_RPC_PENDING;
 		if (rc != 0)
 			return rc;
-		rp.p = results;
 		write_Adder_add_results(&out, rp);
 		return 0;
 	}
@@ -773,10 +775,12 @@ int Adder_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn
 		memset(&out, 0, sizeof out);
 		pp.p = params;
 		read_Adder_tag_params(&in, pp);
-		rc = srv->on_tag(srv->self, &in, &out, results.seg);
+		rp.p = results;
+		rc = srv->on_tag(srv->self, &in, &out, rp);
+		if (rc == CAPN_RPC_PENDING)
+			return CAPN_RPC_PENDING;
 		if (rc != 0)
 			return rc;
-		rp.p = results;
 		write_Adder_tag_results(&out, rp);
 		return 0;
 	}
@@ -792,10 +796,12 @@ int Adder_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn
 		memset(&out, 0, sizeof out);
 		pp.p = params;
 		read_Adder_defer_params(&in, pp);
-		rc = srv->on_defer(srv->self, &in, &out, results.seg);
+		rp.p = results;
+		rc = srv->on_defer(srv->self, &in, &out, rp);
+		if (rc == CAPN_RPC_PENDING)
+			return CAPN_RPC_PENDING;
 		if (rc != 0)
 			return rc;
-		rp.p = results;
 		write_Adder_defer_results(&out, rp);
 		return 0;
 	}
@@ -811,10 +817,12 @@ int Adder_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn
 		memset(&out, 0, sizeof out);
 		pp.p = params;
 		read_Adder_fulfill_params(&in, pp);
-		rc = srv->on_fulfill(srv->self, &in, &out, results.seg);
+		rp.p = results;
+		rc = srv->on_fulfill(srv->self, &in, &out, rp);
+		if (rc == CAPN_RPC_PENDING)
+			return CAPN_RPC_PENDING;
 		if (rc != 0)
 			return rc;
-		rp.p = results;
 		write_Adder_fulfill_results(&out, rp);
 		return 0;
 	}
@@ -830,10 +838,12 @@ int Adder_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn
 		memset(&out, 0, sizeof out);
 		pp.p = params;
 		read_Adder_watch_params(&in, pp);
-		rc = srv->on_watch(srv->self, &in, &out, results.seg);
+		rp.p = results;
+		rc = srv->on_watch(srv->self, &in, &out, rp);
+		if (rc == CAPN_RPC_PENDING)
+			return CAPN_RPC_PENDING;
 		if (rc != 0)
 			return rc;
-		rp.p = results;
 		write_Adder_watch_results(&out, rp);
 		return 0;
 	}
@@ -849,10 +859,12 @@ int Adder_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn
 		memset(&out, 0, sizeof out);
 		pp.p = params;
 		read_Adder_echo_params(&in, pp);
-		rc = srv->on_echo(srv->self, &in, &out, results.seg);
+		rp.p = results;
+		rc = srv->on_echo(srv->self, &in, &out, rp);
+		if (rc == CAPN_RPC_PENDING)
+			return CAPN_RPC_PENDING;
 		if (rc != 0)
 			return rc;
-		rp.p = results;
 		write_Adder_echo_results(&out, rp);
 		return 0;
 	}
@@ -868,10 +880,12 @@ int Adder_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn
 		memset(&out, 0, sizeof out);
 		pp.p = params;
 		read_Adder_seq_params(&in, pp);
-		rc = srv->on_seq(srv->self, &in, &out, results.seg);
+		rp.p = results;
+		rc = srv->on_seq(srv->self, &in, &out, rp);
+		if (rc == CAPN_RPC_PENDING)
+			return CAPN_RPC_PENDING;
 		if (rc != 0)
 			return rc;
-		rp.p = results;
 		write_Adder_seq_results(&out, rp);
 		return 0;
 	}
@@ -887,10 +901,12 @@ int Adder_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn
 		memset(&out, 0, sizeof out);
 		pp.p = params;
 		read_Adder_borrow_params(&in, pp);
-		rc = srv->on_borrow(srv->self, &in, &out, results.seg);
+		rp.p = results;
+		rc = srv->on_borrow(srv->self, &in, &out, rp);
+		if (rc == CAPN_RPC_PENDING)
+			return CAPN_RPC_PENDING;
 		if (rc != 0)
 			return rc;
-		rp.p = results;
 		write_Adder_borrow_results(&out, rp);
 		return 0;
 	}
@@ -1170,10 +1186,12 @@ int CountBase_dispatch(void *server, uint64_t interface_id, uint16_t method_id, 
 		memset(&out, 0, sizeof out);
 		pp.p = params;
 		read_CountBase_inc_params(&in, pp);
-		rc = srv->on_inc(srv->self, &in, &out, results.seg);
+		rp.p = results;
+		rc = srv->on_inc(srv->self, &in, &out, rp);
+		if (rc == CAPN_RPC_PENDING)
+			return CAPN_RPC_PENDING;
 		if (rc != 0)
 			return rc;
-		rp.p = results;
 		write_CountBase_inc_results(&out, rp);
 		return 0;
 	}
@@ -1245,10 +1263,12 @@ int CountMid_dispatch(void *server, uint64_t interface_id, uint16_t method_id, c
 		memset(&out, 0, sizeof out);
 		pp.p = params;
 		read_CountMid_twice_params(&in, pp);
-		rc = srv->on_twice(srv->self, &in, &out, results.seg);
+		rp.p = results;
+		rc = srv->on_twice(srv->self, &in, &out, rp);
+		if (rc == CAPN_RPC_PENDING)
+			return CAPN_RPC_PENDING;
 		if (rc != 0)
 			return rc;
-		rp.p = results;
 		write_CountMid_twice_results(&out, rp);
 		return 0;
 	}
@@ -1322,10 +1342,12 @@ int CountLeaf_dispatch(void *server, uint64_t interface_id, uint16_t method_id, 
 		memset(&out, 0, sizeof out);
 		pp.p = params;
 		read_CountLeaf_dec_params(&in, pp);
-		rc = srv->on_dec(srv->self, &in, &out, results.seg);
+		rp.p = results;
+		rc = srv->on_dec(srv->self, &in, &out, rp);
+		if (rc == CAPN_RPC_PENDING)
+			return CAPN_RPC_PENDING;
 		if (rc != 0)
 			return rc;
-		rp.p = results;
 		write_CountLeaf_dec_results(&out, rp);
 		return 0;
 	}

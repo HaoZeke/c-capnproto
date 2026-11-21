@@ -24,47 +24,47 @@ static int32_t g_n;
 static capn_ptr g_cap;
 
 static int on_add(void *self, const struct Adder_add_params *in,
-                  struct Adder_add_results *out, struct capn_segment *seg)
+                  struct Adder_add_results *out, Adder_add_results_ptr results)
 {
 	(void) self;
-	(void) seg;
+	(void) results;
 	out->sum = in->a + in->b;
 	return 0;
 }
 
 static int on_inc(void *self, const struct CountBase_inc_params *in,
-                  struct CountBase_inc_results *out, struct capn_segment *seg)
+                  struct CountBase_inc_results *out, CountBase_inc_results_ptr results)
 {
 	(void) self;
-	(void) seg;
+	(void) results;
 	out->n = in->n + 1;
 	return 0;
 }
 
 static int on_twice(void *self, const struct CountMid_twice_params *in,
-                    struct CountMid_twice_results *out, struct capn_segment *seg)
+                    struct CountMid_twice_results *out, CountMid_twice_results_ptr results)
 {
 	(void) self;
-	(void) seg;
+	(void) results;
 	out->n = in->n * 2;
 	return 0;
 }
 
 static int on_dec(void *self, const struct CountLeaf_dec_params *in,
-                  struct CountLeaf_dec_results *out, struct capn_segment *seg)
+                  struct CountLeaf_dec_results *out, CountLeaf_dec_results_ptr results)
 {
 	(void) self;
-	(void) seg;
+	(void) results;
 	out->n = in->n - 1;
 	return 0;
 }
 
 static int on_tag(void *self, const struct Adder_tag_params *in,
-                  struct Adder_tag_results *out, struct capn_segment *seg)
+                  struct Adder_tag_results *out, Adder_tag_results_ptr results)
 {
 	int n = in->label.len;
 	(void) self;
-	(void) seg;
+	(void) results;
 	if (n < 0)
 		n = 0;
 	if (n > (int) sizeof g_label - 1)
@@ -80,11 +80,11 @@ static int on_tag(void *self, const struct Adder_tag_params *in,
 }
 
 static int on_borrow(void *self, const struct Adder_borrow_params *in,
-                     struct Adder_borrow_results *out, struct capn_segment *seg)
+                     struct Adder_borrow_results *out, Adder_borrow_results_ptr results)
 {
 	(void) self;
 	(void) out;
-	g_cap = capn_rpc_new_export_cap(g_conn, seg, &g_server, Adder_dispatch);
+	g_cap = capn_rpc_new_export_cap(g_conn, results.p.seg, &g_server, Adder_dispatch);
 	if (g_cap.type == CAPN_NULL)
 		return -1;
 	g_n = in->n;

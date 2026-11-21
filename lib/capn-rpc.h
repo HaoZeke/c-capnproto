@@ -53,8 +53,9 @@ extern "C" {
 #define CAPN_RPC_CAP_HOSTED 0
 #define CAPN_RPC_CAP_PROMISE 1
 #define CAPN_RPC_CAP_ANSWER 2
-/* Return this from dispatch to answer later with capn_rpc_return. */
-#define CAPN_RPC_PENDING 1
+/* Return this from dispatch to answer later with capn_rpc_return.
+ * A plain 1 is an error, so this value is not 1. */
+#define CAPN_RPC_PENDING (-2)
 
 struct capn_rpc_conn;
 
@@ -62,7 +63,8 @@ struct capn_rpc_conn;
  *
  * `params` is the resolved parameter struct; write the reply into
  * `results`, a struct already allocated in the reply message. Return 0
- * to answer with those results, non-zero to answer with an exception.
+ * to answer with those results, CAPN_RPC_PENDING to answer later, and
+ * any other value to answer with an exception.
  */
 typedef int (*capn_rpc_dispatch_fn)(void *server, uint64_t interface_id,
                                     uint16_t method_id, capn_ptr params,

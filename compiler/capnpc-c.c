@@ -2329,10 +2329,10 @@ static void define_rpcstubs(struct node *n)
 		if (!pn || !pn->rpc_struct)
 			continue;
 		if (rn && rn->rpc_struct) {
-			str_addf(&HDR, "\tint (*on_%.*s)(void *self, const struct %s *in, struct %s *out, struct capn_segment *seg);\n",
-					m.name.len, m.name.str, pn->name.str, rn->name.str);
+			str_addf(&HDR, "\tint (*on_%.*s)(void *self, const struct %s *in, struct %s *out, %s_ptr results);\n",
+					m.name.len, m.name.str, pn->name.str, rn->name.str, rn->name.str);
 		} else {
-			str_addf(&HDR, "\tint (*on_%.*s)(void *self, const struct %s *in, struct capn_segment *seg);\n",
+			str_addf(&HDR, "\tint (*on_%.*s)(void *self, const struct %s *in, capn_ptr results);\n",
 					m.name.len, m.name.str, pn->name.str);
 		}
 	}
@@ -2394,12 +2394,17 @@ static void define_rpcstubs(struct node *n)
 			str_addf(&SRC, "\t\tmemset(&out, 0, sizeof out);\n");
 		str_addf(&SRC, "\t\tpp.p = params;\n\t\tread_%s(&in, pp);\n", pn->name.str);
 		if (has_results) {
-			str_addf(&SRC, "\t\trc = srv->on_%.*s(srv->self, &in, &out, results.seg);\n\t\tif (rc != 0)\n\t\t\treturn rc;\n",
+			str_addf(&SRC, "\t\trp.p = results;\n");
+			str_addf(&SRC, "\t\trc = srv->on_%.*s(srv->self, &in, &out, rp);\n",
 					m.name.len, m.name.str);
-			str_addf(&SRC, "\t\trp.p = results;\n\t\twrite_%s(&out, rp);\n\t\treturn 0;\n\t}\n", rn->name.str);
+			str_addf(&SRC, "\t\tif (rc == CAPN_RPC_PENDING)\n\t\t\treturn CAPN_RPC_PENDING;\n");
+			str_addf(&SRC, "\t\tif (rc != 0)\n\t\t\treturn rc;\n");
+			str_addf(&SRC, "\t\twrite_%s(&out, rp);\n\t\treturn 0;\n\t}\n", rn->name.str);
 		} else {
-			str_addf(&SRC, "\t\trc = srv->on_%.*s(srv->self, &in, results.seg);\n\t\treturn rc;\n\t}\n",
+			str_addf(&SRC, "\t\trc = srv->on_%.*s(srv->self, &in, results);\n",
 					m.name.len, m.name.str);
+			str_addf(&SRC, "\t\tif (rc == CAPN_RPC_PENDING)\n\t\t\treturn CAPN_RPC_PENDING;\n");
+			str_addf(&SRC, "\t\tif (rc != 0)\n\t\t\treturn rc;\n\t\treturn 0;\n\t}\n");
 		}
 	}
 	str_addf(&SRC, "\tdefault:\n\t\treturn -1;\n\t}\n}\n");

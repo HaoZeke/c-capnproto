@@ -366,14 +366,14 @@ static const struct Adder_method Adder_borrow_method = {7, 8, 0, 8, 1};
 /* RPC stubs for Adder. */
 struct Adder_server {
 	void *self;
-	int (*on_add)(void *self, const struct Adder_add_params *in, struct Adder_add_results *out, struct capn_segment *seg);
-	int (*on_tag)(void *self, const struct Adder_tag_params *in, struct Adder_tag_results *out, struct capn_segment *seg);
-	int (*on_defer)(void *self, const struct Adder_defer_params *in, struct Adder_defer_results *out, struct capn_segment *seg);
-	int (*on_fulfill)(void *self, const struct Adder_fulfill_params *in, struct Adder_fulfill_results *out, struct capn_segment *seg);
-	int (*on_watch)(void *self, const struct Adder_watch_params *in, struct Adder_watch_results *out, struct capn_segment *seg);
-	int (*on_echo)(void *self, const struct Adder_echo_params *in, struct Adder_echo_results *out, struct capn_segment *seg);
-	int (*on_seq)(void *self, const struct Adder_seq_params *in, struct Adder_seq_results *out, struct capn_segment *seg);
-	int (*on_borrow)(void *self, const struct Adder_borrow_params *in, struct Adder_borrow_results *out, struct capn_segment *seg);
+	int (*on_add)(void *self, const struct Adder_add_params *in, struct Adder_add_results *out, Adder_add_results_ptr results);
+	int (*on_tag)(void *self, const struct Adder_tag_params *in, struct Adder_tag_results *out, Adder_tag_results_ptr results);
+	int (*on_defer)(void *self, const struct Adder_defer_params *in, struct Adder_defer_results *out, Adder_defer_results_ptr results);
+	int (*on_fulfill)(void *self, const struct Adder_fulfill_params *in, struct Adder_fulfill_results *out, Adder_fulfill_results_ptr results);
+	int (*on_watch)(void *self, const struct Adder_watch_params *in, struct Adder_watch_results *out, Adder_watch_results_ptr results);
+	int (*on_echo)(void *self, const struct Adder_echo_params *in, struct Adder_echo_results *out, Adder_echo_results_ptr results);
+	int (*on_seq)(void *self, const struct Adder_seq_params *in, struct Adder_seq_results *out, Adder_seq_results_ptr results);
+	int (*on_borrow)(void *self, const struct Adder_borrow_params *in, struct Adder_borrow_results *out, Adder_borrow_results_ptr results);
 };
 /* Pass these to capn_rpc_set_result_size so results fit. */
 #define Adder_RESULT_DATASZ 8
@@ -418,7 +418,7 @@ static const struct CountBase_method CountBase_inc_method = {0, 8, 0, 8, 0};
 /* RPC stubs for CountBase. */
 struct CountBase_server {
 	void *self;
-	int (*on_inc)(void *self, const struct CountBase_inc_params *in, struct CountBase_inc_results *out, struct capn_segment *seg);
+	int (*on_inc)(void *self, const struct CountBase_inc_params *in, struct CountBase_inc_results *out, CountBase_inc_results_ptr results);
 };
 /* Pass these to capn_rpc_set_result_size so results fit. */
 #define CountBase_RESULT_DATASZ 8
@@ -443,7 +443,7 @@ static const struct CountMid_method CountMid_twice_method = {0, 8, 0, 8, 0};
 struct CountMid_server {
 	void *self;
 	const struct CountBase_server *super_CountBase;
-	int (*on_twice)(void *self, const struct CountMid_twice_params *in, struct CountMid_twice_results *out, struct capn_segment *seg);
+	int (*on_twice)(void *self, const struct CountMid_twice_params *in, struct CountMid_twice_results *out, CountMid_twice_results_ptr results);
 };
 /* Pass these to capn_rpc_set_result_size so results fit. */
 #define CountMid_RESULT_DATASZ 8
@@ -469,7 +469,7 @@ struct CountLeaf_server {
 	void *self;
 	const struct CountMid_server *super_CountMid;
 	const struct Adder_server *super_Adder;
-	int (*on_dec)(void *self, const struct CountLeaf_dec_params *in, struct CountLeaf_dec_results *out, struct capn_segment *seg);
+	int (*on_dec)(void *self, const struct CountLeaf_dec_params *in, struct CountLeaf_dec_results *out, CountLeaf_dec_results_ptr results);
 };
 /* Pass these to capn_rpc_set_result_size so results fit. */
 #define CountLeaf_RESULT_DATASZ 8

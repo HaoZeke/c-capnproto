@@ -384,8 +384,11 @@ helper `<Interface>_call_<method>` and result reader
 `<Interface>_results_<method>`, and `struct <Interface>_server`, a vtable of
 `on_<method>` handlers that `<Interface>_dispatch` routes to (set the
 connection's result size from `<Interface>_RESULT_DATASZ` and
-`_RESULT_PTRS`). `-> stream` methods get a call helper and a handler
-without results. A subclass dispatch forwards a call whose interface
+`_RESULT_PTRS`). Each handler is given the results pointer.
+`CAPN_RPC_PENDING` preserves results written through that pointer, and the
+call is answered later by `<Interface>_return_<method>` or `capn_rpc_return`;
+any other non-zero return is an exception. `-> stream` methods get a call
+helper and a handler without a result struct. A subclass dispatch forwards a call whose interface
 id is a superclass, including a grandparent, to the server stored in
 `super_<Superclass>`.
 
