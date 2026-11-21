@@ -468,3 +468,18 @@ TEST(WireParity, EmptyStructThroughAFarStaysAStruct) {
 	expect_empty_struct_canon(sfar, sizeof sfar, empty_root, sizeof empty_root);
 	expect_empty_struct_canon(nested, sizeof nested, empty_nest, sizeof empty_nest);
 }
+
+TEST(WireParity, EmptyStructInTheFirstSlotIsNotACycle) {
+	/* Struct with no data word. Slot zero holds an empty struct
+	 * whose offset is -1, so the child starts on the parent's word. */
+	const uint8_t frame[] = {
+		0x00,0,0,0, 0x02,0,0,0,
+		0x00,0,0,0, 0x00,0,0x01,0,
+		0xfc,0xff,0xff,0xff, 0x00,0,0,0,
+	};
+	const uint8_t canon[] = {
+		0x00,0,0,0, 0x00,0,0x01,0,
+		0xfc,0xff,0xff,0xff, 0x00,0,0,0,
+	};
+	expect_empty_struct_canon(frame, sizeof frame, canon, sizeof canon);
+}

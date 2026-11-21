@@ -794,6 +794,10 @@ static int vset_enter(struct capn_vset *vs, capn_ptr p)
 
 	if (p.type == CAPN_NULL || !p.data || !p.seg)
 		return 2;
+	/* An empty struct occupies no bytes. Its start can sit on the
+	 * parent word, and that is not a cycle. */
+	if (p.type == CAPN_STRUCT && p.datasz == 0 && p.ptrs == 0)
+		return 0;
 	if (vs->n * 3 > vs->cap * 2) {
 		if (vset_grow(vs))
 			return -1;
@@ -833,6 +837,10 @@ static int vset_reenter(struct capn_vset *vs, capn_ptr p)
 
 	if (p.type == CAPN_NULL || p.type == CAPN_INTERFACE || !p.data || !p.seg)
 		return 2;
+	/* An empty struct occupies no bytes. Its start can sit on the
+	 * parent word, and that is not a cycle. */
+	if (p.type == CAPN_STRUCT && p.datasz == 0 && p.ptrs == 0)
+		return 0;
 	if (vs->n * 3 > vs->cap * 2) {
 		if (vset_grow(vs))
 			return -1;
