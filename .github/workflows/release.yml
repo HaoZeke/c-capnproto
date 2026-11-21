@@ -17,6 +17,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Versions agree with the tag
+        run: bash scripts/check-versions.sh
       - id: meta
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
@@ -61,6 +63,8 @@ jobs:
         with:
           submodules: recursive
           persist-credentials: false
+      - name: Versions agree with the tag
+        run: bash scripts/check-versions.sh
       - name: Install autotools
         run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool pkg-config g++ make capnproto
       - name: Configure
@@ -78,6 +82,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Versions agree with the tag
+        run: bash scripts/check-versions.sh
       - name: Install CMake and GTest
         run: sudo apt-get update && sudo apt-get install -y cmake g++ pkg-config libgtest-dev capnproto
       - name: Configure
