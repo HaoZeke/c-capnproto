@@ -488,12 +488,26 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 	 * zero because the offset and the sizes are zero, so the type
 	 * has to come from the fact that a far was followed. */
 	int from_far = 0;
+	/* The root word is charged twice, which is the whole cost of a
+	 * capability that lives in that word. A capability somewhere
+	 * else still pays for its own word. */
+	int charged_root_word = 0;
 
 	if (rem == 0)
 		goto err;
 
 	if (!s || !bounds_ok(s, d, 8))
 		goto err;
+
+	/* C++ charges the root pointer once: getRootInternal checks the
+	 * word, then PointerReader::getRoot checks it again. Later lists
+	 * do not pay that pair. A single void list of 8388607 is one
+	 * word over the default limit. 8388606 still fits. */
+	if (s->id == 0 && d == s->data) {
+		if (charge_traversal(c, 16, 0) != 0)
+			goto err;
+		charged_root_word = 1;
+	}
 
 	val = capn_flip64(*(uint64_t*) d);
 
@@ -503,6 +517,7 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 		if (!s)
 			goto err;
 		from_far = 1;
+		charged_root_word = 0;
 		ret.has_ptr_tag = (U32(val) >> 2) == 0;
 		break;
 	case DOUBLE_PTR:
@@ -510,18 +525,19 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 		if (!s)
 			goto err;
 		from_far = 1;
+		charged_root_word = 0;
 		break;
 	}
 
 	/* Capability / other pointer: A=3. No landing object.
 	 * B (bits 2-31) must be 0; C (high 32) is the table index.
-	 * The index is not a list length and is not a size. C++ counts
-	 * the pointer word itself (getRoot / a far landing pad) against
-	 * the traversal limit, so charge one word and nothing more. */
+	 * The index is not a list length and is not a size. A root
+	 * capability was already charged two words. Any other
+	 * capability pays for its own word and nothing more. */
 	if ((val & 3) == OTHER_PTR) {
 		if ((U32(val) >> 2) != 0)
 			goto err;
-		if (charge_traversal(s->capn, 8, 0) != 0)
+		if (!charged_root_word && charge_traversal(s->capn, 8, 0) != 0)
 			goto err;
 		ret.type = CAPN_INTERFACE;
 		ret.len = 0;
@@ -556,6 +572,8 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 
 		switch ((val >> 32) & 7) {
 		case VOID_LIST:
+			/* No bytes on the wire. The element count is charged
+			 * below, one word each, and nowhere else. */
 			nbytes = 0;
 			break;
 		case BIT_1_LIST:
@@ -625,7 +643,22 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 			/* C++ accepts trailing padding: actualSize <= wordCount. */
 			if (total > words)
 				goto err;
-			nbytes = words;
+			/* A zero stride still costs one word per element.
+			 * The tag and the claimed body are charged here.
+			 * The element words are charged below, because
+			 * nbytes stays zero and is not a bounds size. */
+			if (stride == 0) {
+				/* boundsCheck charges the body and the tag.
+				 * The element count is charged below. */
+				size_t extra = words + 8;
+				if (extra < words)
+					goto err;
+				if (charge_traversal(s->capn, extra, 0) != 0)
+					goto err;
+				nbytes = 0;
+			} else {
+				nbytes = words;
+			}
 			break;
 		}
 		default:
@@ -1775,6 +1808,11 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 
 		} else { /* CAPN_PTR_LIST */
 			*fn = read_ptr(fc->seg, fc->data, -1);
+			/* A null word is a null pointer. A failed read is
+			 * also null, and it sets decode_err. The copy stops. */
+			if (!fn->type && fc->seg && fc->seg->capn &&
+			    fc->seg->capn->decode_err)
+				return -1;
 
 			if (fn->type && copy_ptr(tc->seg, tc->data, tn, fn, &dep))
 				return -1;
@@ -2476,6 +2514,16 @@ int capn_canonicalize(struct capn *src, struct capn *dst)
 	first = read_ptr(root.seg, root.data, nest);
 	if (first.type == CAPN_NULL)
 		goto done;
+	/* C++ totalSize() gives the root struct body back. The copy
+	 * then charges each child, including one word per void element,
+	 * and does not charge that body again. */
+	if (first.type == CAPN_STRUCT) {
+		size_t body = (size_t) first.datasz + 8u * (size_t) first.ptrs;
+		if (src->traversal_used >= body)
+			src->traversal_used -= body;
+		else
+			src->traversal_used = 0;
+	}
 
 	if (vset_init(&vs))
 		goto done;

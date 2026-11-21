@@ -483,3 +483,232 @@ TEST(WireParity, EmptyStructInTheFirstSlotIsNotACycle) {
 	};
 	expect_empty_struct_canon(frame, sizeof frame, canon, sizeof canon);
 }
+
+TEST(WireParity, ZeroSizeCompositeMatchesTheTraversalBoundary) {
+	auto frame = [](uint32_t L) {
+		std::vector<uint8_t> b(40, 0);
+		wr32(b.data() + 4, 4);
+		wr32(b.data() + 12, 0x00010000);
+		wr32(b.data() + 16, 1);
+		wr32(b.data() + 20, 0x0f);
+		wr32(b.data() + 24, L << 2);
+		return b;
+	};
+	struct capn c;
+	std::vector<uint8_t> ok = frame(8388603);
+	std::vector<uint8_t> over = frame(8388604);
+	ASSERT_EQ(0, load_frame(&c, ok.data(), ok.size()));
+	EXPECT_EQ(0, capn_validate(&c));
+	capn_free(&c);
+	ASSERT_EQ(0, load_frame(&c, over.data(), over.size()));
+	EXPECT_NE(0, capn_validate(&c));
+	capn_free(&c);
+}
+
+TEST(WireParity, ZeroSizeCompositeChargesTheTraversalLimit) {
+	/* 16777216 zero-size composite elements and one padding word.
+	 * The padding made the old charge look like eight bytes. */
+	const uint8_t huge[] = {
+		0x00,0,0,0, 0x04,0,0,0,
+		0x00,0,0,0, 0x00,0,0x01,0,
+		0x01,0,0,0, 0x0f,0,0,0,
+		0x00,0,0,0x04, 0x00,0,0,0,
+		0x00,0,0,0, 0x00,0,0,0,
+	};
+	/* Two elements, one padding word: still inside the limit. */
+	const uint8_t small[] = {
+		0x00,0,0,0, 0x04,0,0,0,
+		0x00,0,0,0, 0x00,0,0x01,0,
+		0x01,0,0,0, 0x0f,0,0,0,
+		0x08,0,0,0, 0x00,0,0,0,
+		0x00,0,0,0, 0x00,0,0,0,
+	};
+	struct capn c;
+	capn_ptr root, list;
+
+	ASSERT_EQ(0, load_frame(&c, huge, sizeof huge));
+	EXPECT_NE(0, capn_validate(&c));
+	EXPECT_EQ(0, capn_ok(&c));
+	capn_free(&c);
+
+	ASSERT_EQ(0, load_frame(&c, small, sizeof small));
+	EXPECT_EQ(0, capn_validate(&c));
+	EXPECT_EQ(1, capn_ok(&c));
+	root = capn_getp(capn_root(&c), 0, 1);
+	list = capn_getp(root, 0, 1);
+	EXPECT_EQ(CAPN_LIST, list.type);
+	EXPECT_EQ(2, list.len);
+	capn_free(&c);
+}
+
+TEST(WireParity, HugeVoidListExceedsTheTraversalLimit) {
+	/* Count 8388608 fills the default limit before the pointer
+	 * word is counted, so the read refuses it. */
+	const uint8_t frame[] = {
+		0,0,0,0, 1,0,0,0,
+		1,0,0,0, 0,0,0,4,
+	};
+	struct capn c;
+	capn_ptr root;
+	ASSERT_EQ(0, load_frame(&c, frame, sizeof frame));
+	root = capn_getp(capn_root(&c), 0, 1);
+	EXPECT_EQ(CAPN_NULL, root.type);
+	EXPECT_EQ(0, capn_ok(&c));
+	capn_free(&c);
+}
+
+TEST(WireParity, VoidListBoundaryMatchesTheRootRead) {
+	/* 8388606 still fits. 8388607 is one word over a root read. */
+	const uint8_t fit[] = {
+		0,0,0,0, 1,0,0,0,
+		1,0,0,0, 0xf0,0xff,0xff,0x03,
+	};
+	const uint8_t over[] = {
+		0,0,0,0, 1,0,0,0,
+		1,0,0,0, 0xf8,0xff,0xff,0x03,
+	};
+	struct capn c, dst;
+	capn_ptr root;
+
+	ASSERT_EQ(0, load_frame(&c, fit, sizeof fit));
+	root = capn_getp(capn_root(&c), 0, 1);
+	EXPECT_EQ(CAPN_LIST, root.type);
+	EXPECT_EQ(8388606, root.len);
+	EXPECT_EQ(1, capn_ok(&c));
+	capn_free(&c);
+
+	ASSERT_EQ(0, load_frame(&c, fit, sizeof fit));
+	capn_init_malloc(&dst);
+	EXPECT_EQ(0, capn_set_root(&dst, capn_root(&c)));
+	capn_free(&dst);
+	capn_free(&c);
+
+	ASSERT_EQ(0, load_frame(&c, over, sizeof over));
+	root = capn_getp(capn_root(&c), 0, 1);
+	EXPECT_EQ(CAPN_NULL, root.type);
+	EXPECT_EQ(0, capn_ok(&c));
+	capn_free(&c);
+
+	ASSERT_EQ(0, load_frame(&c, over, sizeof over));
+	capn_init_malloc(&dst);
+	EXPECT_NE(0, capn_set_root(&dst, capn_root(&c)));
+	capn_free(&dst);
+	capn_free(&c);
+}
+
+TEST(WireParity, SeveralEmptyVoidListsFit) {
+	/* Three million empty void lists. Each used to add sixteen bytes. */
+	const uint32_t n = 3000000;
+	const uint32_t words = 1u + n;
+	std::vector<uint8_t> b(8u + (size_t) words * 8u, 0);
+	wr32(b.data() + 4, words);
+	wr32(b.data() + 8, 1);
+	wr32(b.data() + 12, (n << 3) | 6);
+	for (uint32_t i = 0; i < n; i++)
+		b[16 + (size_t) i * 8] = 1;
+	struct capn c;
+	capn_ptr root, elem;
+	ASSERT_EQ(0, load_frame(&c, b.data(), b.size()));
+	EXPECT_EQ(0, capn_validate(&c));
+	root = capn_getp(capn_root(&c), 0, 1);
+	EXPECT_EQ(CAPN_PTR_LIST, root.type);
+	EXPECT_EQ((int) n, root.len);
+	elem = capn_getp(root, 0, 1);
+	EXPECT_EQ(CAPN_LIST, elem.type);
+	EXPECT_EQ(0, elem.len);
+	EXPECT_EQ(1, capn_ok(&c));
+	capn_free(&c);
+}
+
+TEST(WireParity, TwoLargeVoidListsFit) {
+	/* Two void lists of 4194302. The pair fills the default budget. */
+	const uint8_t frame[] = {
+		0,0,0,0, 3,0,0,0,
+		0,0,0,0, 0,0,2,0,
+		5,0,0,0, 0xf0,0xff,0xff,1,
+		1,0,0,0, 0xf0,0xff,0xff,1,
+	};
+	struct capn c;
+	capn_ptr root, a, b;
+	ASSERT_EQ(0, load_frame(&c, frame, sizeof frame));
+	EXPECT_EQ(0, capn_validate(&c));
+	root = capn_getp(capn_root(&c), 0, 1);
+	a = capn_getp(root, 0, 1);
+	b = capn_getp(root, 1, 1);
+	EXPECT_EQ(CAPN_LIST, a.type);
+	EXPECT_EQ(4194302, a.len);
+	EXPECT_EQ(CAPN_LIST, b.type);
+	EXPECT_EQ(4194302, b.len);
+	EXPECT_EQ(1, capn_ok(&c));
+	capn_free(&c);
+}
+
+static int canon_words(const uint8_t *frame, size_t n, size_t words)
+{
+	struct capn src, dst;
+	int rc;
+
+	if (capn_init_mem(&src, (uint8_t *) frame, n, 0) != 0)
+		return -2;
+	if (words)
+		src.traversal_limit = words * 8;
+	src.traversal_used = 0;
+	capn_init_malloc(&dst);
+	rc = capn_canonicalize(&src, &dst);
+	capn_free(&src);
+	capn_free(&dst);
+	return rc;
+}
+
+TEST(WireParity, CanonicalVoidListMatchesTheCopyBudget) {
+	/* A struct holding a 22-element void list. C++ canonicalize
+	 * needs 24 words: the root pointer and one word per element.
+	 * The two longer frames are void and zero-stride lists that
+	 * setRoot rejects and canonicalize accepts at the default limit. */
+	const uint8_t small[] = {
+		0,0,0,0, 2,0,0,0,
+		0,0,0,0, 0,0,1,0,
+		1,0,0,0, 0xb0,0,0,0,
+	};
+	const uint8_t voids[] = {
+		0,0,0,0, 2,0,0,0,
+		0,0,0,0, 0,0,1,0,
+		1,0,0,0, 0xf0,0xff,0xff,0x03,
+	};
+	const uint8_t zcomp[] = {
+		0,0,0,0, 3,0,0,0,
+		0,0,0,0, 0,0,1,0,
+		1,0,0,0, 7,0,0,0,
+		0xf4,0xff,0xff,0x01, 0,0,0,0,
+	};
+
+	EXPECT_NE(0, canon_words(small, sizeof small, 23));
+	EXPECT_EQ(0, canon_words(small, sizeof small, 24));
+	EXPECT_EQ(0, canon_words(voids, sizeof voids, 0));
+	EXPECT_EQ(0, canon_words(zcomp, sizeof zcomp, 0));
+}
+
+TEST(WireParity, TwoZeroStrideCompositeListsFit) {
+	/* Two zero-stride composite lists of 4194301. */
+	const uint8_t frame[] = {
+		0,0,0,0, 5,0,0,0,
+		0,0,0,0, 0,0,2,0,
+		5,0,0,0, 7,0,0,0,
+		5,0,0,0, 7,0,0,0,
+		0xf4,0xff,0xff,0, 0,0,0,0,
+		0xf4,0xff,0xff,0, 0,0,0,0,
+	};
+	struct capn c;
+	capn_ptr root, a, b;
+	ASSERT_EQ(0, load_frame(&c, frame, sizeof frame));
+	EXPECT_EQ(0, capn_validate(&c));
+	root = capn_getp(capn_root(&c), 0, 1);
+	a = capn_getp(root, 0, 1);
+	b = capn_getp(root, 1, 1);
+	EXPECT_EQ(CAPN_LIST, a.type);
+	EXPECT_EQ(4194301, a.len);
+	EXPECT_EQ(CAPN_LIST, b.type);
+	EXPECT_EQ(4194301, b.len);
+	EXPECT_EQ(1, capn_ok(&c));
+	capn_free(&c);
+}

@@ -819,11 +819,20 @@ TEST(Interface, CapabilityIndexIsNotAListLength) {
   capn_list8 as_list;
   as_list.p = got;
   EXPECT_EQ(0, capn_len(as_list));
-  EXPECT_EQ(8u, c.traversal_used);
+  /* C++ getRoot checks the root word twice. Two words succeed.
+   * One word does not. */
+  EXPECT_EQ(16u, c.traversal_used);
   capn_free(&c);
 
   ASSERT_EQ(0, capn_init_mem(&c, msg, sizeof msg, 0));
-  c.traversal_limit = 4;
+  c.traversal_limit = 16;
+  got = capn_getp(capn_root(&c), 0, 1);
+  EXPECT_EQ(CAPN_INTERFACE, got.type);
+  EXPECT_EQ(1, capn_ok(&c));
+  capn_free(&c);
+
+  ASSERT_EQ(0, capn_init_mem(&c, msg, sizeof msg, 0));
+  c.traversal_limit = 8;
   got = capn_getp(capn_root(&c), 0, 1);
   EXPECT_EQ(CAPN_NULL, got.type);
   EXPECT_EQ(0, capn_ok(&c));
