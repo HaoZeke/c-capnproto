@@ -955,6 +955,13 @@ TEST(NewObjectLimits, HugeListRefusesAWrappedAllocation) {
   if (setrlimit(RLIMIT_AS, &lim) != 0) {
     GTEST_SKIP() << "cannot cap the address space";
   }
+  /* qemu-user accepts the setrlimit call but does not enforce it. */
+  void *volatile probe = malloc((size_t) 1 << 30);
+  if (probe != nullptr) {
+    free(probe);
+    setrlimit(RLIMIT_AS, &old);
+    GTEST_SKIP() << "the address space cap is not enforced";
+  }
   struct capn c;
   capn_init_malloc(&c);
   struct capn_segment *seg = capn_root(&c).seg;
@@ -974,7 +981,7 @@ TEST(NewObjectLimits, PrimitiveListUsesItsElementWidth) {
   capn_init_malloc(&c);
   struct capn_segment *seg = capn_root(&c).seg;
   ASSERT_NE(nullptr, seg);
-  const int widths[] = {1, 2, 4};
+  const int widths[] = {1, 2, 4, 8};
   for (int w : widths) {
     capn_ptr p = capn_new_list(seg, 0xffffffe, w, 0);
     EXPECT_EQ(CAPN_LIST, p.type) << w;

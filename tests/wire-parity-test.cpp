@@ -1585,3 +1585,49 @@ TEST(WireParity, CanonicalDepthMatchesTheNestingLimit) {
 	EXPECT_EQ(0, canon_frame(framed_alt_chain(64)));
 	EXPECT_NE(0, canon_frame(framed_alt_chain(65)));
 }
+
+TEST(WireParity, RaisedReadCapMatchesTheTraversalLimit) {
+	struct capn c, r;
+	struct capn_segment *seg;
+	capn_list8 list;
+	capn_ptr root;
+	int64_t n;
+	std::vector<uint8_t> buf;
+
+	capn_init_malloc(&c);
+	seg = capn_root(&c).seg;
+	list = capn_new_list8(seg, 64 * 1024 * 1024);
+	ASSERT_EQ(CAPN_LIST, list.p.type);
+	list.p.data[0] = 0x5a;
+	ASSERT_EQ(0, capn_setp(capn_root(&c), 0, list.p));
+	n = capn_size(&c);
+	ASSERT_GT(n, (int64_t) (64 * 1024 * 1024));
+	buf.resize((size_t) n);
+	ASSERT_EQ(n, capn_write_mem(&c, buf.data(), buf.size(), 0));
+	capn_free(&c);
+
+	EXPECT_NE(0, capn_init_mem(&r, buf.data(), buf.size(), 0));
+	ASSERT_EQ(0, capn_init_mem_max(&r, buf.data(), buf.size(), 0,
+				       80u * 1024u * 1024u));
+	root = capn_getp(capn_root(&r), 0, 1);
+	EXPECT_EQ(CAPN_LIST, root.type);
+	EXPECT_EQ(64 * 1024 * 1024, root.len);
+	EXPECT_EQ(1, capn_ok(&r));
+	EXPECT_EQ(0x5a, (unsigned) root.data[0]);
+	capn_free(&r);
+}
+
+TEST(WireParity, TwoGigabyteListAllocates) {
+	struct capn c;
+	capn_list64 list;
+	capn_init_malloc(&c);
+	list = capn_new_list64(capn_root(&c).seg, 0x10000000);
+	EXPECT_EQ(CAPN_LIST, list.p.type);
+	EXPECT_EQ(0x10000000, list.p.len);
+	ASSERT_NE(nullptr, list.p.data);
+	list.p.data[0] = 0x11;
+	list.p.data[(size_t) 0x0fffffffu * 8u] = 0x22;
+	EXPECT_EQ(0x11, (unsigned char) list.p.data[0]);
+	EXPECT_EQ(0x22, (unsigned char) list.p.data[(size_t) 0x0fffffffu * 8u]);
+	capn_free(&c);
+}

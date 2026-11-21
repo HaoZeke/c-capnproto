@@ -40,13 +40,29 @@ TEST(Stream, PackedZerosFromAnUnalignedAddress) {
 }
 
 TEST(Stream, ReadRejectsTooManySegments) {
-  /* Wire word 0 is (segnum - 1). 1024 => 1025 segments, above CAPN_MAX_SEGS. */
+  /* Wire word 0 is (segnum - 1). 511 => 512 segments, above the cap. */
   AlignedData<1> data = {{
-    0x00, 0x04, 0x00, 0x00,
+    0xff, 0x01, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00,
   }};
   struct capn ctx;
   EXPECT_NE(0, capn_init_mem(&ctx, data.bytes, sizeof(data.bytes), 0));
+}
+
+TEST(Stream, ReadAllows511EmptySegments) {
+  const uint32_t nseg = 511;
+  const uint32_t words = nseg / 2u + 1u;
+  std::vector<uint8_t> buf(words * 8, 0);
+  /* The count word is little endian on the wire. */
+  uint32_t cm1 = nseg - 1;
+  buf[0] = (uint8_t) cm1;
+  buf[1] = (uint8_t) (cm1 >> 8);
+  buf[2] = (uint8_t) (cm1 >> 16);
+  buf[3] = (uint8_t) (cm1 >> 24);
+  struct capn ctx;
+  ASSERT_EQ(0, capn_init_mem(&ctx, buf.data(), buf.size(), 0));
+  EXPECT_EQ((int) nseg, ctx.segnum);
+  capn_free(&ctx);
 }
 
 TEST(Stream, ReadRejectsASegmentLongerThanTheBuffer) {

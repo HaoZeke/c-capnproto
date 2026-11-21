@@ -184,14 +184,24 @@ int CAT(capn_setv,SZ) (LIST_T l, int off, const UINT_T *from, int sz) {
 
 LIST_T CAT(capn_new_list,SZ) (struct capn_segment *seg, int sz) {
 	LIST_T l = {{CAPN_LIST}};
-	if (sz < 0 || sz > 0x1fffffff || (int64_t) sz * (SZ/8) > 0x7ffffff0LL) {
+	size_t nbytes;
+
+	if (sz < 0 || (int64_t) sz > MAX_LIST_ELEMS ||
+	    (size_t) sz > (size_t) -1 / (size_t) (SZ / 8)) {
+		memset(&l, 0, sizeof(l));
+		return l;
+	}
+	nbytes = (size_t) sz * (size_t) (SZ / 8);
+	if (nbytes > (size_t) MAX_ALLOC_BYTES) {
 		memset(&l, 0, sizeof(l));
 		return l;
 	}
 	l.p.seg = seg;
 	l.p.len = sz;
 	l.p.datasz = SZ/8;
-	new_object(&l.p, sz*(SZ/8));
+	new_object(&l.p, nbytes);
+	if (nbytes != 0 && l.p.data == NULL)
+		memset(&l, 0, sizeof(l));
 	return l;
 }
 

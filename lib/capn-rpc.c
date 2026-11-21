@@ -5299,7 +5299,8 @@ int capn_rpc_fd_read_frame(int fd, uint8_t **frame, size_t *len)
 	/* Adding one to a count of 2^32-1 would wrap to zero segments. */
 	nsegs = (uint32_t) head[0] | (uint32_t) head[1] << 8 | (uint32_t) head[2] << 16 |
 	        (uint32_t) head[3] << 24;
-	if (nsegs >= 1024u)
+	/* Same cap as the stream reader: 512 segments is too many. */
+	if (nsegs >= 511u)
 		return -1;
 	nsegs += 1u;
 	/* [count-1][size x count][padding to a word] */

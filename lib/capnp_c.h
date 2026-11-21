@@ -489,6 +489,11 @@ CAPN_INLINE int capn_write64(capn_ptr p, int off, uint64_t val);
 CAPN_EXPORT void capn_init_malloc(struct capn *c);
 CAPN_EXPORT int capn_init_fp(struct capn *c, FILE *f, int packed);
 CAPN_EXPORT int capn_init_mem(struct capn *c, const uint8_t *p, size_t sz, int packed);
+/* max_bytes 0 is the 64 MiB default. Any other value is the framing cap
+ * and the session traversal budget, in bytes. C++ applies one
+ * traversalLimitInWords to both. */
+CAPN_EXPORT int capn_init_fp_max(struct capn *c, FILE *f, int packed, size_t max_bytes);
+CAPN_EXPORT int capn_init_mem_max(struct capn *c, const uint8_t *p, size_t sz, int packed, size_t max_bytes);
 /* capn_init_fd is the read-side pair of capn_write_fd: the caller supplies
  * a read callback (same shape as POSIX read). packed is the stream codec.
  * Returns 0 on success, -1 on a NULL callback or a framing/I/O error.

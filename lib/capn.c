@@ -12,6 +12,7 @@
 #endif
 
 #include "capnp_c.h"
+#include "capnp_priv.h"
 
 #ifndef __KERNEL__
 #include <stdlib.h>
@@ -200,21 +201,25 @@ void capn_append_segment(struct capn *c, struct capn_segment *s) {
 	c->segtree = capn_tree_insert(c->segtree, &s->hdr);
 }
 
-static char *new_data(struct capn *c, int sz, struct capn_segment **ps) {
+static char *new_data(struct capn *c, size_t sz, struct capn_segment **ps) {
 	struct capn_segment *s;
 
-	if (!c || sz < 0) {
+	if (!c) {
 		*ps = NULL;
 		return NULL;
 	}
 
 	/* find a segment with sufficient data */
 	for (s = c->seglist; s != NULL; s = s->next) {
-		if (s->len <= s->cap && (size_t) sz <= s->cap - s->len)
+		if (s->len <= s->cap && sz <= s->cap - s->len)
 			goto end;
 	}
 
-	s = c->create ? c->create(c->user, c->segnum, sz) : NULL;
+	if (sz > (size_t) INT_MAX) {
+		s = capn_using_malloc(c) ? capn_malloc_segment(sz) : NULL;
+	} else {
+		s = c->create ? c->create(c->user, c->segnum, (int) sz) : NULL;
+	}
 	if (!s) {
 		*ps = NULL;
 		return NULL;
@@ -2265,7 +2270,14 @@ int capn_setv1(capn_list1 l, int off, const uint8_t *data, int sz) {
 #define ADD_TAG 1
 #endif
 
-static void new_object(capn_ptr *p, int bytes) {
+/* Largest element count a list pointer can carry (29 bits). A segment
+ * holds at most 2^29-1 words, and a fresh segment also stores the far
+ * landing pad, so one object stops one word short of that. */
+#define MAX_LIST_ELEMS ((int64_t) CAPN_MAX_LIST_ELEMS)
+#define CAPN_MAX_SEGMENT_BYTES ((((size_t) 1 << 29) - 1u) * 8u)
+#define MAX_ALLOC_BYTES ((int64_t) (CAPN_MAX_SEGMENT_BYTES - 8u))
+
+static void new_object(capn_ptr *p, size_t bytes) {
 	struct capn_segment *s = p->seg;
 
 	if (!s) {
@@ -2278,7 +2290,7 @@ static void new_object(capn_ptr *p, int bytes) {
 		p->data = s->data + s->len;
 		return;
 	}
-	if (bytes < 0 || (size_t) bytes > (size_t) INT_MAX - 7u) {
+	if (bytes > (size_t) MAX_ALLOC_BYTES) {
 		memset(p, 0, sizeof(*p));
 		return;
 	}
@@ -2291,19 +2303,6 @@ static void new_object(capn_ptr *p, int bytes) {
 		s->len += (size_t) bytes;
 		return;
 	}
-	if (bytes > INT_MAX - 8) {
-		memset(p, 0, sizeof(*p));
-		return;
-	}
-	/* The far tag is allocated with the body. 0x7ffffff0 plus that
-	 * tag is the size that used to wrap a signed create() length down
-	 * to the 4096-byte minimum. Refuse it on every endian; a later
-	 * successful calloc is not a legal object. */
-	if ((int64_t) bytes + (ADD_TAG ? 8 : 0) > 0x7ffffff0LL) {
-		memset(p, 0, sizeof(*p));
-		return;
-	}
-
 	/* add a tag whenever we switch segments so that write_ptr can
 	 * use it */
 	p->data = new_data(s->capn, bytes + ADD_TAG*8, &p->seg);
@@ -2817,12 +2816,6 @@ done:
 	return rc;
 }
 
-/* Largest element count a list pointer can carry (29 bits) and the largest
- * single allocation, which new_object takes as an int. Anything past either
- * is refused with a null pointer rather than wrapped. */
-#define MAX_LIST_ELEMS ((int64_t) CAPN_MAX_LIST_ELEMS)
-#define MAX_ALLOC_BYTES 0x7ffffff0LL
-
 static int struct_dims_ok(int datasz, int ptrs) {
 	return datasz >= 0 && ptrs >= 0 &&
 		datasz <= CAPN_MAX_STRUCT_WORDS * 8 &&
@@ -2892,9 +2885,9 @@ capn_ptr capn_new_struct_list(struct capn_segment *seg, int sz, int datasz, int 
 	{
 		int64_t stride = (int64_t) p.datasz + 8LL * (int64_t) p.ptrs;
 		int64_t bytes = (int64_t) p.len * stride + 8;
-		if (bytes > INT_MAX)
+		if (bytes < 0 || bytes > MAX_ALLOC_BYTES)
 			return null_ptr();
-		new_object(&p, (int) bytes);
+		new_object(&p, (size_t) bytes);
 	}
 	if (p.data) {
 		uint64_t hdr = STRUCT_PTR | (U64(p.len) << 2) | (U64(p.datasz/8) << 32) | (U64(p.ptrs) << 48);
@@ -2928,13 +2921,13 @@ capn_ptr capn_new_list(struct capn_segment *seg, int sz, int datasz, int ptrs) {
 	}
 	if (datasz > 4) {
 		p.datasz = 8;
-		new_object(&p, p.len * 8);
+		new_object(&p, (size_t) p.len * 8u);
 	} else if (datasz > 2) {
 		p.datasz = 4;
-		new_object(&p, p.len * 4);
+		new_object(&p, (size_t) p.len * 4u);
 	} else {
 		p.datasz = datasz;
-		new_object(&p, p.len * datasz);
+		new_object(&p, (size_t) p.len * (size_t) datasz);
 	}
 
 	return p;
@@ -2949,7 +2942,7 @@ capn_list1 capn_new_list1(struct capn_segment *seg, int sz) {
 		return l;
 	}
 	nbytes = ((size_t) sz + 7u) / 8u;
-	if (nbytes > (size_t) MAX_ALLOC_BYTES || nbytes > (size_t) INT_MAX) {
+	if (nbytes > (size_t) MAX_ALLOC_BYTES) {
 		l.p = null_ptr();
 		return l;
 	}
@@ -2959,7 +2952,7 @@ capn_list1 capn_new_list1(struct capn_segment *seg, int sz) {
 	 * it fits; a zero means the size is (len + 7) / 8. */
 	if (nbytes <= (size_t) CAPN_DATASZ_MAX)
 		l.p.datasz = (unsigned) nbytes;
-	new_object(&l.p, (int) nbytes);
+	new_object(&l.p, nbytes);
 	if (nbytes != 0 && l.p.data == NULL)
 		l.p = null_ptr();
 	return l;
@@ -2973,7 +2966,7 @@ capn_ptr capn_new_ptr_list(struct capn_segment *seg, int sz) {
 	p.len = sz;
 	p.ptrs = 0;
 	p.datasz = 0;
-	new_object(&p, sz*8);
+	new_object(&p, (size_t) sz * 8u);
 	return p;
 }
 

@@ -50,19 +50,9 @@ struct check_segment_alignment {
 #define CAPN_CREATE_MIN_SZ 4096
 #endif
 
-static struct capn_segment *create(void *u, uint32_t id, int sz) {
+static struct capn_segment *create_sz(size_t need) {
 	struct capn_segment *s;
-	size_t need, total, unit;
-
-	(void) u;
-	(void) id;
-	/* sz is the caller's int (the create callback). A request near
-	 * INT_MAX plus this header used to wrap the signed add and the
-	 * 4096-byte round-up, then calloc a 4096-byte segment for a
-	 * multi-gigabyte list. Count in size_t and refuse a wrap. */
-	if (sz < 0)
-		return NULL;
-	need = (size_t) sz;
+	size_t total, unit;
 	if (need > (size_t) -1 - sizeof(*s))
 		return NULL;
 	total = need + sizeof(*s);
@@ -83,6 +73,26 @@ static struct capn_segment *create(void *u, uint32_t id, int sz) {
 	s->cap = total - sizeof(*s);
 	s->user = s;
 	return s;
+}
+
+static struct capn_segment *create(void *u, uint32_t id, int sz) {
+	(void) u;
+	(void) id;
+	/* sz is the caller's int (the create callback). A request near
+	 * INT_MAX plus this header used to wrap the signed add and the
+	 * 4096-byte round-up, then calloc a 4096-byte segment for a
+	 * multi-gigabyte list. Count in size_t and refuse a wrap. */
+	if (sz < 0)
+		return NULL;
+	return create_sz((size_t) sz);
+}
+
+int capn_using_malloc(const struct capn *c) {
+	return c != NULL && c->create == create;
+}
+
+struct capn_segment *capn_malloc_segment(size_t sz) {
+	return create_sz(sz);
 }
 
 static struct capn_segment *create_local(void *u, int sz) {
@@ -120,9 +130,10 @@ void capn_reset_copy(struct capn *c) {
 
 #define ZBUF_SZ 4096
 /* Framing header is a stack array of this many segment-size words.
- * The first word of the stream is (segnum - 1); more than CAPN_MAX_SEGS
- * segments cannot be decoded. */
-#define CAPN_MAX_SEGS 1024
+ * The first word of the stream is (segnum - 1). C++
+ * InputStreamMessageReader rejects a count of 512 or more, so the
+ * wire word must stay below 511. */
+#define CAPN_MAX_SEGS 511
 
 /* Largest framed message the stream readers will allocate for, matching
  * the 64 MiB default traversal limit (C++ refuses a larger message at
@@ -226,7 +237,7 @@ static int read_fp(void *p, size_t sz, FILE *f,
 
 static int init_fp(struct capn *c, FILE *f,
 		   ssize_t (*read_fd)(int fd, void *p, size_t count), int fd,
-		   struct capn_stream *z, int packed) {
+		   struct capn_stream *z, int packed, size_t max_bytes) {
 	/*
 	 * Initialize 'c' from the contents of 'f', assuming the message has been
 	 * serialized with the standard framing format. From https://capnproto.org/encoding.html:
@@ -239,12 +250,17 @@ static int init_fp(struct capn *c, FILE *f,
 	 */
 
 	struct capn_segment *s = NULL;
-	uint32_t i, segnum, total = 0;
+	uint32_t i, segnum;
+	size_t total = 0;
 	uint32_t hdr[CAPN_MAX_SEGS];
 	uint8_t zbuf[ZBUF_SZ];
 	char *data = NULL;
 
 	capn_init_malloc(c);
+	if (max_bytes == 0)
+		max_bytes = CAPN_MAX_MESSAGE_BYTES;
+	else
+		c->traversal_limit = max_bytes;
 
 	/* Read the first four bytes to know how many headers we have */
 	if (read_fp(&segnum, 4, f, read_fd, fd, z, zbuf, packed))
@@ -261,13 +277,18 @@ static int init_fp(struct capn *c, FILE *f,
 
 	for (i = 0; i < segnum; i++) {
 		uint32_t n = capn_flip32(hdr[i]);
-		if (n > INT_MAX/8 || n > UINT32_MAX/8 || UINT32_MAX - total < n*8)
+		size_t nbytes;
+		/* 2^29-1 words is the largest segment C++ will read. */
+		if (n > 0x1fffffffu)
 			goto err;
-		hdr[i] = n*8;
-		total += hdr[i];
+		nbytes = (size_t) n * 8u;
+		if (total > (size_t) -1 - nbytes)
+			goto err;
+		hdr[i] = (uint32_t) nbytes;
+		total += nbytes;
 	}
 
-	if (total > CAPN_MAX_MESSAGE_BYTES)
+	if (total > max_bytes)
 		goto err;
 	/* A buffer cannot hold more than it was given, or than the longest
 	 * run a packed stream can inflate to (255 zero words per two bytes).
@@ -316,18 +337,27 @@ err:
 	return -1;
 }
 
-int capn_init_fp(struct capn *c, FILE *f, int packed) {
+int capn_init_fp_max(struct capn *c, FILE *f, int packed, size_t max_bytes) {
 	struct capn_stream z;
 	memset(&z, 0, sizeof(z));
-	return init_fp(c, f, NULL, -1, &z, packed);
+	return init_fp(c, f, NULL, -1, &z, packed, max_bytes);
 }
 
-int capn_init_mem(struct capn *c, const uint8_t *p, size_t sz, int packed) {
+int capn_init_fp(struct capn *c, FILE *f, int packed) {
+	return capn_init_fp_max(c, f, packed, 0);
+}
+
+int capn_init_mem_max(struct capn *c, const uint8_t *p, size_t sz, int packed,
+		      size_t max_bytes) {
 	struct capn_stream z;
 	memset(&z, 0, sizeof(z));
 	z.next_in = p;
 	z.avail_in = sz;
-	return init_fp(c, NULL, NULL, -1, &z, packed);
+	return init_fp(c, NULL, NULL, -1, &z, packed, max_bytes);
+}
+
+int capn_init_mem(struct capn *c, const uint8_t *p, size_t sz, int packed) {
+	return capn_init_mem_max(c, p, sz, packed, 0);
 }
 
 #ifndef __KERNEL__
@@ -336,7 +366,7 @@ int capn_init_fd(struct capn *c, ssize_t (*read_fd)(int fd, void *p, size_t coun
 	if (read_fd == NULL)
 		return -1;
 	memset(&z, 0, sizeof(z));
-	return init_fp(c, NULL, read_fd, fd, &z, packed);
+	return init_fp(c, NULL, read_fd, fd, &z, packed, 0);
 }
 #else /* __KERNEL__ */
 int capn_init_fd(struct capn *c, ssize_t (*read_fd)(int fd, void *p, size_t count), int fd, int packed) {
