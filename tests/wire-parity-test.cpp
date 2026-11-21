@@ -742,3 +742,36 @@ TEST(WireParity, CompositeTagCountUsesTwentyNineBits) {
 	capn_free(&dst);
 	capn_free(&c);
 }
+
+TEST(WireParity, LandingPadMayRepeatTheDoubleFarBit) {
+	/* The landing far has its double-far bit set. The kind is
+	 * still far, which is what C++ 1.4.0 checks. */
+	const uint8_t frame[] = {
+		0x02,0,0,0, 0x01,0,0,0, 0x02,0,0,0, 0x01,0,0,0,
+		0x06,0,0,0, 0x01,0,0,0,
+		0x06,0,0,0, 0x02,0,0,0, 0x00,0,0,0, 0x01,0,0,0,
+		0x11,0x22,0x33,0x44, 0x00,0,0,0,
+	};
+	const uint8_t canon[] = {
+		0x00,0,0,0, 0x01,0,0,0,
+		0x11,0x22,0x33,0x44, 0x00,0,0,0,
+	};
+	struct capn c, dst;
+	capn_ptr root;
+
+	ASSERT_EQ(0, load_frame(&c, frame, sizeof frame));
+	EXPECT_EQ(0, capn_validate(&c));
+	root = capn_getp(capn_root(&c), 0, 1);
+	EXPECT_EQ(CAPN_STRUCT, root.type);
+	EXPECT_EQ(8u, root.datasz);
+	EXPECT_EQ(0u, root.ptrs);
+	ASSERT_NE(nullptr, root.data);
+	EXPECT_EQ(0, memcmp(root.data, "\x11\x22\x33\x44", 4));
+	capn_init_malloc(&dst);
+	ASSERT_EQ(0, capn_canonicalize(&c, &dst));
+	ASSERT_NE(nullptr, dst.seglist);
+	ASSERT_EQ(sizeof canon, dst.seglist->len);
+	EXPECT_EQ(0, memcmp(canon, dst.seglist->data, sizeof canon));
+	capn_free(&dst);
+	capn_free(&c);
+}

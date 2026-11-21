@@ -397,9 +397,9 @@ static uint64_t lookup_double(struct capn_segment **s, char **d, uint64_t val) {
 	far = capn_flip64(*(uint64_t*) p);
 	tag = capn_flip64(*(uint64_t*) (p+8));
 
-	/* The landing far must be a single far. C++ 1.4.0 then
-	 * follows that far even when the tag is a capability. */
-	if ((far & 7) != FAR_PTR) {
+	/* Kind is the low two bits. The double-far bit sits above
+	 * them, and C++ 1.4.0 accepts a landing pad that has it set. */
+	if ((far & 3) != FAR_PTR) {
 		*s = NULL;
 		return 0;
 	}
