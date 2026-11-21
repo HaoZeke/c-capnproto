@@ -484,6 +484,10 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 	uint64_t val;
 	size_t nbytes = 0;
 	struct capn *c = s ? s->capn : NULL;
+	/* A far landing on a zero word is an empty struct. The word is
+	 * zero because the offset and the sizes are zero, so the type
+	 * has to come from the fact that a far was followed. */
+	int from_far = 0;
 
 	if (rem == 0)
 		goto err;
@@ -498,12 +502,14 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 		val = lookup_far(&s, &d, val);
 		if (!s)
 			goto err;
+		from_far = 1;
 		ret.has_ptr_tag = (U32(val) >> 2) == 0;
 		break;
 	case DOUBLE_PTR:
 		val = lookup_double(&s, &d, val);
 		if (!s)
 			goto err;
+		from_far = 1;
 		break;
 	}
 
@@ -534,7 +540,7 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 
 	switch (val & 3) {
 	case STRUCT_PTR:
-		ret.type = val ? CAPN_STRUCT : CAPN_NULL;
+		ret.type = (val || from_far) ? CAPN_STRUCT : CAPN_NULL;
 		ret.datasz = U32(U16(val >> 32)) * 8;
 		ret.ptrs = U32(U16(val >> 48));
 		if ((size_t) ret.datasz > (size_t) -1 - 8u * (size_t) ret.ptrs)

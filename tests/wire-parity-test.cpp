@@ -387,3 +387,84 @@ TEST(WireParity, BuilderMessagesMatchTheCapnpTool) {
 		capn_free(&c);
 	}
 }
+
+static int load_frame(struct capn *c, const uint8_t *b, size_t n)
+{
+	return capn_init_mem(c, (uint8_t *) b, n, 0);
+}
+
+static void expect_empty_struct_canon(const uint8_t *frame, size_t n,
+				       const uint8_t *canon, size_t cn)
+{
+	struct capn c, dst;
+	capn_ptr root;
+
+	ASSERT_EQ(0, load_frame(&c, frame, n));
+	EXPECT_EQ(0, capn_validate(&c));
+	EXPECT_EQ(1, capn_ok(&c));
+	root = capn_getp(capn_root(&c), 0, 1);
+	if (root.ptrs == 1 && root.datasz == 0) {
+		capn_ptr child = capn_getp(root, 0, 1);
+		EXPECT_EQ(CAPN_STRUCT, child.type);
+		EXPECT_EQ(0u, child.datasz);
+		EXPECT_EQ(0u, child.ptrs);
+	} else {
+		EXPECT_EQ(CAPN_STRUCT, root.type);
+		EXPECT_EQ(0u, root.datasz);
+		EXPECT_EQ(0u, root.ptrs);
+	}
+	capn_init_malloc(&dst);
+	ASSERT_EQ(0, capn_canonicalize(&c, &dst));
+	ASSERT_NE(nullptr, dst.seglist);
+	ASSERT_EQ(cn, dst.seglist->len);
+	EXPECT_EQ(0, memcmp(canon, dst.seglist->data, cn));
+	capn_free(&dst);
+	capn_free(&c);
+}
+
+TEST(WireParity, EmptyStructThroughAFarStaysAStruct) {
+	/* Double far, empty struct tag, target is word zero.
+	 * Offsets 0, 1 and -1. Root and a nested slot. A single
+	 * far that lands on a zero word is the same object. */
+	const uint8_t dfar0[] = {
+		0x02,0,0,0, 0x01,0,0,0, 0x02,0,0,0, 0x01,0,0,0,
+		0x06,0,0,0, 0x01,0,0,0,
+		0x02,0,0,0, 0x02,0,0,0, 0x00,0,0,0, 0x00,0,0,0,
+		0x00,0,0,0, 0x00,0,0,0,
+	};
+	const uint8_t dfar1[] = {
+		0x02,0,0,0, 0x01,0,0,0, 0x02,0,0,0, 0x01,0,0,0,
+		0x06,0,0,0, 0x01,0,0,0,
+		0x02,0,0,0, 0x02,0,0,0, 0x04,0,0,0, 0x00,0,0,0,
+		0x00,0,0,0, 0x00,0,0,0,
+	};
+	const uint8_t dfarm[] = {
+		0x02,0,0,0, 0x01,0,0,0, 0x02,0,0,0, 0x01,0,0,0,
+		0x06,0,0,0, 0x01,0,0,0,
+		0x02,0,0,0, 0x02,0,0,0, 0xfc,0xff,0xff,0xff, 0x00,0,0,0,
+		0x00,0,0,0, 0x00,0,0,0,
+	};
+	const uint8_t sfar[] = {
+		0x01,0,0,0, 0x01,0,0,0, 0x01,0,0,0, 0x00,0,0,0,
+		0x02,0,0,0, 0x01,0,0,0,
+		0x00,0,0,0, 0x00,0,0,0,
+	};
+	const uint8_t nested[] = {
+		0x01,0,0,0, 0x02,0,0,0, 0x01,0,0,0, 0x00,0,0,0,
+		0x00,0,0,0, 0x00,0,0x01,0, 0x02,0,0,0, 0x01,0,0,0,
+		0x00,0,0,0, 0x00,0,0,0,
+	};
+	const uint8_t empty_root[] = {
+		0xfc,0xff,0xff,0xff, 0x00,0,0,0,
+	};
+	const uint8_t empty_nest[] = {
+		0x00,0,0,0, 0x00,0,0x01,0,
+		0xfc,0xff,0xff,0xff, 0x00,0,0,0,
+	};
+
+	expect_empty_struct_canon(dfar0, sizeof dfar0, empty_root, sizeof empty_root);
+	expect_empty_struct_canon(dfar1, sizeof dfar1, empty_root, sizeof empty_root);
+	expect_empty_struct_canon(dfarm, sizeof dfarm, empty_root, sizeof empty_root);
+	expect_empty_struct_canon(sfar, sizeof sfar, empty_root, sizeof empty_root);
+	expect_empty_struct_canon(nested, sizeof nested, empty_nest, sizeof empty_nest);
+}
