@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # 32-bit compile smoke for struct capn_segment alignment.
 #
 # Cap'n Proto words are 8 bytes. On ILP32, sizeof(struct capn_segment)
@@ -11,7 +11,7 @@
 # without those headers is not a working 32-bit toolchain.
 #
 # Usage (from anywhere):
-#   scripts/smoke-m32.sh
+#   sh scripts/smoke-m32.sh
 # Env:
 #   CC  C compiler that accepts -m32 (default: gcc)
 #
@@ -63,11 +63,10 @@ esac
 echo "smoke-m32: compiler $($CC --version | head -n 1)"
 echo "smoke-m32: probe $file_probe"
 
-inc=(-I"${root}/lib" -std=c99)
 src_ok=0
 for src in lib/capn.c lib/capn-malloc.c lib/capn-stream.c; do
 	base=$(basename "$src" .c)
-	if "$CC" -m32 "${inc[@]}" -c -o "$tmp/${base}.o" "$src"; then
+	if "$CC" -m32 -I"${root}/lib" -std=c99 -c -o "$tmp/${base}.o" "$src"; then
 		echo "smoke-m32: compiled $src -> $(file "$tmp/${base}.o")"
 		src_ok=$((src_ok + 1))
 	else
@@ -98,11 +97,11 @@ const int smoke_sizeof_capn_segment = (int)sizeof(struct capn_segment);
 const int smoke_capn_segment_mod8 = (int)(sizeof(struct capn_segment) % 8);
 EOF
 
-if ! "$CC" -m32 "${inc[@]}" -c -o "$tmp/align.o" "$tmp/align.c"; then
+if ! "$CC" -m32 -I"${root}/lib" -std=c99 -c -o "$tmp/align.o" "$tmp/align.c"; then
 	echo "smoke-m32: FAIL alignment _Static_assert under -m32" >&2
 	exit 1
 fi
-"$CC" -m32 "${inc[@]}" -S -o "$tmp/align.s" "$tmp/align.c"
+"$CC" -m32 -I"${root}/lib" -std=c99 -S -o "$tmp/align.s" "$tmp/align.c"
 echo "smoke-m32: align object $(file "$tmp/align.o")"
 echo "smoke-m32: sizeof dumps (from -S):"
 grep -E 'smoke_sizeof_void_star|smoke_sizeof_capn_segment|smoke_capn_segment_mod8' -A1 "$tmp/align.s" | sed 's/^/  /'
