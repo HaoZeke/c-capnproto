@@ -1774,6 +1774,19 @@ TEST(WireParity, PackedRunStopsAtASegmentBoundary) {
 	capn_free(&w);
 }
 
+TEST(WireParity, PackedRunCrossesASegmentBoundary) {
+	/* Two one-word segments. The zero run covers both bodies.
+	 * C++ 1.4.0 reads that as one packed stream. */
+	const uint8_t cross[] = {
+		0x11,0x01,0x01,0x01,0x01,0x00,0x01,
+	};
+	struct capn c;
+
+	EXPECT_EQ(0, capn_init_mem(&c, (uint8_t *) cross, sizeof cross, 1));
+	EXPECT_EQ(2u, c.segnum);
+	capn_free(&c);
+}
+
 TEST(WireParity, EmptyBufferIsAnEmptyMessage) {
 	struct capn c;
 	capn_ptr root;

@@ -340,20 +340,14 @@ static int init_fp(struct capn *c, FILE *f,
 	if (!s)
 		goto err;
 
-	/* Now read the data and setup the capn_segment structs.
-	 * Each packed segment is its own inflate: a run that crosses
-	 * into the next segment is not a message C++ will read. */
+	/* The segment bodies are one packed stream. A zero run or a raw
+	 * run continues from one segment into the next. A run that still
+	 * has bytes after those bodies is not part of this message. */
 	data = (char*) (s+segnum);
 	if (packed) {
-		char *p = data;
-		for (i = 0; i < segnum; i++) {
-			if (hdr[i] == 0)
-				continue;
-			if (read_fp(p, hdr[i], f, read_fd, fd, z, zbuf, 1) ||
-			    z->zeros || z->raw || z->avail_buf)
-				goto err;
-			p += hdr[i];
-		}
+		if (total && (read_fp(data, total, f, read_fd, fd, z, zbuf, 1) ||
+		    z->zeros || z->raw || z->avail_buf))
+			goto err;
 	} else if (read_fp(data, total, f, read_fd, fd, z, zbuf, 0))
 		goto err;
 
