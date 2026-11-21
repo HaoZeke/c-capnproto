@@ -917,4 +917,93 @@ TEST_F(RpcJoin, ReleasingFewerReferencesKeepsTheExport)
 	EXPECT_FALSE(conn.exports[live].used);
 }
 
+/* Alice arranges the handoff. Carol accepts on her own connection.
+ * The Return belongs on Carol's connection, and Alice's extra
+ * reference is gone once Carol has claimed the capability. */
+TEST_F(RpcJoin, AcceptAfterTheIntroducerIsFreed)
+{
+	struct capn_rpc_vat vat;
+	struct capn_rpc_conn alice, carol;
+	Outbox alice_out, carol_out;
+	const uint64_t nonce = 0x111ULL;
+
+	memset(&vat, 0, sizeof vat);
+	capn_rpc_init(&alice, collect, &alice_out);
+	capn_rpc_init(&carol, collect, &carol_out);
+	capn_rpc_set_vat(&alice, &vat);
+	capn_rpc_set_vat(&carol, &vat);
+	capn_rpc_set_bootstrap(&alice, &calls, counting_dispatch);
+	uint32_t exp = bootstrap_export(&alice, &alice_out);
+	send_provide(&alice, 80, exp, nonce);
+	capn_rpc_free(&alice);
+	send_accept_embargoed(&carol, 81, nonce);
+	EXPECT_EQ(0u, carol_out.frames.size());
+	send_disembargo_provide(&carol, 80);
+	capn_rpc_free(&carol);
+}
+
+TEST_F(RpcJoin, DisembargoAfterTheAcceptorIsFreed)
+{
+	struct capn_rpc_vat vat;
+	struct capn_rpc_conn alice, carol;
+	Outbox alice_out, carol_out;
+	const uint64_t nonce = 0x222ULL;
+
+	memset(&vat, 0, sizeof vat);
+	capn_rpc_init(&alice, collect, &alice_out);
+	capn_rpc_init(&carol, collect, &carol_out);
+	capn_rpc_set_vat(&alice, &vat);
+	capn_rpc_set_vat(&carol, &vat);
+	capn_rpc_set_bootstrap(&alice, &calls, counting_dispatch);
+	uint32_t exp = bootstrap_export(&alice, &alice_out);
+	send_provide(&alice, 80, exp, nonce);
+	send_accept_embargoed(&carol, 81, nonce);
+	capn_rpc_free(&carol);
+	alice_out.frames.clear();
+	send_disembargo_provide(&alice, 80);
+	EXPECT_EQ(0u, alice_out.frames.size());
+	capn_rpc_free(&alice);
+}
+
+TEST_F(RpcJoin, EmbargoedAcceptIsAnsweredOnTheAcceptingConnection)
+{
+	struct capn_rpc_vat vat;
+	struct capn_rpc_conn alice, carol;
+	Outbox alice_out, carol_out;
+	const uint64_t nonce = 0xca201ULL;
+	uint32_t exp;
+
+	memset(&vat, 0, sizeof vat);
+	memset(&alice, 0, sizeof alice);
+	memset(&carol, 0, sizeof carol);
+	capn_rpc_init(&alice, collect, &alice_out);
+	capn_rpc_init(&carol, collect, &carol_out);
+	capn_rpc_set_vat(&alice, &vat);
+	capn_rpc_set_vat(&carol, &vat);
+	capn_rpc_set_bootstrap(&alice, &calls, counting_dispatch);
+	exp = bootstrap_export(&alice, &alice_out);
+	ASSERT_EQ(1, alice.exports[exp].refcount);
+
+	send_provide(&alice, 80, exp, nonce);
+	EXPECT_EQ(2, alice.exports[exp].refcount);
+	alice_out.frames.clear();
+
+	send_accept_embargoed(&carol, 81, nonce);
+	EXPECT_EQ(0u, carol_out.frames.size());
+	EXPECT_EQ(0u, alice_out.frames.size());
+	EXPECT_EQ(1, alice.exports[exp].refcount);
+
+	send_disembargo_provide(&alice, 80);
+	EXPECT_EQ(0u, alice_out.frames.size());
+	ASSERT_EQ(1u, carol_out.frames.size());
+	{
+		L3Reply r = read_l3(carol_out.frames[0]);
+		EXPECT_EQ(81u, r.answer_id);
+		EXPECT_FALSE(r.is_exception);
+		EXPECT_TRUE(r.has_cap);
+	}
+	capn_rpc_free(&alice);
+	capn_rpc_free(&carol);
+}
+
 } // namespace

@@ -137,10 +137,36 @@ void capn_rpc_set_result_size(struct capn_rpc_conn *c, int datasz, int ptrs)
 	c->results_ptrs = ptrs;
 }
 
+static void drop_intro_hold(struct capn_rpc_provision *pr);
+
+/* A freed connection must not stay named by a provision. The next
+ * Accept or Disembargo would otherwise follow the dead pointer. */
+static void detach_provisions(struct capn_rpc_conn *c)
+{
+	int i;
+
+	if (!c->vat)
+		return;
+	for (i = 0; i < CAPN_RPC_MAX_PROVISIONS; i++) {
+		struct capn_rpc_provision *pr = &c->vat->provisions[i];
+		if (!pr->used)
+			continue;
+		if (pr->accept_conn == c) {
+			if (pr->intro_conn && pr->intro_conn != c)
+				drop_intro_hold(pr);
+			memset(pr, 0, sizeof *pr);
+		} else if (pr->intro_conn == c) {
+			pr->intro_conn = NULL;
+			pr->intro_export = -1;
+		}
+	}
+}
+
 void capn_rpc_free(struct capn_rpc_conn *c)
 {
 	int i;
 
+	detach_provisions(c);
 	for (i = 0; i < c->answers_cap; i++)
 		free(c->answers[i].frame);
 	for (i = 0; i < c->questions_cap; i++)
@@ -4760,8 +4786,11 @@ static int release_provide_embargo(struct capn_rpc_conn *c, uint32_t provide_qid
 		{
 			uint32_t qid = c->vat->provisions[i].accept_question_id;
 			int eid = c->vat->provisions[i].export_id;
+			struct capn_rpc_conn *dst = c->vat->provisions[i].accept_conn;
 			memset(&c->vat->provisions[i], 0, sizeof c->vat->provisions[i]);
-			return send_accepted_cap(c, qid, eid);
+			if (!dst)
+				return 0;
+			return send_accepted_cap(dst, qid, eid);
 		}
 	}
 	/* A Disembargo naming nothing we hold is the sender's problem, not
@@ -4808,12 +4837,33 @@ static int handle_provide(struct capn_rpc_conn *c, Provide_ptr pp)
 			c->vat->provisions[i].export_id = eid;
 			c->vat->provisions[i].question_id = pv.questionId;
 			c->vat->provisions[i].embargoed = 0;
-			/* The recipient holds a reference once it accepts. */
+			c->vat->provisions[i].intro_conn = c;
+			c->vat->provisions[i].intro_export = eid;
+			/* Pin the export until Accept. The pin is dropped
+			 * when the recipient takes her own export. */
 			c->exports[eid].refcount++;
 			return send_empty_return(c, pv.questionId);
 		}
 	}
 	return send_return_exception(c, pv.questionId, "provide: table full");
+}
+
+/* Drop the reference `Provide` took on the introducer's export. */
+static void drop_intro_hold(struct capn_rpc_provision *pr)
+{
+	struct capn_rpc_conn *ic = pr->intro_conn;
+	int eid = pr->intro_export;
+
+	pr->intro_conn = NULL;
+	pr->intro_export = -1;
+	if (!ic || eid < 0 || eid >= ic->exports_cap)
+		return;
+	if (!ic->exports[eid].used || ic->exports[eid].refcount <= 0)
+		return;
+	if (ic->exports[eid].refcount == 1)
+		memset(&ic->exports[eid], 0, sizeof ic->exports[eid]);
+	else
+		ic->exports[eid].refcount--;
 }
 
 /* `Accept`: claim a capability a third vat provided for us.
@@ -4852,15 +4902,18 @@ static int handle_accept(struct capn_rpc_conn *c, Accept_ptr ap)
 			if (eid < 0)
 				return send_return_exception(c, ac.questionId,
 				                             "accept: export table full");
+			drop_intro_hold(&c->vat->provisions[i]);
 			c->vat->provisions[i].export_id = eid;
 			if (ac.embargo) {
 				/* Claimed, but the Return waits: the recipient
 				 * has pipelined calls in flight through the
 				 * introducer, and answering now would let a
 				 * later call overtake them. The introducer
-				 * lifts it with Disembargo.provide. */
+				 * lifts it with Disembargo.provide. The
+				 * Return goes to this connection. */
 				c->vat->provisions[i].embargoed = 1;
 				c->vat->provisions[i].accept_question_id = ac.questionId;
+				c->vat->provisions[i].accept_conn = c;
 			} else {
 				c->vat->provisions[i].used = 0;
 			}

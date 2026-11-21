@@ -155,6 +155,13 @@ struct capn_rpc_provision {
 	 * outlives the claim and carries the answer to send. */
 	int embargoed;
 	uint32_t accept_question_id;
+	/* The connection that sent the embargoed Accept. The Return
+	 * goes there, not to the connection that sent Disembargo. */
+	struct capn_rpc_conn *accept_conn;
+	/* The introducer's export, pinned until Accept. The pin is
+	 * one reference and is dropped when the recipient claims it. */
+	struct capn_rpc_conn *intro_conn;
+	int intro_export;
 };
 
 /* An introduction we have been handed but not yet picked up.
