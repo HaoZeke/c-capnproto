@@ -1639,6 +1639,14 @@ static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, st
 				n = fn;
 			if (n && t->data && f->data)
 				memcpy(t->data, f->data, n);
+			/* Unused bits in the last byte are zero in canonical
+			 * form and in a C++ copy. */
+			if (t->data && t->len > 0 && (t->len & 7)) {
+				size_t whole = (size_t) t->len / 8u;
+				uint8_t keep = (uint8_t) ((1u << (t->len & 7)) - 1u);
+				if (whole < n)
+					t->data[whole] = (char) ((uint8_t) t->data[whole] & keep);
+			}
 		}
 		return 0;
 

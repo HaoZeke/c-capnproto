@@ -972,3 +972,25 @@ TEST(WireParity, CanonicalFormRequiresAStructRoot) {
 	capn_free(&dst);
 	capn_free(&c);
 }
+
+TEST(WireParity, CopyClearsUnusedBitsInABitList) {
+	struct capn src, dst;
+	capn_init_malloc(&src);
+	struct capn_segment *seg = capn_root(&src).seg;
+	capn_list1 bits = capn_new_list1(seg, 3);
+	ASSERT_EQ(CAPN_BIT_LIST, bits.p.type);
+	ASSERT_NE(nullptr, bits.p.data);
+	bits.p.data[0] = (char) 0xf5;
+	capn_ptr st = capn_new_struct(seg, 0, 1);
+	ASSERT_EQ(0, capn_setp(st, 0, bits.p));
+	ASSERT_EQ(0, capn_set_root(&src, st));
+
+	capn_init_malloc(&dst);
+	ASSERT_EQ(0, capn_set_root(&dst, capn_getp(capn_root(&src), 0, 1)));
+	capn_ptr copied = capn_getp(capn_getp(capn_root(&dst), 0, 1), 0, 1);
+	ASSERT_EQ(CAPN_BIT_LIST, copied.type);
+	ASSERT_NE(nullptr, copied.data);
+	EXPECT_EQ(0x05, (unsigned char) copied.data[0]);
+	capn_free(&dst);
+	capn_free(&src);
+}
