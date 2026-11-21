@@ -108,7 +108,7 @@ jobs:
           test -f destdir/usr/local/share/c-capnproto/c.capnp
           test -f destdir/usr/local/lib/pkgconfig/c-capnproto.pc \
             || test -f destdir/usr/local/lib/*/pkgconfig/c-capnproto.pc \
-            || ls -R destdir/usr/local/lib | head -40
+            || { find destdir/usr/local/lib -print | head -40; exit 1; }
       - name: Install smoke (Windows)
         if: runner.os == 'Windows'
         shell: bash
