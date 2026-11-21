@@ -150,7 +150,7 @@ jobs:
       - name: Install capnproto
         run: |
           sudo apt-get update
-          sudo apt-get install -y capnproto clang
+          sudo apt-get install -y capnproto libcapnp-dev clang
           rt="libclang-rt-$(clang -dumpversion | cut -d. -f1)-dev"
           sudo apt-get install -y "$rt"
       - name: Configure
