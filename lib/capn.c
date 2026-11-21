@@ -2697,9 +2697,20 @@ capn_ptr capn_new_list(struct capn_segment *seg, int sz, int datasz, int ptrs) {
 
 	if (ptrs || datasz > 8) {
 		return capn_new_struct_list(seg, sz, datasz, ptrs);
-	} else if (!alloc_ok(sz, (int64_t) sz * 8)) {
-		return null_ptr();
-	} else if (datasz > 4) {
+	} else {
+		/* Charge the element width. Eight bytes for every width
+		 * refuses a byte list C++ 1.4.0 allocates. */
+		int64_t nbytes = (int64_t) sz * (int64_t) datasz;
+		if (datasz > 4)
+			nbytes = (int64_t) sz * 8;
+		else if (datasz > 2)
+			nbytes = (int64_t) sz * 4;
+		else if (datasz > 1)
+			nbytes = (int64_t) sz * 2;
+		if (!alloc_ok(sz, nbytes))
+			return null_ptr();
+	}
+	if (datasz > 4) {
 		p.datasz = 8;
 		new_object(&p, p.len * 8);
 	} else if (datasz > 2) {

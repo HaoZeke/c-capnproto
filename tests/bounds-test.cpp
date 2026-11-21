@@ -968,3 +968,24 @@ TEST(NewObjectLimits, HugeListRefusesAWrappedAllocation) {
   EXPECT_EQ(nullptr, p.data);
   capn_free(&c);
 }
+
+TEST(NewObjectLimits, PrimitiveListUsesItsElementWidth) {
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *seg = capn_root(&c).seg;
+  ASSERT_NE(nullptr, seg);
+  const int widths[] = {1, 2, 4};
+  for (int w : widths) {
+    capn_ptr p = capn_new_list(seg, 0xffffffe, w, 0);
+    EXPECT_EQ(CAPN_LIST, p.type) << w;
+    EXPECT_EQ(0xffffffe, p.len) << w;
+    EXPECT_NE(nullptr, p.data) << w;
+    capn_free(&c);
+    capn_init_malloc(&c);
+    seg = capn_root(&c).seg;
+  }
+  capn_ptr wide = capn_new_list(seg, 0x10000000, 1, 0);
+  EXPECT_EQ(CAPN_LIST, wide.type);
+  EXPECT_EQ(0x10000000, wide.len);
+  capn_free(&c);
+}
