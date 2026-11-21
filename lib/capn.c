@@ -2161,8 +2161,11 @@ static int canon_measure(capn_ptr p, int rem, struct capn_vset *vs,
 	size_t add, nbytes;
 	capn_ptr ch;
 
-	if (p.type == CAPN_NULL || p.type == CAPN_INTERFACE)
+	if (p.type == CAPN_NULL)
 		return 0;
+	/* C++ 1.4.0 refuses a canonical message that contains a capability. */
+	if (p.type == CAPN_INTERFACE)
+		return -1;
 
 	ent = vset_reenter(vs, p);
 	if (ent < 0)
@@ -2270,8 +2273,9 @@ static int canon_emit(struct capn_segment *ds, char *ptr_loc, capn_ptr p,
 		memset(ptr_loc, 0, 8);
 		return 0;
 	}
+	/* Same refusal as canon_measure, so a capability is never written. */
 	if (p.type == CAPN_INTERFACE)
-		return write_ptr_tag(ptr_loc, p, 0);
+		return -1;
 
 	ent = vset_reenter(vs, p);
 	if (ent < 0)

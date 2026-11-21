@@ -218,6 +218,31 @@ TEST(WireParity, DoubleFarCapabilityReadsTheIndex) {
 	capn_free(&c);
 }
 
+TEST(WireParity, CanonicalFormRefusesACapability) {
+	/* Root capability, then a struct whose only pointer is one.
+	 * C++ 1.4.0 refuses both with "Cannot create a canonical
+	 * message with a capability". */
+	const uint8_t root_cap[] = {0x03, 0, 0, 0, 0x04, 0, 0, 0};
+	const uint8_t nested[] = {
+		0x00, 0, 0, 0, 0x00, 0, 0x01, 0,
+		0x03, 0, 0, 0, 0x04, 0, 0, 0,
+	};
+	uint8_t framed[64];
+	struct capn c, dst;
+
+	ASSERT_EQ(0, init_one_seg(&c, root_cap, sizeof root_cap, framed, sizeof framed));
+	capn_init_malloc(&dst);
+	EXPECT_NE(0, capn_canonicalize(&c, &dst));
+	capn_free(&dst);
+	capn_free(&c);
+
+	ASSERT_EQ(0, init_one_seg(&c, nested, sizeof nested, framed, sizeof framed));
+	capn_init_malloc(&dst);
+	EXPECT_NE(0, capn_canonicalize(&c, &dst));
+	capn_free(&dst);
+	capn_free(&c);
+}
+
 TEST(WireParity, BuilderMessagesMatchTheCapnpTool) {
 	std::mt19937 rng(0xC0FFEE);
 	for (int n = 0; n < 20; n++) {
