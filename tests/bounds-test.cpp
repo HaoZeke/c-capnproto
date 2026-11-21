@@ -326,6 +326,9 @@ TEST(DecodeGraph, DefaultNestingAllows64Rejects65) {
 	p = follow_ptrs(root_getp(&c), 63);
 	EXPECT_EQ(CAPN_STRUCT, p.type);
 	EXPECT_EQ(1, capn_ok(&c));
+	p = capn_getp(p, 0, 1);
+	EXPECT_EQ(CAPN_NULL, p.type);
+	EXPECT_EQ(1, capn_ok(&c));
 	EXPECT_EQ(0, capn_validate(&c));
 	EXPECT_EQ(1, capn_ok(&c));
 	capn_free(&c);

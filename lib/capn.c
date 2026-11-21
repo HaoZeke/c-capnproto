@@ -485,7 +485,7 @@ static uint64_t lookup_far(struct capn_segment **s, char **d, uint64_t val) {
 	return capn_flip64(*(uint64_t*)*d);
 }
 
-/* rem is remaining hops including this one. rem==0 rejects.
+/* rem is remaining hops including this one. rem==0 rejects a non-null word.
  * rem<0 skips the nesting check (copy path).
  * err (OOB / budget / nesting / broken) sets decode_err. A wire-null
  * pointer word returns CAPN_NULL without taking this path. */
@@ -503,9 +503,6 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 	 * else still pays for its own word. */
 	int charged_root_word = 0;
 
-	if (rem == 0)
-		goto err;
-
 	if (!s || !bounds_ok(s, d, 8))
 		goto err;
 
@@ -520,6 +517,12 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 	}
 
 	val = capn_flip64(*(uint64_t*) d);
+	/* C++ returns the default for a null word before it checks the
+	 * nesting limit. */
+	if (val == 0)
+		return ret;
+	if (rem == 0)
+		goto err;
 
 	switch (val&7) {
 	case FAR_PTR:
