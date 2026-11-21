@@ -2706,10 +2706,20 @@ int capn_set_text(capn_ptr p, int off, capn_text tgt) {
 
 capn_data capn_get_data(capn_ptr p, int off) {
 	capn_data ret;
+	struct capn *c;
+
 	ret.p = capn_getp(p, off, 1);
-	if (ret.p.type != CAPN_LIST || ret.p.datasz != 1) {
-		memset(&ret, 0, sizeof(ret));
+	/* Data is a byte list, including an empty one. A wire-null
+	 * pointer is an absent field. Any other pointer is the schema
+	 * mismatch C++ 1.4.0 throws. */
+	if (ret.p.type == CAPN_LIST && ret.p.datasz == 1)
+		return ret;
+	if (ret.p.type != CAPN_NULL) {
+		c = ret.p.seg ? ret.p.seg->capn : (p.seg ? p.seg->capn : NULL);
+		if (c)
+			c->decode_err = 1;
 	}
+	memset(&ret, 0, sizeof(ret));
 	return ret;
 }
 

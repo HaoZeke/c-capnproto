@@ -336,6 +336,9 @@ CAPN_EXPORT int capn_setp(capn_ptr p, int off, capn_ptr tgt);
  * pointer that is present but is not a nonempty byte list ending in
  * NUL also returns def and sets decode_err. An interior NUL is kept. */
 CAPN_EXPORT capn_text capn_get_text(capn_ptr p, int off, capn_text def);
+/* A byte list, including an empty one, is returned as-is. A wire-null
+ * pointer returns an empty capn_data and leaves decode_err alone. Any
+ * other pointer returns empty capn_data and sets decode_err. */
 CAPN_EXPORT capn_data capn_get_data(capn_ptr p, int off);
 CAPN_EXPORT int capn_set_text(capn_ptr p, int off, capn_text tgt);
 /* capn_set_data writes tgt.p (generated Data setters call this).

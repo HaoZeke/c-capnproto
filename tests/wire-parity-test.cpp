@@ -294,6 +294,60 @@ TEST(WireParity, TextWithoutATerminatorSetsDecodeErr) {
 	capn_free(&c);
 }
 
+TEST(WireParity, DataThatIsNotBytesSetsDecodeErr) {
+	/* A struct where Data was expected. C++ 1.4.0 throws a schema
+	 * mismatch. A wire-null pointer and a byte list stay quiet. */
+	const uint8_t bad[] = {
+		0x00, 0, 0, 0, 0x00, 0, 0x01, 0,
+		0x00, 0, 0, 0, 0x01, 0, 0, 0,
+		0x11, 0x22, 0x33, 0x44, 0, 0, 0, 0,
+	};
+	const uint8_t one[] = {
+		0x00, 0, 0, 0, 0x00, 0, 0x01, 0,
+		0x01, 0, 0, 0, 0x0a, 0, 0, 0,
+		0x41, 0, 0, 0, 0, 0, 0, 0,
+	};
+	const uint8_t empty[] = {
+		0x00, 0, 0, 0, 0x00, 0, 0x01, 0,
+		0x01, 0, 0, 0, 0x02, 0, 0, 0,
+	};
+	const uint8_t absent[] = {
+		0x00, 0, 0, 0, 0x00, 0, 0x01, 0,
+		0x00, 0, 0, 0, 0x00, 0, 0, 0,
+	};
+	uint8_t framed[64];
+	struct capn c;
+	capn_data got;
+
+	ASSERT_EQ(0, init_one_seg(&c, bad, sizeof bad, framed, sizeof framed));
+	got = capn_get_data(capn_getp(capn_root(&c), 0, 1), 0);
+	EXPECT_EQ(0, capn_ok(&c));
+	EXPECT_EQ(CAPN_NULL, got.p.type);
+	capn_free(&c);
+
+	ASSERT_EQ(0, init_one_seg(&c, one, sizeof one, framed, sizeof framed));
+	got = capn_get_data(capn_getp(capn_root(&c), 0, 1), 0);
+	EXPECT_EQ(1, capn_ok(&c));
+	EXPECT_EQ(CAPN_LIST, got.p.type);
+	EXPECT_EQ(1, got.p.len);
+	ASSERT_NE(nullptr, got.p.data);
+	EXPECT_EQ(0x41, (unsigned char) got.p.data[0]);
+	capn_free(&c);
+
+	ASSERT_EQ(0, init_one_seg(&c, empty, sizeof empty, framed, sizeof framed));
+	got = capn_get_data(capn_getp(capn_root(&c), 0, 1), 0);
+	EXPECT_EQ(1, capn_ok(&c));
+	EXPECT_EQ(CAPN_LIST, got.p.type);
+	EXPECT_EQ(0, got.p.len);
+	capn_free(&c);
+
+	ASSERT_EQ(0, init_one_seg(&c, absent, sizeof absent, framed, sizeof framed));
+	got = capn_get_data(capn_getp(capn_root(&c), 0, 1), 0);
+	EXPECT_EQ(1, capn_ok(&c));
+	EXPECT_EQ(CAPN_NULL, got.p.type);
+	capn_free(&c);
+}
+
 TEST(WireParity, BuilderMessagesMatchTheCapnpTool) {
 	std::mt19937 rng(0xC0FFEE);
 	for (int n = 0; n < 20; n++) {
