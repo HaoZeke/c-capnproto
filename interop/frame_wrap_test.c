@@ -6,6 +6,8 @@
  * for a table that never arrives. The client must exit instead.
  */
 
+#include "posix_net.h"
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -31,7 +33,7 @@ static int listen_port(int *port)
 	setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
 	memset(&addr, 0, sizeof addr);
 	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	addr.sin_addr.s_addr = posix_loopback_addr();
 	addr.sin_port = 0;
 	if (bind(fd, (struct sockaddr *)&addr, sizeof addr) != 0 ||
 	    listen(fd, 1) != 0 ||
@@ -54,7 +56,7 @@ static void drain(int fd)
 	ts.tv_sec = 0;
 	ts.tv_nsec = 20000000L;
 	for (i = 0; i < 25; i++) {
-		ssize_t n = recv(fd, buf, sizeof buf, MSG_DONTWAIT);
+		ssize_t n = posix_recv_nonblock(fd, buf, sizeof buf);
 		if (n > 0)
 			continue;
 		if (n == 0)

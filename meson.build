@@ -384,6 +384,25 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
     env: have_host_capnp ? {'CAPNP_CLI': capnp.full_path()} : {},
   )
 
+  posix_socket_test = executable(
+    'posix-socket-test',
+    'tests' / 'posix-socket-test.c',
+    include_directories: include_directories(['interop']),
+    c_args: ['-D_POSIX_C_SOURCE=200809L'],
+    implicit_include_directories: false,
+    install: false,
+  )
+  test('posix-socket-test', posix_socket_test)
+  test(
+    'posix-socket-check',
+    find_program('sh'),
+    args: [
+      meson.project_source_root() / 'tests' / 'posix-socket-check.sh',
+      cc.cmd_array()[-1],
+      meson.project_source_root(),
+    ],
+  )
+
   if have_host_capnp
     codec_c_args = common_c_args + ['-D_POSIX_C_SOURCE=200809L']
 

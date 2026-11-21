@@ -153,7 +153,11 @@ EXTRA_DIST += \
 	interop/frame_wrap_test.c \
 	tests/gate-r5-test.cpp \
 	cross/s390x.ini \
-	tests/wire-parity-test.cpp
+	tests/wire-parity-test.cpp \
+	interop/posix_net.h \
+	tests/no-bsd-socket.h \
+	tests/posix-socket-check.sh \
+	tests/posix-socket-test.c
 
 EXTRA_DIST += \
 	compiler/c.capnp \

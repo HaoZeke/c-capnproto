@@ -2,6 +2,8 @@
  * The leaf extends CountMid and Adder. CountMid extends CountBase, so a
  * call that names CountBase is forwarded through the middle server. */
 
+#include "posix_net.h"
+
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <stdio.h>
@@ -122,7 +124,7 @@ int main(int argc, char **argv)
 	memset(&addr, 0, sizeof addr);
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons((uint16_t) port);
-	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	addr.sin_addr.s_addr = posix_loopback_addr();
 	if (bind(lfd, (struct sockaddr *) &addr, sizeof addr) != 0 ||
 	    listen(lfd, 1) != 0) {
 		close(lfd);
