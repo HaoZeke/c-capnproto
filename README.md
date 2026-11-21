@@ -66,6 +66,82 @@ make
 make check
 ```
 
+## Install and consume
+
+Install into a prefix, then build a program against that prefix. The
+three build systems install the same layout (see [Install layout](#install-layout)).
+
+### System install
+
+Meson:
+
+```sh
+meson setup build --prefix=/usr/local
+meson compile -C build
+meson install -C build
+```
+
+CMake:
+
+```sh
+cmake -S . -B build-cmake -DCMAKE_INSTALL_PREFIX=/usr/local
+cmake --build build-cmake
+cmake --install build-cmake
+```
+
+Autotools, after `./configure --prefix=/usr/local` and `make`:
+
+```sh
+make install
+```
+
+### pkg-config
+
+`c-capnproto.pc` is generated from `c-capnproto.pc.in`. Meson, CMake, and
+autotools each substitute `@PACKAGE_VERSION@`, `@prefix@`, `@exec_prefix@`,
+`@libdir@`, `@bindir@`, and `@includedir@`.
+
+```sh
+export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+pkg-config --modversion c-capnproto
+pkg-config --variable=codegen c-capnproto
+cc -o app app.c $(pkg-config --cflags --libs c-capnproto)
+```
+
+A multiarch Meson install places the file under `lib/<triplet>/pkgconfig`.
+Add that directory to `PKG_CONFIG_PATH` as well. `codegen` expands to the
+installed `capnpc-c`.
+
+### Meson wrap and subproject
+
+`meson.build` calls `meson.override_dependency('c-capnproto', libcapnp_dep)`.
+An installed `c-capnproto.pc` satisfies `dependency('c-capnproto')`. With no
+install, a wrap file builds this tree as a subproject. Tests stay off in
+that subproject build.
+
+`subprojects/c-capnproto.wrap`:
+
+```ini
+[wrap-git]
+url = https://github.com/HaoZeke/c-capnproto.git
+revision = v0.4.2
+depth = 1
+
+[provide]
+c-capnproto = libcapnp_dep
+```
+
+A checkout already on disk can be named in the fallback:
+
+```meson
+project('myapp', 'c')
+dep = dependency('c-capnproto', fallback: ['c-capnproto', 'libcapnp_dep'])
+executable('app', 'app.c', dependencies: dep)
+```
+
+Put the sources at `subprojects/c-capnproto` (a directory or a git submodule)
+when you use the fallback without a wrap file.
+
 ## Usage
 
 ### Generating C code from a `.capnp` schema file
