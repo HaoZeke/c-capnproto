@@ -554,6 +554,7 @@ TEST(WireParity, HugeVoidListExceedsTheTraversalLimit) {
 	struct capn c;
 	capn_ptr root;
 	ASSERT_EQ(0, load_frame(&c, frame, sizeof frame));
+	EXPECT_EQ(0, capn_is_canonical(&c));
 	root = capn_getp(capn_root(&c), 0, 1);
 	EXPECT_EQ(CAPN_NULL, root.type);
 	EXPECT_EQ(0, capn_ok(&c));
@@ -1121,5 +1122,215 @@ TEST(WireParity, FlatWriteDuplicatesASharedStruct) {
 	int64_t n = capn_write_flat(&c, flat, sizeof flat);
 	/* One copy of the child is 32 bytes. Both copies are 40. */
 	EXPECT_EQ(40, n);
+	capn_free(&c);
+}
+TEST(WireParity, CanonicalPredicateMatchesTheLayout) {
+	const uint8_t nullroot[] = {
+		0,0,0,0, 1,0,0,0,
+		0,0,0,0, 0,0,0,0,
+	};
+	struct capn c;
+	ASSERT_EQ(0, load_frame(&c, nullroot, sizeof nullroot));
+	EXPECT_EQ(1, capn_is_canonical(&c));
+	capn_free(&c);
+
+	capn_init_malloc(&c);
+	struct capn_segment *seg = capn_root(&c).seg;
+	capn_ptr st = capn_new_struct(seg, 8, 0);
+	ASSERT_EQ(CAPN_STRUCT, st.type);
+	capn_write32(st, 0, 5);
+	ASSERT_EQ(0, capn_set_root(&c, st));
+	struct capn dst;
+	capn_init_malloc(&dst);
+	ASSERT_EQ(0, capn_canonicalize(&c, &dst));
+	EXPECT_EQ(1, capn_is_canonical(&dst));
+	capn_free(&dst);
+
+	capn_ptr wide = capn_new_struct(seg, 16, 0);
+	ASSERT_EQ(CAPN_STRUCT, wide.type);
+	capn_write32(wide, 0, 5);
+	struct capn hole;
+	capn_init_malloc(&hole);
+	ASSERT_EQ(0, capn_set_root(&hole, wide));
+	EXPECT_EQ(0, capn_is_canonical(&hole));
+	capn_free(&hole);
+	capn_free(&c);
+}
+
+TEST(WireParity, CanonicalCompositeListIsAccepted) {
+	struct capn c, dst;
+	capn_init_malloc(&c);
+	struct capn_segment *seg = capn_root(&c).seg;
+	capn_ptr list = capn_new_struct_list(seg, 1, 8, 0);
+	ASSERT_EQ(CAPN_LIST, list.type);
+	ASSERT_NE(nullptr, list.data);
+	capn_write32(list, 0, 9);
+	capn_ptr st = capn_new_struct(seg, 0, 1);
+	ASSERT_EQ(0, capn_setp(st, 0, list));
+	ASSERT_EQ(0, capn_set_root(&c, st));
+	capn_init_malloc(&dst);
+	ASSERT_EQ(0, capn_canonicalize(&c, &dst));
+	EXPECT_EQ(1, capn_is_canonical(&dst));
+	capn_free(&dst);
+	capn_free(&c);
+}
+
+TEST(WireParity, DirtyListPaddingIsNotCanonical) {
+	const uint8_t dirty_byte[] = {
+		0,0,0,0, 3,0,0,0,
+		0,0,0,0, 0,0,1,0,
+		1,0,0,0, 0x1a,0,0,0,
+		1,2,3,1, 0,0,0,0,
+	};
+	const uint8_t clean_byte[] = {
+		0,0,0,0, 3,0,0,0,
+		0,0,0,0, 0,0,1,0,
+		1,0,0,0, 0x1a,0,0,0,
+		1,2,3,0, 0,0,0,0,
+	};
+	const uint8_t dirty_bits[] = {
+		0,0,0,0, 3,0,0,0,
+		0,0,0,0, 0,0,1,0,
+		1,0,0,0, 0x59,0,0,0,
+		0xee,0x0f,0,0, 0,0,0,0,
+	};
+	struct capn c;
+	ASSERT_EQ(0, load_frame(&c, dirty_byte, sizeof dirty_byte));
+	EXPECT_EQ(0, capn_is_canonical(&c));
+	capn_free(&c);
+	ASSERT_EQ(0, load_frame(&c, clean_byte, sizeof clean_byte));
+	EXPECT_EQ(1, capn_is_canonical(&c));
+	capn_free(&c);
+	ASSERT_EQ(0, load_frame(&c, dirty_bits, sizeof dirty_bits));
+	EXPECT_EQ(0, capn_is_canonical(&c));
+	capn_free(&c);
+}
+
+TEST(WireParity, VoidListOffsetFollowsTheReadHead) {
+	const uint8_t good[] = {
+		0,0,0,0, 2,0,0,0,
+		0,0,0,0, 0,0,1,0,
+		1,0,0,0, 0x28,0,0,0,
+	};
+	const uint8_t bad[] = {
+		0,0,0,0, 2,0,0,0,
+		0,0,0,0, 0,0,1,0,
+		0x09,0,0,0, 0,0,0,0,
+	};
+	struct capn c;
+	ASSERT_EQ(0, load_frame(&c, good, sizeof good));
+	EXPECT_EQ(1, capn_is_canonical(&c));
+	capn_free(&c);
+	ASSERT_EQ(0, load_frame(&c, bad, sizeof bad));
+	EXPECT_EQ(0, capn_is_canonical(&c));
+	capn_free(&c);
+}
+
+TEST(WireParity, CanonicalNestingStopsAtSixtyFour) {
+	auto nest = [](int depth) {
+		std::vector<uint8_t> body((size_t) (depth + 1) * 8, 0);
+		for (int i = 0; i < depth; i++) {
+			body[(size_t) i * 8] = 1;
+			body[(size_t) i * 8 + 4] = 0x0e;
+		}
+		std::vector<uint8_t> frame(8 + body.size(), 0);
+		wr32(frame.data(), 0);
+		wr32(frame.data() + 4, (uint32_t) (body.size() / 8));
+		memcpy(frame.data() + 8, body.data(), body.size());
+		struct capn c;
+		EXPECT_EQ(0, capn_init_mem(&c, frame.data(), frame.size(), 0));
+		int canon = capn_is_canonical(&c);
+		capn_free(&c);
+		return canon;
+	};
+	EXPECT_EQ(1, nest(64));
+	EXPECT_EQ(0, nest(65));
+}
+
+TEST(WireParity, NullRootCanonicalBytesMatchTheEmptyStruct) {
+	const uint8_t nullroot[] = {
+		0,0,0,0, 1,0,0,0,
+		0,0,0,0, 0,0,0,0,
+	};
+	const uint8_t empty[] = {
+		0,0,0,0, 1,0,0,0,
+		0xfc,0xff,0xff,0xff, 0,0,0,0,
+	};
+	struct capn c, dst;
+	ASSERT_EQ(0, load_frame(&c, nullroot, sizeof nullroot));
+	EXPECT_EQ(1, capn_is_canonical(&c));
+	capn_init_malloc(&dst);
+	ASSERT_EQ(0, capn_canonicalize(&c, &dst));
+	ASSERT_EQ((size_t) 8, dst.seglist->len);
+	EXPECT_EQ(0, memcmp(dst.seglist->data, "\xfc\xff\xff\xff\0\0\0\0", 8));
+	capn_free(&dst);
+	capn_free(&c);
+	ASSERT_EQ(0, load_frame(&c, empty, sizeof empty));
+	EXPECT_EQ(1, capn_is_canonical(&c));
+	capn_free(&c);
+}
+
+TEST(WireParity, EmptyTrailingSegmentStaysCanonical) {
+	const uint8_t frame[] = {
+		1,0,0,0, 1,0,0,0, 0,0,0,0, 0,0,0,0,
+		0xfc,0xff,0xff,0xff, 0,0,0,0,
+	};
+	struct capn c;
+	ASSERT_EQ(0, load_frame(&c, frame, sizeof frame));
+	EXPECT_EQ(1, capn_is_canonical(&c));
+	capn_free(&c);
+}
+
+TEST(WireParity, ZeroStrideCompositeIsNotCanonical) {
+	const uint8_t frame[] = {
+		0,0,0,0, 2,0,0,0,
+		1,0,0,0, 7,0,0,0,
+		0,0,0,4, 0,0,0,0,
+	};
+	struct capn c;
+	ASSERT_EQ(0, load_frame(&c, frame, sizeof frame));
+	EXPECT_EQ(0, capn_is_canonical(&c));
+	capn_free(&c);
+}
+
+TEST(WireParity, CanonicalNestingUsesTheReaderLimit) {
+	const uint8_t deep[] = {
+		0x00,0x00,0x00,0x00,0x07,0x00,0x00,0x00,
+		0x00,0x00,0x00,0x00,0x02,0x00,0x01,0x00,
+		0x00,0xb2,0xa7,0x00,0x03,0x00,0x00,0x10,
+		0x8e,0x00,0x79,0x00,0x0a,0x00,0x00,0x00,
+		0x01,0x00,0x00,0x00,0x8a,0x00,0x00,0x00,
+		0x8e,0x08,0x4a,0xfa,0xdb,0xd8,0x28,0x6f,
+		0xa2,0x4c,0x59,0x96,0x1b,0xa0,0xa3,0x50,
+		0x5f,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+	};
+	struct capn c;
+
+	ASSERT_EQ(0, capn_init_mem(&c, (uint8_t *) deep, sizeof deep, 0));
+	c.nesting_limit = 1;
+	EXPECT_EQ(0, capn_is_canonical(&c));
+	c.nesting_limit = 2;
+	c.traversal_used = 0;
+	EXPECT_EQ(1, capn_is_canonical(&c));
+	capn_free(&c);
+}
+
+TEST(WireParity, TwoVoidListsShareTheCanonicalBudget) {
+	const uint8_t frame[] = {
+		0,0,0,0, 3,0,0,0,
+		0,0,0,0, 0,0,2,0,
+		5,0,0,0, 0,0x5a,0x62,0x02,
+		1,0,0,0, 0,0x5a,0x62,0x02,
+	};
+	struct capn c;
+	const uint8_t one[] = {
+		0,0,0,0, 1,0,0,0,
+		1,0,0,0, 0xf8,0xff,0xff,0x03,
+	};
+	ASSERT_EQ(0, load_frame(&c, frame, sizeof frame));
+	EXPECT_EQ(0, capn_is_canonical(&c));
+	capn_free(&c);
+	ASSERT_EQ(0, load_frame(&c, one, sizeof one));
+	EXPECT_EQ(1, capn_is_canonical(&c));
 	capn_free(&c);
 }

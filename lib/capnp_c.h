@@ -306,6 +306,8 @@ CAPN_EXPORT void capn_clear_err(struct capn *c);
  * budget overflow, or a dst that is not writable.
  */
 CAPN_EXPORT int capn_canonicalize(struct capn *src, struct capn *dst);
+/* 1 when the message is already in canonical form. 0 otherwise. */
+CAPN_EXPORT int capn_is_canonical(struct capn *c);
 /* capn_set_root sets the message root to p (capn_setp(capn_root(c), 0, p)).
  * new_* / write_* only fill a struct in a segment; the message is empty
  * until the root pointer is set. Empty messages are valid. */

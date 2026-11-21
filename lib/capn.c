@@ -2926,3 +2926,277 @@ int capn_set_data(capn_ptr p, int off, capn_data tgt) {
 #define SZ 64
 #include "capn-list.inc"
 #undef SZ
+
+static int canon_take(size_t *budget, size_t words)
+{
+	if (words > *budget)
+		return 0;
+	*budget -= words;
+	return 1;
+}
+
+static int canonical_word(struct capn_segment *s, char *ptrword, char **head,
+                          size_t *budget, int depth);
+
+static int signed_off(uint64_t val)
+{
+	int32_t b = (int32_t) ((uint32_t) val & ~3u);
+	return (int) (b >> 2);
+}
+
+/* Trailing bits and bytes of a primitive list must be zero. */
+static int pad_is_clear(const uint8_t *obj, size_t bits, size_t nbytes)
+{
+	size_t whole = bits / 8u;
+	unsigned left = (unsigned) (bits % 8u);
+	const uint8_t *b = obj + whole;
+	const uint8_t *end = obj + nbytes;
+
+	if (left) {
+		uint8_t mask = (uint8_t) ~((1u << left) - 1u);
+		if (*b & mask)
+			return 0;
+		b++;
+	}
+	while (b < end) {
+		if (*b)
+			return 0;
+		b++;
+	}
+	return 1;
+}
+
+static int canonical_struct(struct capn_segment *s, char *obj, int dw, int pw,
+                            char **read_head, char **ptr_head, size_t *budget,
+                            int depth, int *data_trunc, int *ptr_trunc)
+{
+	int i;
+	char *p;
+
+	if (dw < 0 || pw < 0)
+		return 0;
+	if ((size_t) (dw + pw) > (size_t) -1 / 8)
+		return 0;
+	if (obj != *read_head)
+		return 0;
+	if (!bounds_ok(s, obj, (size_t) (dw + pw) * 8u))
+		return 0;
+	if (!canon_take(budget, (size_t) dw + (size_t) pw))
+		return 0;
+	if (dw > 0)
+		*data_trunc = capn_flip64(*(uint64_t *) (obj + (dw - 1) * 8)) != 0;
+	else
+		*data_trunc = 1;
+	if (pw > 0)
+		*ptr_trunc = capn_flip64(*(uint64_t *) (obj + dw * 8 + (pw - 1) * 8)) != 0;
+	else
+		*ptr_trunc = 1;
+	*read_head = obj + (size_t) (dw + pw) * 8u;
+	p = obj + (size_t) dw * 8u;
+	for (i = 0; i < pw; i++) {
+		if (!canonical_word(s, p + (size_t) i * 8u, ptr_head, budget, depth))
+			return 0;
+	}
+	return 1;
+}
+
+/* A composite list is canonical when the tag sits at the read head,
+ * the word count matches the elements, and at least one element is
+ * truncated in each section. Pointer targets follow the whole list. */
+static int canonical_composite(struct capn_segment *s, char *tag, int words,
+                               char **head, size_t *budget, int depth)
+{
+	uint64_t tv;
+	int dw, pw, count, stride, i;
+	int any_data = 0, any_ptr = 0;
+	char *read_head, *ptr_head;
+	size_t bytes;
+
+	if (tag != *head)
+		return 0;
+	if (!bounds_ok(s, tag, 8))
+		return 0;
+	tv = capn_flip64(*(uint64_t *) tag);
+	if ((tv & 3) != STRUCT_PTR)
+		return 0;
+	count = (int) ((U32(tv) >> 2) & 0x1fffffffu);
+	dw = (int) U16(tv >> 32);
+	pw = (int) U16(tv >> 48);
+	if (dw < 0 || pw < 0 || count < 0)
+		return 0;
+	stride = dw + pw;
+	if (count > 0 && stride > 0 &&
+	    (size_t) count > (size_t) -1 / (size_t) stride)
+		return 0;
+	if ((size_t) count * (size_t) stride != (size_t) words)
+		return 0;
+	read_head = tag + 8;
+	/* The tag word, then one word per empty element. A stride of
+	 * zero carries no bytes, and the element count still counts. */
+	if (!canon_take(budget, 1))
+		return 0;
+	if (stride == 0) {
+		if (!canon_take(budget, (size_t) count))
+			return 0;
+		*head = read_head;
+		return 1;
+	}
+	if (depth <= 0)
+		return 0;
+	bytes = (size_t) words * 8u;
+	if (bytes && !bounds_ok(s, read_head, bytes))
+		return 0;
+	ptr_head = read_head + bytes;
+	for (i = 0; i < count; i++) {
+		int dt = 0, pt = 0;
+		char *el = read_head + (size_t) i * (size_t) stride * 8u;
+		/* read_head walks the bodies. The first check wants the
+		 * current element, so point it at this element. */
+		char *body = el;
+		if (!canonical_struct(s, el, dw, pw, &body, &ptr_head,
+		                      budget, depth - 1, &dt, &pt))
+			return 0;
+		if (body != el + (size_t) stride * 8u)
+			return 0;
+		any_data |= dt;
+		any_ptr |= pt;
+	}
+	*head = ptr_head;
+	return any_data && any_ptr;
+}
+
+static int canonical_word(struct capn_segment *s, char *ptrword, char **head,
+                          size_t *budget, int depth)
+{
+	uint64_t val;
+	int off, dw, pw, es, len;
+	char *obj;
+	size_t bits, nbytes;
+
+	if (!bounds_ok(s, ptrword, 8))
+		return 0;
+	val = capn_flip64(*(uint64_t *) ptrword);
+	if (val == 0)
+		return 1;
+	if ((val & 3) == FAR_PTR || (val & 3) == OTHER_PTR)
+		return 0;
+	if (depth <= 0)
+		return 0;
+	off = signed_off(val);
+	obj = ptrword + 8 + (int64_t) off * 8;
+	if ((val & 3) == STRUCT_PTR) {
+		int dt = 0, pt = 0;
+		dw = (int) U16(val >> 32);
+		pw = (int) U16(val >> 48);
+		if (dw == 0 && pw == 0)
+			return obj == ptrword;
+		if (!canonical_struct(s, obj, dw, pw, head, head, budget,
+		                      depth - 1, &dt, &pt))
+			return 0;
+		return dt && pt;
+	}
+	es = (int) ((val >> 32) & 7);
+	len = (int) (val >> 35);
+	if (len < 0)
+		return 0;
+	if (es == COMPOSITE_LIST)
+		return canonical_composite(s, obj, len, head, budget, depth - 1);
+	if (es == VOID_LIST) {
+		/* The landing spot is the read head, and it may be the
+		 * first byte past the segment. The length is not a size.
+		 * Each element still spends one word of the shared budget. */
+		if (obj != *head)
+			return 0;
+		if (obj < s->data || obj > s->data + s->len)
+			return 0;
+		if (!canon_take(budget, (size_t) len))
+			return 0;
+		return 1;
+	}
+	if (es == BIT_1_LIST)
+		bits = (size_t) len;
+	else if (es == BYTE_1_LIST) {
+		if ((size_t) len > (size_t) -1 / 8u)
+			return 0;
+		bits = (size_t) len * 8u;
+	} else if (es == BYTE_2_LIST) {
+		if ((size_t) len > (size_t) -1 / 16u)
+			return 0;
+		bits = (size_t) len * 16u;
+	} else if (es == BYTE_4_LIST) {
+		if ((size_t) len > (size_t) -1 / 32u)
+			return 0;
+		bits = (size_t) len * 32u;
+	} else if (es == BYTE_8_LIST) {
+		if ((size_t) len > (size_t) -1 / 64u)
+			return 0;
+		bits = (size_t) len * 64u;
+	} else if (es == PTR_LIST) {
+		int i;
+		if ((size_t) len > (size_t) -1 / 8u)
+			return 0;
+		nbytes = (size_t) len * 8u;
+		if (obj != *head)
+			return 0;
+		if (nbytes && !bounds_ok(s, obj, nbytes))
+			return 0;
+		if (!canon_take(budget, (size_t) len))
+			return 0;
+		*head = obj + nbytes;
+		for (i = 0; i < len; i++) {
+			if (!canonical_word(s, obj + (size_t) i * 8u, head,
+			                    budget, depth - 1))
+				return 0;
+		}
+		return 1;
+	} else
+		return 0;
+	if (bits > (size_t) -1 - 63u)
+		return 0;
+	nbytes = ((bits + 63u) / 64u) * 8u;
+	if (obj != *head)
+		return 0;
+	if (nbytes && !bounds_ok(s, obj, nbytes))
+		return 0;
+	if (nbytes && !pad_is_clear((const uint8_t *) obj, bits, nbytes))
+		return 0;
+	if (!canon_take(budget, nbytes / 8u))
+		return 0;
+	*head = obj + nbytes;
+	return 1;
+}
+
+int capn_is_canonical(struct capn *c)
+{
+	struct capn_segment *s, *n;
+	char *head;
+	uint64_t root;
+	size_t budget, limit;
+
+	if (!c || !c->seglist)
+		return 0;
+	s = c->seglist;
+	/* An empty later segment ends the message. C++ does not see
+	 * anything past it, so a canonical first segment still counts. */
+	for (n = s->next; n; n = n->next) {
+		if (n->len == 0)
+			break;
+		return 0;
+	}
+	if (s->len < 8)
+		return 0;
+	root = capn_flip64(*(uint64_t *) s->data);
+	if (root == 0)
+		return s->len == 8;
+	/* The root pointer word, then every object the walk reads.
+	 * One budget covers the whole message, so two void lists add. */
+	limit = (c->traversal_limit)
+		? c->traversal_limit : CAPN_TRAVERSAL_DEFAULT;
+	budget = limit / 8u;
+	if (!canon_take(&budget, 1))
+		return 0;
+	head = s->data + 8;
+	if (!canonical_word(s, s->data, &head, &budget, session_nesting(c)))
+		return 0;
+	return head == s->data + s->len;
+}
