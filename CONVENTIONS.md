@@ -6,6 +6,7 @@
 Put user-visible changes under `[Unreleased]` when they land. A release
 moves those entries into a dated `[X.Y.Z]` section and updates the compare
 links at the bottom of the file.
+Towncrier and `docs/newsfragments/` are dropped in favor of direct Keep a Changelog edits.
 
 `.github/workflows/changelog.yml` runs `scripts/check-changelog.sh` on
 pull requests. A diff that changes library code must add a non-empty
