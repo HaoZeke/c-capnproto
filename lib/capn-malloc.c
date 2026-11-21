@@ -102,6 +102,8 @@ void capn_free(struct capn *c) {
 		free(s->user);
 		s = n;
 	}
+	free(c->dup_busy);
+	free(c->dup_at);
 	capn_reset_copy(c);
 }
 
@@ -503,6 +505,8 @@ static int copy_for_flat(struct capn *src, struct capn *dst)
 		req = (int) guess;
 		src->traversal_used = saved_used;
 		capn_init_malloc(dst);
+		dst->traversal_limit = src->traversal_limit;
+		dst->nesting_limit = src->nesting_limit;
 		made = dst->create ? dst->create(dst->user, 0, req) : NULL;
 		if (!made) {
 			capn_free(dst);

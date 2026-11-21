@@ -146,9 +146,10 @@ struct capn {
 	 * overlapping pointer. A cycle still fails. Zero keeps the
 	 * alias-or-refuse copy. */
 	int dup_copy;
-	struct capn_dup_key dup_busy[64];
-	int dup_at[64];
+	struct capn_dup_key *dup_busy;
+	int *dup_at;
 	int dup_nbusy;
+	int dup_cap;
 };
 
 /* Default decode traversal budget (bytes). 0 in traversal_limit means this. */

@@ -1429,3 +1429,159 @@ TEST(WireParity, HugeVoidListExceedsTheTraversalLimit) {
 	EXPECT_EQ(0, capn_ok(&c));
 	capn_free(&c);
 }
+
+static std::vector<uint8_t> framed_struct_chain(int depth) {
+	size_t words = (size_t) depth + 1;
+	std::vector<uint8_t> b(8 + words * 8, 0);
+	wr32(b.data() + 4, (uint32_t) words);
+	for (int i = 0; i < depth - 1; i++)
+		b[8 + i * 8 + 6] = 0x01;
+	b[8 + (depth - 1) * 8 + 4] = 0x01;
+	b[8 + depth * 8] = 0x01;
+	return b;
+}
+
+static std::vector<uint8_t> framed_comp_chain(int depth) {
+	size_t words = (size_t) depth * 2 + 2;
+	std::vector<uint8_t> b(8 + words * 8, 0);
+	wr32(b.data() + 4, (uint32_t) words);
+	for (int i = 0; i < depth; i++) {
+		uint8_t *w = b.data() + 8 + i * 16;
+		w[0] = 0x01;
+		w[4] = 0x0f;
+		w[8] = 0x04;
+		w[14] = 0x01;
+	}
+	b[8 + depth * 16 + 4] = 0x01;
+	return b;
+}
+
+static int copy_frame_root(const std::vector<uint8_t> &frame) {
+	struct capn src, dst;
+	int rc;
+	if (capn_init_mem(&src, frame.data(), frame.size(), 0) != 0)
+		return -2;
+	capn_init_malloc(&dst);
+	rc = capn_set_root(&dst, capn_root(&src));
+	capn_free(&src);
+	capn_free(&dst);
+	return rc;
+}
+
+static int copy_frame_root_with_limit(const std::vector<uint8_t> &frame, int limit) {
+	struct capn src, dst;
+	int rc;
+	if (capn_init_mem(&src, frame.data(), frame.size(), 0) != 0)
+		return -2;
+	src.nesting_limit = limit;
+	capn_init_malloc(&dst);
+	dst.nesting_limit = limit;
+	rc = capn_set_root(&dst, capn_root(&src));
+	capn_free(&src);
+	capn_free(&dst);
+	return rc;
+}
+
+TEST(WireParity, CopyDepthMatchesTheNestingLimit) {
+	/* C++ setRoot copies 64 structs and 63 composite lists.
+	 * The next level is too deep. */
+	std::vector<uint8_t> s64 = framed_struct_chain(64);
+	std::vector<uint8_t> s65 = framed_struct_chain(65);
+	std::vector<uint8_t> c63 = framed_comp_chain(63);
+	std::vector<uint8_t> c64 = framed_comp_chain(64);
+	struct capn src, dst;
+	uint8_t buf[8192];
+
+	EXPECT_EQ(0, copy_frame_root(s64));
+	EXPECT_NE(0, copy_frame_root(s65));
+	EXPECT_EQ(0, copy_frame_root(c63));
+	EXPECT_NE(0, copy_frame_root(c64));
+
+	ASSERT_EQ(0, capn_init_mem(&src, s64.data(), s64.size(), 0));
+	EXPECT_GT(capn_write_flat(&src, buf, sizeof buf), (int64_t) 0);
+	capn_free(&src);
+	ASSERT_EQ(0, capn_init_mem(&src, s65.data(), s65.size(), 0));
+	EXPECT_LT(capn_write_flat(&src, buf, sizeof buf), (int64_t) 0);
+	capn_free(&src);
+	ASSERT_EQ(0, capn_init_mem(&src, c63.data(), c63.size(), 0));
+	EXPECT_GT(capn_write_flat(&src, buf, sizeof buf), (int64_t) 0);
+	capn_free(&src);
+	ASSERT_EQ(0, capn_init_mem(&src, c64.data(), c64.size(), 0));
+	EXPECT_LT(capn_write_flat(&src, buf, sizeof buf), (int64_t) 0);
+	capn_free(&src);
+
+	/* A caller can raise the reader limit. Flat copying must carry it
+	 * through and track every in-progress duplicate at that depth. */
+	std::vector<uint8_t> s70 = framed_struct_chain(70);
+	std::vector<uint8_t> wide(s70.size());
+	ASSERT_EQ(0, capn_init_mem(&src, s70.data(), s70.size(), 0));
+	src.nesting_limit = 80;
+	EXPECT_GT(capn_write_flat(&src, wide.data(), wide.size()), (int64_t) 0);
+	capn_free(&src);
+
+	std::vector<uint8_t> s200 = framed_struct_chain(200);
+	std::vector<uint8_t> deep(s200.size());
+	EXPECT_EQ(0, copy_frame_root_with_limit(s200, 250));
+	ASSERT_EQ(0, capn_init_mem(&src, s200.data(), s200.size(), 0));
+	src.nesting_limit = 250;
+	EXPECT_EQ(1, capn_is_canonical(&src));
+	EXPECT_GT(capn_write_flat(&src, deep.data(), deep.size()), (int64_t) 0);
+	capn_free(&src);
+	ASSERT_EQ(0, capn_init_mem(&src, s200.data(), s200.size(), 0));
+	src.nesting_limit = 250;
+	capn_init_malloc(&dst);
+	EXPECT_EQ(0, capn_canonicalize(&src, &dst));
+	capn_free(&src);
+	capn_free(&dst);
+}
+
+static int canon_frame(const std::vector<uint8_t> &frame) {
+	struct capn src, dst;
+	int rc;
+	if (capn_init_mem(&src, frame.data(), frame.size(), 0) != 0)
+		return -2;
+	capn_init_malloc(&dst);
+	rc = capn_canonicalize(&src, &dst);
+	capn_free(&src);
+	capn_free(&dst);
+	return rc;
+}
+
+static std::vector<uint8_t> framed_alt_chain(int depth) {
+	std::vector<uint8_t> b;
+	auto push32 = [&](uint32_t v) {
+		for (int i = 0; i < 4; i++)
+			b.push_back((uint8_t) ((v >> (8 * i)) & 0xff));
+	};
+	size_t words = (size_t) depth + 1;
+	push32(0);
+	push32((uint32_t) words);
+	for (int i = 0; i < depth - 1; i++) {
+		if ((i % 2) == 0) {
+			push32(0);
+			push32(0x00010000);
+		} else {
+			push32(1);
+			push32(0x0e);
+		}
+	}
+	if (((depth - 1) % 2) == 0) {
+		push32(1);
+		push32(0);
+	} else {
+		push32(0);
+		push32(0);
+	}
+	push32(0);
+	push32(0);
+	return b;
+}
+
+TEST(WireParity, CanonicalDepthMatchesTheNestingLimit) {
+	/* C++ canonicalises a struct chain and an alternating
+	 * struct and pointer-list chain at depth 64. Depth 65 fails. */
+	EXPECT_EQ(0, canon_frame(framed_struct_chain(64)));
+	EXPECT_NE(0, canon_frame(framed_struct_chain(65)));
+	EXPECT_EQ(0, canon_frame(framed_alt_chain(64)));
+	EXPECT_NE(0, canon_frame(framed_alt_chain(65)));
+}

@@ -24,6 +24,7 @@
 #define capn_alloc(n) malloc(n)
 #define capn_zalloc(n) calloc(1, (n))
 #define capn_freemem(p) free(p)
+#define capn_realloc(p, n) realloc((p), (n))
 #else /* __KERNEL__ */
 #include <linux/string.h>
 #include <linux/slab.h>
@@ -31,6 +32,7 @@
 #define capn_alloc(n) kmalloc((n), GFP_KERNEL)
 #define capn_zalloc(n) kzalloc((n), GFP_KERNEL)
 #define capn_freemem(p) kfree(p)
+#define capn_realloc(p, n) krealloc((p), (n), GFP_KERNEL)
 #endif /* __KERNEL__ */
 
 #define STRUCT_PTR 0
@@ -1620,6 +1622,44 @@ static int dup_busy_hit(struct capn *c, const struct capn_ptr *f)
 	return 0;
 }
 
+static int dup_busy_grow(struct capn *c)
+{
+	int cap, limit;
+	struct capn_dup_key *busy;
+	int *at;
+
+	if (!c || !c->dup_copy)
+		return -1;
+	limit = session_nesting(c);
+	if (c->dup_nbusy >= limit)
+		return -1;
+	cap = c->dup_cap ? c->dup_cap : CAPN_NESTING_DEFAULT;
+	while (cap <= c->dup_nbusy && cap < limit) {
+		if (cap > INT_MAX / 2) {
+			cap = limit;
+			break;
+		}
+		cap *= 2;
+	}
+	if (cap > limit)
+		cap = limit;
+	if (cap <= c->dup_nbusy ||
+	    (size_t) cap > (size_t) -1 / sizeof(*busy) ||
+	    (size_t) cap > (size_t) -1 / sizeof(*at))
+		return -1;
+	busy = (struct capn_dup_key *) capn_realloc(
+		c->dup_busy, (size_t) cap * sizeof(*busy));
+	if (!busy)
+		return -1;
+	c->dup_busy = busy;
+	at = (int *) capn_realloc(c->dup_at, (size_t) cap * sizeof(*at));
+	if (!at)
+		return -1;
+	c->dup_at = at;
+	c->dup_cap = cap;
+	return 0;
+}
+
 static void dup_unwind(struct capn *c, int depth)
 {
 	if (!c || !c->dup_copy)
@@ -1639,6 +1679,11 @@ static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, st
 	int dep0 = *dep;
 	int grew = 0;
 	capn_ptr saved = *f;
+
+	/* C++ starts at nestingLimit 64 and refuses the next pointer.
+	 * A struct chain of 64 is copied. A 65th pointer is not. */
+	if (f->nesting_valid && f->nesting <= 0)
+		return -1;
 
 	/* We always copy list members as it would otherwise be an
 	 * overlapped pointer (the data is owned by the enclosing list).
@@ -1804,7 +1849,7 @@ dup_clone:
 	}
 copy_done:
 	if (grew && c && c->dup_copy) {
-		if (c->dup_nbusy >= 64)
+		if (c->dup_nbusy >= c->dup_cap && dup_busy_grow(c))
 			return -1;
 		c->dup_busy[c->dup_nbusy].data = saved.data;
 		c->dup_busy[c->dup_nbusy].type = saved.type;
@@ -1837,17 +1882,24 @@ static void copy_list_member(capn_ptr* t, capn_ptr *f, int *dep) {
 	}
 }
 
-#define MAX_COPY_DEPTH 32
-
 int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
-	struct capn_ptr to[MAX_COPY_DEPTH], from[MAX_COPY_DEPTH];
+	struct capn_ptr *to, *from;
 	char *data;
-	int err, dep = 0;
+	int err, dep = 0, cap, rc = -1;
 	capn_ptr far_tgt;
 
 	capn_resolve(&p);
 	if (off < 0)
 		return -1;
+	cap = session_nesting(p.seg ? p.seg->capn : NULL);
+	if (cap < 1 || cap > INT_MAX - 2 ||
+	    (size_t) cap + 2 > (size_t) -1 / sizeof(*to))
+		return -1;
+	cap += 2;
+	to = (struct capn_ptr *) capn_alloc((size_t) cap * sizeof(*to));
+	from = (struct capn_ptr *) capn_alloc((size_t) cap * sizeof(*from));
+	if (!to || !from)
+		goto done;
 
 	far_tgt = tgt;
 	capn_resolve(&tgt);
@@ -1855,7 +1907,7 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 	switch (p.type) {
 	case CAPN_LIST:
 		if (off >= p.len || tgt.type != CAPN_STRUCT)
-			return -1;
+			goto done;
 
 		to[0] = p;
 		to[0].data += off * (p.datasz + 8*p.ptrs);
@@ -1867,7 +1919,7 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 		capn_list1 dst;
 		int val;
 		if (off < 0 || off >= p.len)
-			return -1;
+			goto done;
 		if (tgt.type == CAPN_NULL || tgt.data == NULL) {
 			val = 0;
 		} else if (tgt.type == CAPN_BIT_LIST) {
@@ -1877,21 +1929,22 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 		} else if (tgt.type == CAPN_STRUCT && tgt.datasz >= 1 && tgt.data) {
 			val = (tgt.data[0] & 1) != 0;
 		} else {
-			return -1;
+			goto done;
 		}
 		dst.p = p;
-		return capn_set1(dst, off, val);
+		rc = capn_set1(dst, off, val);
+		goto done;
 	}
 
 	case CAPN_PTR_LIST:
 		if (off >= p.len)
-			return -1;
+			goto done;
 		data = p.data + 8*off;
 		goto copy_ptr;
 
 	case CAPN_STRUCT:
 		if (off >= p.ptrs)
-			return -1;
+			goto done;
 		data = p.data + p.datasz + 8*off;
 		goto copy_ptr;
 
@@ -1916,15 +1969,24 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 					memset(&tgt, 0, sizeof tgt);
 				} else if (tgt.seg->capn == p.seg->capn) {
 					from[0] = tgt;
+					from[0].nesting_valid = 1;
+					from[0].nesting = session_nesting(p.seg->capn);
+					/* capn_root is the pointer word, not the
+					 * object. The object is the next check. */
+					if (tgt.type == CAPN_PTR_LIST && tgt.len == 1 &&
+					    tgt.data == tgt.seg->data)
+						from[0].nesting++;
 					if (copy_ptr(p.seg, data, to, from, &dep))
-						return -1;
+						goto done;
 					break;
 				}
 			}
 		}
 		err = write_ptr(p.seg, data, tgt);
-		if (err != NEED_TO_COPY)
-			return err;
+		if (err != NEED_TO_COPY) {
+			rc = err;
+			goto done;
+		}
 
 		/* Depth first copy the source whilst using a pointer stack to
 		 * maintain the ptr to set and size left to copy at each level.
@@ -1935,20 +1997,27 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 		 */
 
 		from[0] = tgt;
+		from[0].nesting_valid = 1;
+		from[0].nesting = session_nesting(p.seg ? p.seg->capn : NULL);
+		/* capn_root is the pointer word, not the object. The
+		 * object is the next check. */
+		if (tgt.type == CAPN_PTR_LIST && tgt.len == 1 && tgt.seg &&
+		    tgt.data == tgt.seg->data)
+			from[0].nesting++;
 		if (copy_ptr(p.seg, data, to, from, &dep))
-			return -1;
+			goto done;
 		break;
 
 	default:
-		return -1;
+		goto done;
 	}
 
 	while (dep) {
 		struct capn_ptr *tc = &to[dep-1], *tn = &to[dep];
 		struct capn_ptr *fc = &from[dep-1], *fn = &from[dep];
 
-		if (dep+1 == MAX_COPY_DEPTH) {
-			return -1;
+		if (dep+1 >= cap) {
+			goto done;
 		}
 
 		if (!tc->len) {
@@ -1961,6 +2030,12 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 		if (tc->type == CAPN_LIST) {
 			*fn = capn_getp(*fc, 0, 1);
 			*tn = capn_getp(*tc, 0, 1);
+			/* The element struct is still this list's level.
+			 * Following its pointer is the next level. */
+			if (fc->nesting_valid) {
+				fn->nesting_valid = 1;
+				fn->nesting = fc->nesting;
+			}
 
 			copy_list_member(tn, fn, &dep);
 
@@ -1974,10 +2049,14 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 			 * also null, and it sets decode_err. The copy stops. */
 			if (!fn->type && fc->seg && fc->seg->capn &&
 			    fc->seg->capn->decode_err)
-				return -1;
+				goto done;
+			if (fc->nesting_valid) {
+				fn->nesting_valid = 1;
+				fn->nesting = fc->nesting - 1;
+			}
 
 			if (fn->type && copy_ptr(tc->seg, tc->data, tn, fn, &dep))
-				return -1;
+				goto done;
 
 			fc->data += 8;
 			tc->data += 8;
@@ -1985,7 +2064,11 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 		}
 	}
 
-	return 0;
+	rc = 0;
+done:
+	capn_freemem(to);
+	capn_freemem(from);
+	return rc;
 }
 
 int capn_get1(capn_list1 l, int off) {
