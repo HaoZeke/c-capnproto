@@ -197,6 +197,27 @@ TEST(WireParity, DoubleFarIgnoresANonzeroTagOffset) {
 	capn_free(&c);
 }
 
+TEST(WireParity, DoubleFarCapabilityReadsTheIndex) {
+	/* Double far whose tag is a capability, index 4. C++ 1.4.0
+	 * reports pointer type capability. */
+	std::vector<uint8_t> s0 = {0x06, 0, 0, 0, 0x01, 0, 0, 0};
+	std::vector<uint8_t> s1 = {
+		0x02, 0, 0, 0, 0x02, 0, 0, 0,
+		0x03, 0, 0, 0, 0x04, 0, 0, 0,
+	};
+	std::vector<uint8_t> s2 = {0, 0, 0, 0, 0, 0, 0, 0};
+	std::vector<uint8_t> fr = frame_segs({s0, s1, s2});
+	struct capn c;
+
+	ASSERT_EQ(0, capn_init_mem(&c, fr.data(), fr.size(), 0));
+	EXPECT_EQ(0, capn_validate(&c));
+	capn_ptr root = capn_getp(capn_root(&c), 0, 1);
+	EXPECT_EQ(CAPN_INTERFACE, root.type);
+	EXPECT_EQ(4, root.cap_idx);
+	EXPECT_EQ(1, capn_ok(&c));
+	capn_free(&c);
+}
+
 TEST(WireParity, BuilderMessagesMatchTheCapnpTool) {
 	std::mt19937 rng(0xC0FFEE);
 	for (int n = 0; n < 20; n++) {

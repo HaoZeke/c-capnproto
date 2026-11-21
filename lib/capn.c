@@ -397,10 +397,9 @@ static uint64_t lookup_double(struct capn_segment **s, char **d, uint64_t val) {
 	far = capn_flip64(*(uint64_t*) p);
 	tag = capn_flip64(*(uint64_t*) (p+8));
 
-	/* The landing far must be a single far. The tag is a struct
-	 * or a list. C++ 1.4.0 ignores a nonzero offset in that tag
-	 * and uses the far target as the object's address. */
-	if ((far & 7) != FAR_PTR || (U32(tag) & 3u) > LIST_PTR) {
+	/* The landing far must be a single far. C++ 1.4.0 then
+	 * follows that far even when the tag is a capability. */
+	if ((far & 7) != FAR_PTR) {
 		*s = NULL;
 		return 0;
 	}
@@ -411,6 +410,27 @@ static uint64_t lookup_double(struct capn_segment **s, char **d, uint64_t val) {
 		return 0;
 	}
 	*s = seg;
+
+	/* A capability has no landing object. Its offset field must
+	 * be zero, and the index stays in the high half of the tag. */
+	if ((U32(tag) & 3u) == OTHER_PTR) {
+		size_t foff;
+
+		if (U32(tag) >> 2) {
+			*s = NULL;
+			return 0;
+		}
+		foff = (size_t) (U32(far) >> 3) * 8;
+		*d = (foff > seg->len) ? seg->data : seg->data + foff;
+		return tag;
+	}
+
+	/* Struct or list. A nonzero offset in the tag is ignored.
+	 * The far target is the object's address. */
+	if ((U32(tag) & 3u) > LIST_PTR) {
+		*s = NULL;
+		return 0;
+	}
 
 	/* -8 because far pointers reference from the start of
 	 * the segment, but offsets reference the end of the
