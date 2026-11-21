@@ -68,8 +68,10 @@ make check
 
 ## Install and consume
 
-Install into a prefix, then build a program against that prefix. The
-three build systems install the same layout (see [Install layout](#install-layout)).
+Install into a prefix, then build a program against that prefix. Each
+build installs `capnpc-c`, the public headers, `libcapnp_c`, and
+`c-capnproto.pc`. The library file, the schema path, and the CMake
+package files differ (see [Install layout](#install-layout)).
 
 ### System install
 
@@ -88,6 +90,17 @@ cmake -S . -B build-cmake -DCMAKE_INSTALL_PREFIX=/usr/local
 cmake --build build-cmake
 cmake --install build-cmake
 ```
+
+A program in another CMake project then uses the installed package:
+
+```cmake
+find_package(c_capnproto REQUIRED)
+target_link_libraries(app PRIVATE c_capnproto::capnp_c)
+```
+
+Pass `-DCMAKE_PREFIX_PATH=/usr/local` when that prefix is not on the
+default search path. `find_package` needs the CMake package files, which
+the CMake install provides. A Meson or autotools prefix does not.
 
 Autotools, after `./configure --prefix=/usr/local` and `make`:
 
@@ -378,12 +391,19 @@ an ILP32 `gcc -m32` exists (N/A on the maintainer builder).
 
 ## Install layout
 
-| Artifact | Path |
-|----------|------|
-| Plugin | `bin/capnpc-c` |
-| Header | `include/capnp_c.h`, `include/capn-rpc.h`, `include/c.capnp.h` |
-| Library | `lib/libcapnp_c.a` / `.so` (runtime + RPC vat) |
-| pkg-config | `lib/pkgconfig/c-capnproto.pc` |
-| Schema helper | `share/c-capnproto/c.capnp` (`import "/c.capnp"` with `-I` this dir) |
+`bin/capnpc-c`, `include/capnp_c.h`, `include/capn-rpc.h`, and
+`include/c.capnp.h` are installed by all three builds. The other files
+are not the same set.
+
+| Piece | Meson | CMake | Autotools |
+|-------|-------|-------|-----------|
+| Library | `lib/<triplet>/libcapnp_c.so` | `lib/libcapnp_c.a` | `lib/libcapnp_c.a`, `.so`, `.so.0`, `.la` |
+| pkg-config | `lib/<triplet>/pkgconfig/c-capnproto.pc` | `lib/pkgconfig/c-capnproto.pc` | `lib/pkgconfig/c-capnproto.pc` |
+| Schema | `share/c-capnproto/c.capnp` | `share/c-capnproto/c.capnp` | `include/capnp/c.capnp` |
+| CMake package | not installed | `lib/cmake/c_capnproto/*.cmake` | not installed |
+
+`import "/c.capnp"` needs `-I` pointed at the directory that contains
+`c.capnp`. For Meson and CMake that is `share/c-capnproto`. For autotools
+it is `include/capnp`.
 
 Changelog: [CHANGELOG.md](CHANGELOG.md). Maintaining: [MAINTAINING.md](MAINTAINING.md). Security: [SECURITY.md](SECURITY.md).
