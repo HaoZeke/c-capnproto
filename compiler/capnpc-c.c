@@ -238,7 +238,7 @@ static void resolve_names(struct str *b, struct node *n, capn_text name, struct 
 	for (i = capn_len(n->n.nestedNodes)-1; i >= 0; i--) {
 		struct Node_NestedNode nest;
 		get_Node_NestedNode(&nest, n->n.nestedNodes, i);
-		struct node *nn = find_node(nest.id);
+		struct node *nn = find_node_mayfail(nest.id);
 		if (nn != NULL) {
 			resolve_names(b, nn, nest.name, file, namespace);
 		}

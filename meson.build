@@ -674,6 +674,48 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
       message('interop/rpc: skipped (needs a C++ toolchain, capnp-rpc, and the capnp tools).')
     endif
 
+    # An imported struct whose nested constant is unused still has that
+    # constant in the schema. The request omits it. The compiler must
+    # accept the file.
+    nested_holder_gen = custom_target(
+      'nested-const-capnp',
+      input: 'tests' / 'nested-const.capnp',
+      output: ['nested-const.capnp.c', 'nested-const.capnp.h'],
+      command: [
+        capnp, 'compile',
+        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-I', meson.current_source_dir() / 'tests',
+        '--src-prefix', meson.current_source_dir() / 'tests',
+        '@INPUT@',
+      ],
+      depends: [capnpc_c],
+    )
+    # Compile the importer by itself. The imported nested constant is
+    # not in the request. Passing both files hides that.
+    nested_const_gen = custom_target(
+      'uses-nested-capnp',
+      input: 'tests' / 'uses-nested.capnp',
+      output: ['uses-nested.capnp.c', 'uses-nested.capnp.h'],
+      command: [
+        capnp, 'compile',
+        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-I', meson.current_source_dir() / 'tests',
+        '-I', meson.current_source_dir() / 'compiler',
+        '--src-prefix', meson.current_source_dir() / 'tests',
+        '@INPUT@',
+      ],
+      depends: [capnpc_c, nested_holder_gen],
+    )
+    nested_const_test = executable(
+      'nested-const-test',
+      'tests' / 'nested-const-test.c',
+      nested_const_gen,
+      nested_holder_gen,
+      include_directories: include_directories(['lib', 'compiler']),
+      dependencies: [libcapnp_dep],
+    )
+    test('nested-const', nested_const_test)
+
     codec_roundtrip_gen = custom_target(
       'codec-roundtrip-capnp',
       input: 'tests' / 'codec-roundtrip.capnp',

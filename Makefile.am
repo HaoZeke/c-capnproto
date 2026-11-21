@@ -163,7 +163,10 @@ EXTRA_DIST += \
 	tests/read-defaults-test.cpp \
 	interop/tail.capnp \
 	interop/tail_client.c \
-	interop/tail_server.c++
+	interop/tail_server.c++ \
+	tests/nested-const.capnp \
+	tests/nested-const-test.c \
+	tests/uses-nested.capnp
 
 EXTRA_DIST += \
 	compiler/c.capnp \
