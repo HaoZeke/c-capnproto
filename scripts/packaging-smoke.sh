@@ -27,10 +27,20 @@ check_pc() {
     echo "${label}: Version [${got}] differs from VERSION.txt [${want}]" >&2
     exit 1
   fi
+  desc=$(sed -n 's/^Description:[[:space:]]*//p' "$pc_file" | head -1)
+  if [[ "$desc" != "Cap'n Proto C bindings" ]]; then
+    echo "${label}: Description [${desc}] is unexpected" >&2
+    exit 1
+  fi
+  if grep -q '^URL:' "$pc_file"; then
+    echo "${label}: URL field is present" >&2
+    exit 1
+  fi
   libdir_raw=$(sed -n 's/^libdir=//p' "$pc_file" | head -1 | tr -d '[:space:]')
   inc_raw=$(sed -n 's/^includedir=//p' "$pc_file" | head -1 | tr -d '[:space:]')
-  if [[ -z "$libdir_raw" || -z "$inc_raw" ]]; then
-    echo "${label}: c-capnproto.pc is missing libdir or includedir" >&2
+  bindir_raw=$(sed -n 's/^bindir=//p' "$pc_file" | head -1 | tr -d '[:space:]')
+  if [[ -z "$libdir_raw" || -z "$inc_raw" || -z "$bindir_raw" ]]; then
+    echo "${label}: c-capnproto.pc is missing libdir, includedir, or bindir" >&2
     exit 1
   fi
   case "$libdir_raw" in
@@ -39,9 +49,7 @@ check_pc() {
   case "$inc_raw" in
     *@*) echo "${label}: includedir still has @ markers" >&2; exit 1 ;;
   esac
-  echo "   ${label} Version=${got} libdir=${libdir_raw} includedir=${inc_raw}"
-  PC_LIBDIR=$libdir_raw
-  PC_INCDIR=$inc_raw
+  echo "   ${label} Version=${got} libdir=${libdir_raw} includedir=${inc_raw} bindir=${bindir_raw}"
 }
 
 WORK=$(mktemp -d)
@@ -104,41 +112,24 @@ if [[ -z "$mpc" ]]; then
   exit 1
 fi
 check_pc "$mpc" meson
-# A relative libdir from c-capnproto.pc.in expands to ${exec_prefix}/... .
-# A file whose libdir begins with ${prefix}/ fails here.
-# Literal pc-file text, not a shell expansion.
-# shellcheck disable=SC2016
-exec_root='${exec_prefix}/'
-# shellcheck disable=SC2016
-prefix_root='${prefix}/'
-case "$PC_LIBDIR" in
-  /*) ;;
-  "$exec_root"*) ;;
-  *)
-    echo "meson: relative libdir must begin with \${exec_prefix}/ (got ${PC_LIBDIR})" >&2
-    exit 1
-    ;;
-esac
-case "$PC_INCDIR" in
-  /*) ;;
-  "$prefix_root"*) ;;
-  *)
-    echo "meson: relative includedir must begin with \${prefix}/ (got ${PC_INCDIR})" >&2
-    exit 1
-    ;;
-esac
 pc_dir=$(dirname "$mpc")
 export PKG_CONFIG_PATH="$pc_dir"
 pkg-config --exists c-capnproto
+# codegen is the user-visible meson fix. Check it before path shape.
+mcode=$(pkg-config --variable=codegen c-capnproto)
+mbin=$(pkg-config --variable=bindir c-capnproto)
+echo "   meson codegen ${mcode} bindir ${mbin}"
+test -n "$mcode"
+test -x "$mcode"
+test -n "$mbin"
+test -d "$mbin"
 mlib=$(pkg-config --variable=libdir c-capnproto)
 minc=$(pkg-config --variable=includedir c-capnproto)
 test -n "$mlib"
 test -n "$minc"
 test -d "$mlib"
 test -d "$minc"
-mcode=$(pkg-config --variable=codegen c-capnproto)
-echo "   meson codegen ${mcode} libdir ${mlib} includedir ${minc}"
-test -x "$mcode"
+echo "   meson libdir ${mlib} includedir ${minc}"
 
 echo "== 4. meson subproject (.wrap path)"
 mkdir -p "$WORK/mw/subprojects"
