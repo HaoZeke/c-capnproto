@@ -630,7 +630,8 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 
 			ret.datasz = U32(U16(tag >> 32)) * 8;
 			ret.ptrs = U32(U16(tag >> 48));
-			ret.len = (int) (U32(tag) >> 2);
+			/* Element count is 29 bits. Bit 31 is not part of it. */
+			ret.len = (int) ((U32(tag) >> 2) & 0x1fffffffu);
 			ret.is_composite_list = 1;
 			if (ret.len < 0)
 				goto err;

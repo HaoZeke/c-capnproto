@@ -712,3 +712,33 @@ TEST(WireParity, TwoZeroStrideCompositeListsFit) {
 	EXPECT_EQ(1, capn_ok(&c));
 	capn_free(&c);
 }
+
+TEST(WireParity, CompositeTagCountUsesTwentyNineBits) {
+	/* Bit 31 of the tag is outside the 29-bit element count. */
+	const uint8_t frame[] = {
+		0x00,0,0,0, 0x04,0,0,0,
+		0x00,0,0,0, 0x00,0,0x01,0,
+		0x01,0,0,0, 0x0f,0,0,0,
+		0x04,0,0,0x80, 0x00,0,0,0,
+		0x00,0,0,0, 0x00,0,0,0,
+	};
+	const uint8_t canon[] = {
+		0x00,0,0,0, 0x00,0,0x01,0,
+		0x01,0,0,0, 0x07,0,0,0,
+		0x04,0,0,0, 0x00,0,0,0,
+	};
+	struct capn c, dst;
+	capn_ptr list;
+
+	ASSERT_EQ(0, load_frame(&c, frame, sizeof frame));
+	list = capn_getp(capn_getp(capn_root(&c), 0, 1), 0, 1);
+	EXPECT_EQ(1, list.len);
+	EXPECT_EQ(0, capn_validate(&c));
+	capn_init_malloc(&dst);
+	ASSERT_EQ(0, capn_canonicalize(&c, &dst));
+	ASSERT_NE(nullptr, dst.seglist);
+	ASSERT_EQ(sizeof canon, dst.seglist->len);
+	EXPECT_EQ(0, memcmp(canon, dst.seglist->data, sizeof canon));
+	capn_free(&dst);
+	capn_free(&c);
+}
