@@ -84,10 +84,44 @@ jobs:
             || test -f destdir/usr/local/lib/*/pkgconfig/c-capnproto.pc \
             || { find destdir/usr/local/lib -print | head -40; exit 1; }
       - name: Source tarball
+        env:
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
         run: |
           meson dist -C build --no-tests
+          if [ "$PRERELEASE" = "true" ]; then
+            ver=$(tr -d '[:space:]' < VERSION.txt)
+            tagver="${GITHUB_REF_NAME#v}"
+            stage=$(mktemp -d)
+            for f in build/meson-dist/c-capnproto-"$ver".tar.xz build/meson-dist/c-capnproto-"$ver".tar.gz; do
+              if [ ! -f "$f" ]; then
+                continue
+              fi
+              case "$f" in
+                *.tar.xz) flag=J; ext=.tar.xz ;;
+                *.tar.gz) flag=z; ext=.tar.gz ;;
+              esac
+              rm -rf "$stage"
+              mkdir -p "$stage"
+              tar -xf "$f" -C "$stage"
+              test -d "$stage/c-capnproto-$ver"
+              mv "$stage/c-capnproto-$ver" "$stage/c-capnproto-$tagver"
+              dest="build/meson-dist/c-capnproto-${tagver}${ext}"
+              tar -C "$stage" -c"$flag" -f "$dest" "c-capnproto-$tagver"
+              rm -f "$f" "$f.sha256sum"
+              (
+                cd build/meson-dist
+                sha256sum "$(basename "$dest")" > "$(basename "$dest").sha256sum"
+              )
+            done
+            rm -rf "$stage"
+          fi
           tarball=$(find build/meson-dist -type f \( -name 'c-capnproto-*.tar.xz' -o -name 'c-capnproto-*.tar.gz' \) -print -quit)
           test -n "$tarball"
+          name=$(basename "$tarball")
+          name=${name%.tar.xz}
+          name=${name%.tar.gz}
+          root=$(tar -tf "$tarball" | awk -F/ 'NR==1 { print $1; exit }')
+          test "$root" = "$name"
           wc -c "$tarball"
           tar -tf "$tarball" | grep -F 'gtest/googletest/include/gtest/gtest.h'
       - name: Autotools from the dist tarball

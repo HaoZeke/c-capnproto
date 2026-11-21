@@ -41,6 +41,8 @@ runs those two builds on pull requests. The meson job builds a
 `meson dist` tarball and runs `autoreconf -fi`, `./configure`, `make`,
 and `make check` on the extracted tree. The publish job waits until every
 job has passed. Notes are the changelog section. The asset is the tarball.
+A prerelease asset and its archive root are `c-capnproto-<version>`,
+where `<version>` is the tag with the leading `v` removed.
 
 Tags `v0.4.0` and `v0.4.1` exist and have changelog sections. The GitHub
 Releases page stops at `v0.3.0`. `scripts/backfill-releases.sh` opens

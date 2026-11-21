@@ -19,6 +19,8 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 - A pull request that changes the library must add a `CHANGELOG.md`
   bullet. A docs-only or CI-only diff is skipped.
 - Sanitizer jobs run ASan and UBSan with gcc and clang.
+- A prerelease tag uploads `c-capnproto-<version>.tar.xz`, and the
+  archive root uses that same name. `<version>` is the tag without `v`.
 
 ### Fixed
 
