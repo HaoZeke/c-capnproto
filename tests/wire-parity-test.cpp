@@ -1631,3 +1631,57 @@ TEST(WireParity, TwoGigabyteListAllocates) {
 	EXPECT_EQ(0x22, (unsigned char) list.p.data[(size_t) 0x0fffffffu * 8u]);
 	capn_free(&c);
 }
+
+static std::vector<uint8_t> framed_word_composite(uint32_t n) {
+	std::vector<uint8_t> b;
+	auto push32 = [&](uint32_t v) {
+		for (int i = 0; i < 4; i++)
+			b.push_back((uint8_t) ((v >> (8 * i)) & 0xff));
+	};
+	uint32_t data_words = 2u + n;
+	push32(0);
+	push32(data_words);
+	push32(1);
+	push32((n << 3) | 7u);
+	push32(n << 2);
+	push32(1);
+	b.resize(8u + (size_t) data_words * 8u, 0);
+	b[24 + (n - 1) * 8] = 1;
+	return b;
+}
+
+static int read_composite(const std::vector<uint8_t> &frame, size_t limit) {
+	struct capn c;
+	capn_ptr root;
+	int ok;
+	if (capn_init_mem(&c, frame.data(), frame.size(), 0) != 0)
+		return -2;
+	c.traversal_limit = limit;
+	c.traversal_used = 0;
+	root = capn_getp(capn_root(&c), 0, 1);
+	ok = (root.type == CAPN_LIST && capn_ok(&c)) ? 0 : -1;
+	capn_free(&c);
+	return ok;
+}
+
+static int canon_limited(const std::vector<uint8_t> &frame, size_t limit) {
+	struct capn c;
+	if (capn_init_mem(&c, frame.data(), frame.size(), 0) != 0)
+		return -2;
+	c.traversal_limit = limit;
+	c.traversal_used = 0;
+	int rc = capn_is_canonical(&c);
+	capn_free(&c);
+	return rc;
+}
+
+TEST(WireParity, NonZeroCompositeChargesTheTagWord) {
+	/* Ten words of budget. A one-word struct list of 7 elements is
+	 * two root words, the tag, and 7 body words. Eight elements
+	 * are one word over. C++ 1.4.0 setRoot rejects that list and
+	 * still reports it as canonical. */
+	EXPECT_EQ(0, read_composite(framed_word_composite(7), 80));
+	EXPECT_NE(0, read_composite(framed_word_composite(8), 80));
+	EXPECT_EQ(1, canon_limited(framed_word_composite(8), 80));
+	EXPECT_EQ(0, canon_limited(framed_word_composite(9), 80));
+}

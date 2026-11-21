@@ -687,6 +687,11 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 					goto err;
 				nbytes = 0;
 			} else {
+				/* The pointer has moved past the tag, so the
+				 * body check stays `words` bytes. The tag is
+				 * still one word of the traversal budget. */
+				if (charge_traversal(s->capn, 8, 0) != 0)
+					goto err;
 				nbytes = words;
 			}
 			break;
