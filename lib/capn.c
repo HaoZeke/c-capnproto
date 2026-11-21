@@ -739,14 +739,18 @@ void capn_resolve(capn_ptr *p) {
 #define CAPN_V_PATH 1
 #define CAPN_V_DONE 2
 
-/* Key is (seg, data, type, is_composite_list). Composite List(T)
- * decode sets data to element 0, so (seg, data) alone aliases the
- * list and T[0]. */
+/* Key is (seg, data, type, is_composite_list, len, datasz, ptrs).
+ * Composite List(T) decode sets data to element 0, so (seg, data)
+ * alone aliases the list and T[0]. An empty list and a longer list
+ * can share a start address, and the size keeps them apart. */
 struct capn_vslot {
 	struct capn_segment *seg;
 	char *data;
 	unsigned type;
 	unsigned is_composite_list;
+	int len;
+	unsigned datasz;
+	unsigned ptrs;
 	unsigned state;
 };
 
@@ -763,14 +767,18 @@ struct capn_frame {
 };
 
 static size_t vhash(struct capn_segment *s, char *d, unsigned type,
-		    unsigned is_comp)
+		    unsigned is_comp, int len, unsigned datasz, unsigned ptrs)
 {
 	uintptr_t a = (uintptr_t) (void *) s;
 	uintptr_t b = (uintptr_t) (void *) d;
-	uintptr_t t = (uintptr_t) type + ((uintptr_t) is_comp << 8);
+	/* uint64_t, so a 32-bit uintptr_t is not shifted by its width. */
+	uint64_t t = (uint64_t) type + ((uint64_t) is_comp << 8)
+		+ ((uint64_t) (unsigned) len << 16)
+		+ ((uint64_t) datasz << 32)
+		+ ((uint64_t) ptrs << 40);
 	return (size_t) ((a * (uintptr_t) 11400714819323198485ull)
 			 ^ (b * (uintptr_t) 14029467366897019727ull)
-			 ^ (t * (uintptr_t) 1609587929392839161ull));
+			 ^ ((uintptr_t) t * (uintptr_t) 1609587929392839161ull));
 }
 
 static int vset_init(struct capn_vset *vs)
@@ -791,6 +799,7 @@ static void vset_free(struct capn_vset *vs)
 
 static struct capn_vslot *vset_find(struct capn_vset *vs, struct capn_segment *s,
 				    char *d, unsigned type, unsigned is_comp,
+				    int len, unsigned datasz, unsigned ptrs,
 				    int insert)
 {
 	size_t mask, i;
@@ -798,13 +807,15 @@ static struct capn_vslot *vset_find(struct capn_vset *vs, struct capn_segment *s
 	if (!vs->tab || vs->cap == 0)
 		return NULL;
 	mask = vs->cap - 1;
-	i = vhash(s, d, type, is_comp) & mask;
+	i = vhash(s, d, type, is_comp, len, datasz, ptrs) & mask;
 	for (;;) {
 		struct capn_vslot *sl = &vs->tab[i];
 		if (sl->state == CAPN_V_EMPTY)
 			return insert ? sl : NULL;
 		if (sl->seg == s && sl->data == d && sl->type == type
-		    && sl->is_composite_list == is_comp)
+		    && sl->is_composite_list == is_comp
+		    && sl->len == len && sl->datasz == datasz
+		    && sl->ptrs == ptrs)
 			return sl;
 		i = (i + 1) & mask;
 	}
@@ -827,7 +838,9 @@ static int vset_grow(struct capn_vset *vs)
 		if (old[i].state != CAPN_V_EMPTY) {
 			struct capn_vslot *sl = vset_find(vs, old[i].seg, old[i].data,
 							  old[i].type,
-							  old[i].is_composite_list, 1);
+							  old[i].is_composite_list,
+							  old[i].len, old[i].datasz,
+							  old[i].ptrs, 1);
 			if (!sl) {
 				capn_freemem(vs->tab);
 				vs->tab = old;
@@ -858,7 +871,8 @@ static int vset_enter(struct capn_vset *vs, capn_ptr p)
 		if (vset_grow(vs))
 			return -1;
 	}
-	sl = vset_find(vs, p.seg, p.data, p.type, p.is_composite_list, 1);
+	sl = vset_find(vs, p.seg, p.data, p.type, p.is_composite_list,
+		       p.len, p.datasz, p.ptrs, 1);
 	if (!sl)
 		return -1;
 	if (sl->state == CAPN_V_PATH)
@@ -869,6 +883,9 @@ static int vset_enter(struct capn_vset *vs, capn_ptr p)
 	sl->data = p.data;
 	sl->type = p.type;
 	sl->is_composite_list = p.is_composite_list;
+	sl->len = p.len;
+	sl->datasz = p.datasz;
+	sl->ptrs = p.ptrs;
 	sl->state = CAPN_V_PATH;
 	vs->n++;
 	return 0;
@@ -880,7 +897,8 @@ static void vset_leave(struct capn_vset *vs, capn_ptr p)
 
 	if (p.type == CAPN_NULL || !p.data || !p.seg)
 		return;
-	sl = vset_find(vs, p.seg, p.data, p.type, p.is_composite_list, 0);
+	sl = vset_find(vs, p.seg, p.data, p.type, p.is_composite_list,
+		       p.len, p.datasz, p.ptrs, 0);
 	if (sl)
 		sl->state = CAPN_V_DONE;
 }
@@ -901,7 +919,8 @@ static int vset_reenter(struct capn_vset *vs, capn_ptr p)
 		if (vset_grow(vs))
 			return -1;
 	}
-	sl = vset_find(vs, p.seg, p.data, p.type, p.is_composite_list, 1);
+	sl = vset_find(vs, p.seg, p.data, p.type, p.is_composite_list,
+		       p.len, p.datasz, p.ptrs, 1);
 	if (!sl)
 		return -1;
 	if (sl->state == CAPN_V_PATH)
@@ -911,6 +930,9 @@ static int vset_reenter(struct capn_vset *vs, capn_ptr p)
 		sl->data = p.data;
 		sl->type = p.type;
 		sl->is_composite_list = p.is_composite_list;
+		sl->len = p.len;
+		sl->datasz = p.datasz;
+		sl->ptrs = p.ptrs;
 		vs->n++;
 	}
 	sl->state = CAPN_V_PATH;

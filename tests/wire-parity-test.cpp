@@ -544,23 +544,6 @@ TEST(WireParity, ZeroSizeCompositeChargesTheTraversalLimit) {
 	capn_free(&c);
 }
 
-TEST(WireParity, HugeVoidListExceedsTheTraversalLimit) {
-	/* Count 8388608 fills the default limit before the pointer
-	 * word is counted, so the read refuses it. */
-	const uint8_t frame[] = {
-		0,0,0,0, 1,0,0,0,
-		1,0,0,0, 0,0,0,4,
-	};
-	struct capn c;
-	capn_ptr root;
-	ASSERT_EQ(0, load_frame(&c, frame, sizeof frame));
-	EXPECT_EQ(0, capn_is_canonical(&c));
-	root = capn_getp(capn_root(&c), 0, 1);
-	EXPECT_EQ(CAPN_NULL, root.type);
-	EXPECT_EQ(0, capn_ok(&c));
-	capn_free(&c);
-}
-
 TEST(WireParity, VoidListBoundaryMatchesTheRootRead) {
 	/* 8388606 still fits. 8388607 is one word over a root read. */
 	const uint8_t fit[] = {
@@ -899,6 +882,7 @@ TEST(WireParity, ASegmentWithNoRootPointerIsRejected) {
 	int64_t n;
 
 	ASSERT_EQ(0, capn_init_mem(&c, empty, sizeof empty, 0));
+	EXPECT_EQ(0, capn_is_canonical(&c));
 	EXPECT_EQ(1, capn_ok(&c));
 	(void) capn_root(&c);
 	EXPECT_EQ(0, capn_ok(&c));
@@ -1405,6 +1389,41 @@ TEST(WireParity, FarIntoAnEmptySegmentIsRejected) {
 	ASSERT_EQ(0, load_frame(&c, single, sizeof single));
 	EXPECT_NE(0, capn_validate(&c));
 	EXPECT_EQ(1, capn_ok(&c));
+	root = capn_getp(capn_root(&c), 0, 1);
+	EXPECT_EQ(CAPN_NULL, root.type);
+	EXPECT_EQ(0, capn_ok(&c));
+	capn_free(&c);
+}
+
+TEST(WireParity, EmptyListDoesNotHideALongerList) {
+	/* The empty pointer list and the one-element pointer list
+	 * start at the same word. The element is a far pointer to
+	 * a segment that is not in the message. */
+	const uint8_t frame[] = {
+		0,0,0,0, 4,0,0,0,
+		0,0,0,0, 0,0,0x02,0,
+		0x05,0,0,0, 0x06,0,0,0,
+		0x01,0,0,0, 0x0e,0,0,0,
+		0x02,0,0,0, 0x05,0,0,0,
+	};
+	struct capn c;
+	ASSERT_EQ(0, load_frame(&c, frame, sizeof frame));
+	EXPECT_NE(0, capn_validate(&c));
+	capn_free(&c);
+}
+
+TEST(WireParity, HugeVoidListExceedsTheTraversalLimit) {
+	/* Count 8388608 fills the default limit before the pointer
+	 * word is counted, so both the read and the canonical check
+	 * refuse it. */
+	const uint8_t frame[] = {
+		0,0,0,0, 1,0,0,0,
+		1,0,0,0, 0,0,0,4,
+	};
+	struct capn c;
+	capn_ptr root;
+	ASSERT_EQ(0, load_frame(&c, frame, sizeof frame));
+	EXPECT_EQ(0, capn_is_canonical(&c));
 	root = capn_getp(capn_root(&c), 0, 1);
 	EXPECT_EQ(CAPN_NULL, root.type);
 	EXPECT_EQ(0, capn_ok(&c));
