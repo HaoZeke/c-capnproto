@@ -7,6 +7,25 @@ CLIENT=$2
 SPID=
 trap '[ -n "$SPID" ] && kill "$SPID" 2>/dev/null' EXIT
 
+# `EXE_WRAPPER`, or the `MESON_EXE_WRAPPER` meson sets on a cross
+# build, runs a peer whose ELF machine is s390x (EM_S390, 22, at byte 18).
+EXE_WRAPPER=${EXE_WRAPPER:-${MESON_EXE_WRAPPER:-}}
+is_s390() {
+	[ "$(od -An -j18 -N2 -tx1 -- "$1" 2>/dev/null | tr -d ' \n')" = 0016 ]
+}
+run_peer() {
+	if [ -n "$EXE_WRAPPER" ] && is_s390 "$1"; then
+		# The wrapper can be several words, e.g. `env VAR=... qemu-s390x`.
+		set -f
+		# shellcheck disable=SC2086
+		set -- $EXE_WRAPPER "$@"
+		set +f
+		"$@"
+	else
+		"$@"
+	fi
+}
+
 # A random port that no socket in the tables uses yet.
 pick_port() {
 	while :; do
@@ -24,14 +43,17 @@ pick_port() {
 # /proc/net/tcp state 0A is LISTEN; the local port is the hex field.
 # Another process can take the port between the check and the bind; a
 # server that exits before listening is started again on a new port.
+# A guest server under qemu-user takes longer to start, so wait 2.5s.
 tries=0
 while [ "$tries" -lt 5 ]; do
 	tries=$((tries + 1))
 	PORT=$(pick_port)
-	"$SERVER" "$PORT" &
+	run_peer "$SERVER" "$PORT" &
 	SPID=$!
 	HEXPORT=$(printf '%04X' "$PORT")
-	for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+	i=0
+	while [ "$i" -lt 50 ]; do
+		i=$((i + 1))
 		if awk -v p=":$HEXPORT" 'NR>1 && index($2, p) && $4=="0A" { found=1 } END { exit !found }' /proc/net/tcp; then
 			break 2
 		fi
@@ -44,6 +66,6 @@ while [ "$tries" -lt 5 ]; do
 	wait "$SPID" 2>/dev/null
 done
 
-"$CLIENT" client "$PORT"
+run_peer "$CLIENT" client "$PORT"
 RC=$?
 exit $RC

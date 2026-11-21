@@ -4,7 +4,26 @@ set -eu
 CAPNP=$1
 CAPNPC=$2
 ROOT=$3
-LIB=$4
+# Meson names a library target relative to the build directory.
+LIB=$(cd "$(dirname "$4")" && pwd)/$(basename "$4")
+# `meson.build` passes the configured host compilers.
+CC=${CC:?}
+CXX=${CXX:?}
+# `EXE_WRAPPER`, or the `MESON_EXE_WRAPPER` meson sets on a cross
+# build, runs a cross-built sample.
+EXE_WRAPPER=${EXE_WRAPPER:-${MESON_EXE_WRAPPER:-}}
+run_bin() {
+	if [ -n "${EXE_WRAPPER:-}" ]; then
+		# The wrapper can be several words, e.g. `env VAR=... qemu-s390x`.
+		set -f
+		# shellcheck disable=SC2086
+		set -- $EXE_WRAPPER "$@"
+		set +f
+		"$@"
+	else
+		"$@"
+	fi
+}
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
@@ -56,7 +75,11 @@ int main(void) {
 }
 EOF
 
-for cc in gcc clang; do
+compilers=$CC
+if [ -z "${EXE_WRAPPER:-}" ] && command -v clang >/dev/null 2>&1; then
+  compilers="$CC clang"
+fi
+for cc in $compilers; do
   for f in brand-hold.capnp brand-clash.capnp brand-separate.capnp consumer; do
     "$cc" -std=c99 -pedantic -Wall -Werror -I"$TMP" -I"$ROOT/lib" \
       -c -o "$TMP/check-$f.o" "$TMP/$f.c"
@@ -71,9 +94,9 @@ if [ -z "$SAN" ] && { ldd "$LIB" 2>/dev/null | grep -q libasan ||
   nm -D --undefined-only "$LIB" 2>/dev/null | grep -q ' __[a-z]*san_'; }; then
   SAN="-fsanitize=address,undefined"
 fi
-gcc -std=c99 -pedantic $SAN -I"$TMP" -I"$ROOT/lib" \
+"$CC" -std=c99 -pedantic $SAN -I"$TMP" -I"$ROOT/lib" \
   -L"$(dirname "$LIB")" -Wl,-rpath,"$(dirname "$LIB")" \
   -o "$TMP/consumer" \
   "$TMP/consumer.c" "$TMP/brand-hold.capnp.c" "$TMP/brand-clash.capnp.c" \
   -lcapnp_c
-"$TMP/consumer"
+run_bin "$TMP/consumer"

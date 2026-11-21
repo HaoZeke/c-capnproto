@@ -31,6 +31,40 @@ wait_for_listen() {
 	return 1
 }
 
+# `EXE_WRAPPER`, or the `MESON_EXE_WRAPPER` meson sets on a cross
+# build, runs a peer whose ELF machine is s390x.
+EXE_WRAPPER=${EXE_WRAPPER:-${MESON_EXE_WRAPPER:-}}
+# The wrapper can be several words, e.g. `env VAR=... qemu-s390x`.
+run_wrapped() {
+	set -f
+	# shellcheck disable=SC2086
+	set -- $EXE_WRAPPER "$@"
+	set +f
+	"$@"
+}
+wrapped() {
+	if [ -n "${EXE_WRAPPER:-}" ] && file -b -- "$1" 2>/dev/null | grep -q 'S/390'; then
+		run_wrapped "$@"
+	else
+		"$@"
+	fi
+}
+
+start_peer() {
+	if [ -n "${EXE_WRAPPER:-}" ] && file -b -- "$1" 2>/dev/null | grep -q 'S/390'; then
+		(
+			set -f
+			# shellcheck disable=SC2086
+			set -- $EXE_WRAPPER "$@"
+			set +f
+			exec "$@"
+		) &
+	else
+		"$@" &
+	fi
+	START_PID=$!
+}
+
 # A random port that no socket in the tables uses yet.
 pick_port() {
 	while :; do
@@ -53,8 +87,8 @@ start_listening() {
 	while [ "$tries" -lt 5 ]; do
 		tries=$((tries + 1))
 		LISTEN_PORT=$(pick_port)
-		"$1" "$LISTEN_PORT" &
-		LISTEN_PID=$!
+		start_peer "$1" "$LISTEN_PORT"
+		LISTEN_PID=$START_PID
 		if wait_for_listen "$LISTEN_PORT" "$LISTEN_PID"; then
 			return 0
 		fi
@@ -81,7 +115,7 @@ SPID=$LISTEN_PID
 PORT=$LISTEN_PORT
 [ "$rc" -eq 0 ] || exit 1
 
-"$CLIENT" "$PORT"
+wrapped "$CLIENT" "$PORT"
 RC=$?
 kill "$SPID" 2>/dev/null
 wait "$SPID" 2>/dev/null || true
@@ -95,7 +129,7 @@ if [ "$#" -ge 4 ]; then
 	SPID2=$LISTEN_PID
 	PORT2=$LISTEN_PORT
 	[ "$rc" -eq 0 ] || exit 1
-	"$4" "$PORT2"
+	wrapped "$4" "$PORT2"
 	RC=$?
 fi
 exit "$RC"

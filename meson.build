@@ -134,6 +134,33 @@ capnpc_c = executable(
   install_rpath: get_option('prefix') / get_option('libdir'),
 )
 
+# Codegen runs on the build machine. A cross build still compiles the
+# host plugin above, and uses this native one to feed `capnp compile`.
+if meson.is_cross_build()
+  libcapnp_c_native = library(
+    'capnp_c_native',
+    libcapnp_src,
+    c_args: common_c_args + libcapnp_c_args + capnp_c_consumer_args,
+    c_shared_args: ['-DCAPNP_C_BUILDING'],
+    c_static_args: ['-DCAPNP_C_STATIC'],
+    include_directories: include_directories(['lib', 'compiler']),
+    implicit_include_directories: false,
+    native: true,
+    install: false,
+  )
+  capnpc_codegen = executable(
+    'capnpc-c-native',
+    capnpc_src,
+    include_directories: include_directories(['lib', 'compiler']),
+    link_with: libcapnp_c_native,
+    c_args: common_c_args,
+    native: true,
+    install: false,
+  )
+else
+  capnpc_codegen = capnpc_c
+endif
+
 # Schema annotations used by generators / fieldgetset.
 install_data(
   'compiler' / 'c.capnp',
@@ -354,18 +381,22 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
   )
   test('gate-r5-test', gate_r5_test)
 
-  # A cross build must not run the host capnp against the target
-  # capnpc-c plugin. The CLI parity tests stay on native builds.
+  # Codegen runs `capnpc_codegen`, a build-machine plugin, so a cross
+  # build never executes the target capnpc-c.
+  capnp = find_program('capnp', native: true, required: false)
+  have_host_capnp = capnp.found()
+  # Guest tests exec this binary. On a cross build it is the host tool.
+  capnp_host = capnp
   if meson.is_cross_build()
-    have_host_capnp = false
-  else
-    capnp = find_program('capnp', native: true, required: false)
-    have_host_capnp = capnp.found()
+    host_capnp = find_program('capnp', native: false, required: false)
+    if host_capnp.found()
+      capnp_host = host_capnp
+    endif
   endif
   wire_cli = []
   if have_host_capnp
     wire_cli = [
-      '-DCAPNP_CLI="' + capnp.full_path() + '"',
+      '-DCAPNP_CLI="' + capnp_host.full_path() + '"',
       '-DCAPNP_SOURCE_ROOT="' + meson.project_source_root() + '"',
     ]
   endif
@@ -381,7 +412,7 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
   test(
     'wire-parity-test',
     wire_parity_test,
-    env: have_host_capnp ? {'CAPNP_CLI': capnp.full_path()} : {},
+    env: capnp_host.found() ? {'CAPNP_CLI': capnp_host.full_path()} : {},
   )
 
   posix_socket_test = executable(
@@ -428,7 +459,7 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
   # The struct layout grew, so the shared object name moved with it.
   test(
     'soname',
-    find_program('sh'),
+    find_program('sh', native: true),
     args: [
       '-c',
       'readelf -d "' + libcapnp_c.full_path() + '" | grep -q "libcapnp_c.so.2"',
@@ -438,37 +469,52 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
   if have_host_capnp
     test(
       'regen-generated',
-      find_program('bash'),
+      find_program('bash', native: true),
       args: [
         meson.project_source_root() / 'scripts' / 'regen-generated.sh',
         '--check',
-        capnpc_c.full_path(),
+        capnpc_codegen.full_path(),
       ],
       workdir: meson.project_source_root(),
     )
 
+    # The brand samples build with the compilers this build uses, and
+    # link the sanitizer runtime the library expects.
+    brand_san = ''
+    if get_option('b_sanitize') != 'none' and not meson.is_cross_build()
+      brand_san = '-fsanitize=' + get_option('b_sanitize')
+    endif
+    # A target argument, unlike its path, marks a test as running guest
+    # code, and meson then exports `MESON_EXE_WRAPPER` to the script.
+    brand_env = {
+      'CC': cc.cmd_array()[-1],
+      'CXX': meson.get_compiler('cpp').cmd_array()[-1],
+      'SAN_FLAGS': brand_san,
+    }
     test(
       'brand-import',
-      find_program('bash'),
+      find_program('bash', native: true),
       args: [
         meson.project_source_root() / 'tests' / 'brand-import.sh',
         capnp.full_path(),
-        capnpc_c.full_path(),
+        capnpc_codegen.full_path(),
         meson.project_source_root(),
-        libcapnp_c.full_path(),
+        libcapnp_c,
       ],
+      env: brand_env,
     )
 
     test(
       'brand-clash',
-      find_program('bash'),
+      find_program('bash', native: true),
       args: [
         meson.project_source_root() / 'tests' / 'brand-clash.sh',
         capnp.full_path(),
-        capnpc_c.full_path(),
+        capnpc_codegen.full_path(),
         meson.project_source_root(),
-        libcapnp_c.full_path(),
+        libcapnp_c,
       ],
+      env: brand_env,
     )
 
     codec_c_args = common_c_args + ['-D_POSIX_C_SOURCE=200809L']
@@ -479,12 +525,12 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
       output: ['read-defaults.capnp.c', 'read-defaults.capnp.h'],
       command: [
         capnp, 'compile',
-        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-o', capnpc_codegen.full_path() + ':' + '@OUTDIR@',
         '-I', meson.current_source_dir() / 'compiler',
         '--src-prefix', meson.current_source_dir() / 'tests',
         '@INPUT@',
       ],
-      depends: [capnpc_c],
+      depends: [capnpc_codegen],
     )
     read_defaults_test = executable(
       'read-defaults-test',
@@ -498,18 +544,18 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
 
     test(
       'stream-schema',
-      find_program('sh'),
+      find_program('sh', native: true),
       args: [meson.project_source_root() / 'scripts' / 'check-stream-schema.sh'],
     )
     test(
       'rpc-listen-wait',
-      find_program('bash'),
+      find_program('bash', native: true),
       args: [meson.project_source_root() / 'scripts' / 'check-rpc-listen-wait.sh'],
       timeout: 30,
     )
     test(
       'const-name',
-      find_program('sh'),
+      find_program('sh', native: true),
       args: [meson.project_source_root() / 'scripts' / 'check-const-name.sh'],
     )
 
@@ -529,12 +575,12 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
       ],
       command: [
         capnp, 'compile',
-        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-o', capnpc_codegen.full_path() + ':' + '@OUTDIR@',
         '-I', meson.current_source_dir() / 'compiler',
         '--src-prefix', meson.current_source_dir() / 'tests',
         '@INPUT@',
       ],
-      depends: [capnpc_c],
+      depends: [capnpc_codegen],
     )
 
     cli_interop_test = executable(
@@ -551,7 +597,7 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
       include_directories: include_directories(['.', 'lib', 'tests', 'compiler']),
       dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
       cpp_args: common_cpp_args + [
-        '-DCAPNP_CLI="' + capnp.full_path() + '"',
+        '-DCAPNP_CLI="' + capnp_host.full_path() + '"',
         '-DCAPNP_SOURCE_ROOT="' + meson.project_source_root() + '"',
       ],
       install: false,
@@ -561,7 +607,7 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
       'capnp-cli-interop-test',
       cli_interop_test,
       env: {
-        'CAPNP_CLI': capnp.full_path(),
+        'CAPNP_CLI': capnp_host.full_path(),
         'CAPNP_SOURCE_ROOT': meson.project_source_root(),
       },
     )
@@ -573,9 +619,16 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
     # the reference implementation will talk to us, so this bootstraps a
     # real EzRpcServer and calls it.
     cpp_ok = add_languages('cpp', required: false, native: false)
-    capnp_rpc_dep = dependency('capnp-rpc', required: false)
-    capnpc_cpp = find_program('capnpc-c++', required: false)
-    bash = find_program('bash', required: false)
+    # C++ peers link the build-machine capnp-rpc. A cross build
+    # compiles them with the build compiler, and skips them without one.
+    peer_native = false
+    if meson.is_cross_build()
+      peer_native = add_languages('cpp', native: true, required: false)
+      cpp_ok = cpp_ok and peer_native
+    endif
+    capnp_rpc_dep = dependency('capnp-rpc', native: true, required: false)
+    capnpc_cpp = find_program('capnpc-c++', native: true, required: false)
+    bash = find_program('bash', native: true, required: false)
 
     if cpp_ok and capnp_rpc_dep.found() and capnpc_cpp.found() and bash.found()
       adder_cpp = custom_target(
@@ -598,6 +651,7 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
         ['interop' / 'rpc_peer_server.c++', adder_cpp],
         dependencies: capnp_rpc_dep,
         override_options: ['cpp_std=c++17'],
+        native: peer_native,
       )
 
       # The C bindings are checked in beside the other generated schema
@@ -634,17 +688,20 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
         ['interop' / 'rpc_peer_client.c++', adder_cpp],
         dependencies: capnp_rpc_dep,
         override_options: ['cpp_std=c++17'],
+        native: peer_native,
       )
 
+      # Targets in args give the script `MESON_EXE_WRAPPER`, as for the
+      # brand tests.
       test(
         'rpc_interop_cpp',
         bash,
         args: [
           meson.current_source_dir() / 'interop' / 'run_rpc_interop.sh',
-          rpc_peer_server.full_path(),
-          rpc_client_c.full_path(),
-          rpc_server_c.full_path(),
-          rpc_peer_client.full_path(),
+          rpc_peer_server,
+          rpc_client_c,
+          rpc_server_c,
+          rpc_peer_client,
         ],
         depends: [rpc_peer_server, rpc_client_c, rpc_server_c, rpc_peer_client],
         timeout: 60,
@@ -664,8 +721,8 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
         bash,
         args: [
           meson.current_source_dir() / 'interop' / 'run_rpc_promise.sh',
-          rpc_promise_server.full_path(),
-          rpc_peer_server.full_path(),
+          rpc_promise_server,
+          rpc_peer_server,
         ],
         depends: [rpc_promise_server, rpc_peer_server],
         timeout: 60,
@@ -687,6 +744,7 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
         ['interop' / 'tail_server.c++', tail_cpp],
         dependencies: capnp_rpc_dep,
         override_options: ['cpp_std=c++17'],
+        native: peer_native,
       )
       tail_client = executable(
         'tail_client',
@@ -701,8 +759,8 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
         bash,
         args: [
           meson.current_source_dir() / 'interop' / 'run_rpc_interop.sh',
-          tail_server.full_path(),
-          tail_client.full_path(),
+          tail_server,
+          tail_client,
         ],
         depends: [tail_server, tail_client],
         timeout: 60,
@@ -733,14 +791,15 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
         ['interop' / 'reflect_client.c++', reflect_cpp],
         dependencies: capnp_rpc_dep,
         override_options: ['cpp_std=c++17'],
+        native: peer_native,
       )
       test(
         'rpc_reflect_cpp',
         bash,
         args: [
           meson.current_source_dir() / 'interop' / 'run_rpc_interop.sh',
-          reflect_server.full_path(),
-          reflect_client.full_path(),
+          reflect_server,
+          reflect_client,
         ],
         depends: [reflect_server, reflect_client],
         timeout: 60,
@@ -758,12 +817,12 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
       output: ['nested-const.capnp.c', 'nested-const.capnp.h'],
       command: [
         capnp, 'compile',
-        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-o', capnpc_codegen.full_path() + ':' + '@OUTDIR@',
         '-I', meson.current_source_dir() / 'tests',
         '--src-prefix', meson.current_source_dir() / 'tests',
         '@INPUT@',
       ],
-      depends: [capnpc_c],
+      depends: [capnpc_codegen],
     )
     # Compile the importer by itself. The imported nested constant is
     # not in the request. Passing both files hides that.
@@ -773,13 +832,13 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
       output: ['uses-nested.capnp.c', 'uses-nested.capnp.h'],
       command: [
         capnp, 'compile',
-        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-o', capnpc_codegen.full_path() + ':' + '@OUTDIR@',
         '-I', meson.current_source_dir() / 'tests',
         '-I', meson.current_source_dir() / 'compiler',
         '--src-prefix', meson.current_source_dir() / 'tests',
         '@INPUT@',
       ],
-      depends: [capnpc_c, nested_holder_gen],
+      depends: [capnpc_codegen, nested_holder_gen],
     )
     nested_const_test = executable(
       'nested-const-test',
@@ -797,12 +856,12 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
       output: ['codec-roundtrip.capnp.c', 'codec-roundtrip.capnp.h'],
       command: [
         capnp, 'compile',
-        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-o', capnpc_codegen.full_path() + ':' + '@OUTDIR@',
         '-I', meson.current_source_dir() / 'compiler',
         '--src-prefix', meson.current_source_dir() / 'tests',
         '@INPUT@',
       ],
-      depends: [capnpc_c],
+      depends: [capnpc_codegen],
     )
 
     codec_roundtrip_test = executable(
@@ -823,12 +882,12 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
       output: ['rpcstubs.capnp.c', 'rpcstubs.capnp.h'],
       command: [
         capnp, 'compile',
-        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-o', capnpc_codegen.full_path() + ':' + '@OUTDIR@',
         '-I', meson.current_source_dir() / 'compiler',
         '--src-prefix', meson.current_source_dir() / 'tests',
         '@INPUT@',
       ],
-      depends: [capnpc_c],
+      depends: [capnpc_codegen],
     )
 
     rpcstubs_test = executable(
@@ -849,12 +908,12 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
       output: ['group-in-union.capnp.c', 'group-in-union.capnp.h'],
       command: [
         capnp, 'compile',
-        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-o', capnpc_codegen.full_path() + ':' + '@OUTDIR@',
         '-I', meson.current_source_dir() / 'compiler',
         '--src-prefix', meson.current_source_dir() / 'tests',
         '@INPUT@',
       ],
-      depends: [capnpc_c],
+      depends: [capnpc_codegen],
     )
 
     group_in_union_test = executable(
@@ -875,12 +934,12 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
       output: ['list-decode-srcdest.capnp.c', 'list-decode-srcdest.capnp.h'],
       command: [
         capnp, 'compile',
-        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-o', capnpc_codegen.full_path() + ':' + '@OUTDIR@',
         '-I', meson.current_source_dir() / 'compiler',
         '--src-prefix', meson.current_source_dir() / 'tests',
         '@INPUT@',
       ],
-      depends: [capnpc_c],
+      depends: [capnpc_codegen],
     )
 
     list_decode_srcdest_test = executable(
@@ -901,12 +960,12 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
       output: ['interface-field.capnp.c', 'interface-field.capnp.h'],
       command: [
         capnp, 'compile',
-        '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+        '-o', capnpc_codegen.full_path() + ':' + '@OUTDIR@',
         '-I', meson.current_source_dir() / 'compiler',
         '--src-prefix', meson.current_source_dir() / 'tests',
         '@INPUT@',
       ],
-      depends: [capnpc_c],
+      depends: [capnpc_codegen],
     )
 
     interface_field_test = executable(
@@ -928,12 +987,12 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
         output: [t + '.capnp.c', t + '.capnp.h'],
         command: [
           capnp, 'compile',
-          '-o', capnpc_c.full_path() + ':' + '@OUTDIR@',
+          '-o', capnpc_codegen.full_path() + ':' + '@OUTDIR@',
           '-I', meson.current_source_dir() / 'compiler',
           '--src-prefix', meson.current_source_dir() / 'tests',
           '@INPUT@',
         ],
-        depends: [capnpc_c],
+        depends: [capnpc_codegen],
       )
       t_exe = executable(
         t + '-test',
@@ -1007,14 +1066,9 @@ if get_option('fuzz')
   # otherwise use the checked-in seed. Not unbounded AFL.
   fs = import('fs')
   fuzz_seed = meson.project_source_root() / 'fuzz' / 'in' / 'Person.bin'
-  if meson.is_cross_build()
-    have_fuzz_capnp = false
-  else
-    capnp_fuzz = find_program('capnp', native: true, required: false)
-    have_fuzz_capnp = capnp_fuzz.found()
-  endif
-  sh = find_program('sh', required: false)
-  if have_fuzz_capnp and sh.found()
+  capnp_fuzz = find_program('capnp', native: true, required: false)
+  sh = find_program('sh', native: true, required: false)
+  if capnp_fuzz.found() and sh.found()
     fuzz_person_bin = custom_target(
       'fuzz-person-bin',
       input: files('fuzz' / 'Person.txt'),

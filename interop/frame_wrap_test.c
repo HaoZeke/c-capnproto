@@ -100,7 +100,15 @@ int main(int argc, char **argv)
 			if (devnull > STDERR_FILENO)
 				close(devnull);
 		}
-		execl(argv[1], argv[1], portbuf, (char *)NULL);
+		/* On a cross build the client is a guest binary, which runs
+		 * under the wrapper unless binfmt_misc knows the machine. */
+		if ((getenv("EXE_WRAPPER") && *getenv("EXE_WRAPPER")) ||
+		    (getenv("MESON_EXE_WRAPPER") && *getenv("MESON_EXE_WRAPPER")))
+			execl("/bin/sh", "sh", "-c",
+			      "set -f; exec ${EXE_WRAPPER:-$MESON_EXE_WRAPPER} \"$0\" \"$1\"",
+			      argv[1], portbuf, (char *)NULL);
+		else
+			execl(argv[1], argv[1], portbuf, (char *)NULL);
 		perror("execl");
 		_exit(127);
 	}
