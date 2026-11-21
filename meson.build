@@ -403,6 +403,15 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
     ],
   )
 
+  spell_finish_test = executable(
+    'spell-finish-test',
+    'tests' / 'spell-finish-test.c',
+    c_args: ['-DSOURCE_FILE="' + meson.project_source_root() / 'lib' / 'capn-rpc.c' + '"'],
+    implicit_include_directories: false,
+    install: false,
+  )
+  test('spell-finish-test', spell_finish_test)
+
   if have_host_capnp
     codec_c_args = common_c_args + ['-D_POSIX_C_SOURCE=200809L']
 

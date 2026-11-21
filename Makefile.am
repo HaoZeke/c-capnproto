@@ -157,7 +157,8 @@ EXTRA_DIST += \
 	interop/posix_net.h \
 	tests/no-bsd-socket.h \
 	tests/posix-socket-check.sh \
-	tests/posix-socket-test.c
+	tests/posix-socket-test.c \
+	tests/spell-finish-test.c
 
 EXTRA_DIST += \
 	compiler/c.capnp \

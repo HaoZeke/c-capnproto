@@ -5022,11 +5022,11 @@ int capn_rpc_handle(struct capn_rpc_conn *c, const uint8_t *data, size_t len)
 		 * have pipelined against can go. releaseResultCaps defaults
 		 * to true and drops the exports that Return handed out. */
 		struct Finish fin;
-		struct capn_rpc_answer *ans;
+		struct capn_rpc_answer *answer;
 		read_Finish(&fin, m.finish);
-		ans = answer_find(c, fin.questionId);
-		if (ans != NULL && fin.releaseResultCaps)
-			release_answer_result_caps(c, ans);
+		answer = answer_find(c, fin.questionId);
+		if (answer != NULL && fin.releaseResultCaps)
+			release_answer_result_caps(c, answer);
 		answer_drop(c, fin.questionId);
 		/* Finish before the Return cancels it. The message stays until
 		 * the matching return, which then sends nothing. */
