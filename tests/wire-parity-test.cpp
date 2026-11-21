@@ -14,6 +14,9 @@
 #include <string>
 #include <vector>
 
+#include <stdio.h>
+#include <unistd.h>
+
 #include "capnp_c.h"
 #include "capnp-cli.h"
 
@@ -862,5 +865,82 @@ TEST(WireParity, OutOfRangeEmptyStructIsClamped) {
 	ASSERT_EQ(0, load_frame(&c, nonempty, sizeof nonempty));
 	EXPECT_NE(0, capn_validate(&c));
 	EXPECT_EQ(0, capn_ok(&c));
+	capn_free(&c);
+}
+
+TEST(WireParity, EmptyFirstSegmentHasNoRoot) {
+	const uint8_t frame[] = {
+		1,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,0,0,
+		0,0,0,0, 0,0,0,0,
+	};
+	struct capn c;
+	ASSERT_EQ(0, capn_init_mem(&c, frame, sizeof frame, 0));
+	EXPECT_EQ(2, c.segnum);
+	EXPECT_NE(0, capn_validate(&c));
+	capn_free(&c);
+}
+
+TEST(WireParity, ASegmentWithNoRootPointerIsRejected) {
+	/* One segment of zero words. The reader is built. The root
+	 * read fails, and the packed form is the two zero words of
+	 * the header. A one-word null root stays a message. */
+	const uint8_t twoblank[] = {
+		1,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,
+	};
+	const uint8_t empty[] = { 0,0,0,0, 0,0,0,0 };
+	const uint8_t nullroot[] = {
+		0,0,0,0, 1,0,0,0,
+		0,0,0,0, 0,0,0,0,
+	};
+	const uint8_t packed_empty[] = { 0x00, 0x00 };
+	uint8_t buf[32];
+	struct capn c;
+	int64_t n;
+
+	ASSERT_EQ(0, capn_init_mem(&c, empty, sizeof empty, 0));
+	EXPECT_EQ(1, capn_ok(&c));
+	(void) capn_root(&c);
+	EXPECT_EQ(0, capn_ok(&c));
+	capn_clear_err(&c);
+	n = capn_write_mem(&c, buf, sizeof buf, 1);
+	ASSERT_EQ((int64_t) sizeof packed_empty, n);
+	EXPECT_EQ(0, memcmp(buf, packed_empty, sizeof packed_empty));
+	capn_free(&c);
+
+	/* writeMessage of that segment is the 8-byte header, and the
+	 * packed form is two zero bytes. The file and descriptor
+	 * writers do the same. */
+	ASSERT_EQ(0, capn_init_mem(&c, empty, sizeof empty, 0));
+	EXPECT_EQ((int64_t) 8, capn_size(&c));
+	{
+		int fds[2];
+		uint8_t got[8];
+		ssize_t rd;
+		FILE *fp;
+		ASSERT_EQ(0, pipe(fds));
+		n = capn_write_fd(&c, write, fds[1], 1);
+		ASSERT_EQ((int64_t) 2, n);
+		ASSERT_EQ(0, close(fds[1]));
+		rd = read(fds[0], got, sizeof got);
+		EXPECT_EQ((ssize_t) 2, rd);
+		EXPECT_EQ(0, memcmp(got, packed_empty, 2));
+		close(fds[0]);
+		fp = tmpfile();
+		ASSERT_NE(nullptr, fp);
+		n = capn_write_fp(&c, fp, 0);
+		ASSERT_EQ((int64_t) 8, n);
+		ASSERT_EQ(0, fseek(fp, 0, SEEK_SET));
+		ASSERT_EQ((size_t) 8, fread(got, 1, 8, fp));
+		EXPECT_EQ(0, memcmp(got, empty, 8));
+		fclose(fp);
+	}
+	EXPECT_EQ(1, capn_ok(&c));
+	capn_free(&c);
+	ASSERT_EQ(0, capn_init_mem(&c, twoblank, sizeof twoblank, 0));
+	EXPECT_EQ(2, c.segnum);
+	capn_free(&c);
+	ASSERT_EQ(0, capn_init_mem(&c, nullroot, sizeof nullroot, 0));
+	EXPECT_EQ(0, capn_validate(&c));
+	EXPECT_EQ(1, capn_ok(&c));
 	capn_free(&c);
 }

@@ -304,6 +304,8 @@ static int init_fp(struct capn *c, FILE *f,
     /* Set the entire region to be freed on the last segment */
 	s[segnum-1].user = s;
 
+	/* A segment of zero words is a message the reader can be
+	 * built from. The missing root is reported when it is read. */
 	return 0;
 
 err:
@@ -390,17 +392,27 @@ static int header_render(struct capn *c, struct capn_segment *seg, uint8_t *head
 	return 0;
 }
 
+/* A builder whose first segment has room but no root yet is padded
+ * to one word, which is what writing used to do by reading the root.
+ * A wire segment is left alone, including one with no words. */
+static void pad_builder_root(struct capn *c)
+{
+	struct capn_segment *seg = c->seglist;
+
+	if (seg && seg->cap > seg->len && seg->len < 8 && seg->cap >= 8)
+		seg->len = 8;
+}
+
 static int64_t capn_write_mem_packed(struct capn *c, uint8_t *p, size_t sz)
 {
 	struct capn_segment *seg;
-	struct capn_ptr root;
 	uint32_t headerlen;
 	size_t headersz, datasz = 0;
 	uint8_t *header;
 	struct capn_stream z;
 	int ret;
 
-	root = capn_root(c);
+	pad_builder_root(c);
 	header_calc(c, &headerlen, &headersz);
 
 	/* Uncompressed header is written at p + headersz + 2 (two bytes of
@@ -415,7 +427,7 @@ static int64_t capn_write_mem_packed(struct capn *c, uint8_t *p, size_t sz)
 
 	header = p + headersz + 2;
 
-	ret = header_render(c, root.seg, header, headerlen, &datasz);
+	ret = header_render(c, c->seglist, header, headerlen, &datasz);
 	if (ret != 0)
 		return -1;
 
@@ -430,7 +442,7 @@ static int64_t capn_write_mem_packed(struct capn *c, uint8_t *p, size_t sz)
 	if (ret != 0 || z.avail_in != 0)
 		return -1;
 
-	for (seg = root.seg; seg; seg = seg->next) {
+	for (seg = c->seglist; seg; seg = seg->next) {
 		z.next_in = (uint8_t *)seg->data;
 		z.avail_in = seg->len;
 		ret = capn_deflate(&z);
@@ -445,7 +457,6 @@ int64_t
 capn_write_mem(struct capn *c, uint8_t *p, size_t sz, int packed)
 {
 	struct capn_segment *seg;
-	struct capn_ptr root;
 	uint32_t headerlen;
 	size_t headersz, datasz = 0;
 	uint8_t *header;
@@ -457,14 +468,14 @@ capn_write_mem(struct capn *c, uint8_t *p, size_t sz, int packed)
 	if (packed)
 		return capn_write_mem_packed(c, p, sz);
 
-	root = capn_root(c);
+	pad_builder_root(c);
 	header_calc(c, &headerlen, &headersz);
 	header = p;
 
 	if (sz < headersz)
 		return -1;
 
-	ret = header_render(c, root.seg, header, headerlen, &datasz);
+	ret = header_render(c, c->seglist, header, headerlen, &datasz);
 	if (ret != 0)
 		return -1;
 
@@ -473,7 +484,7 @@ capn_write_mem(struct capn *c, uint8_t *p, size_t sz, int packed)
 
 	p += headersz;
 
-	for (seg = root.seg; seg; seg = seg->next) {
+	for (seg = c->seglist; seg; seg = seg->next) {
 		memcpy(p, seg->data, seg->len);
 		p += seg->len;
 	}
@@ -553,7 +564,6 @@ int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, siz
 {
 	unsigned char buf[4096];
 	struct capn_segment *seg;
-	struct capn_ptr root;
 	uint32_t headerlen;
 	size_t headersz, datasz = 0;
 	int ret;
@@ -563,13 +573,15 @@ int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, siz
 	if (c->segnum == 0)
 		return -1;
 
-	root = capn_root(c);
+	/* A zero-word segment is a real segment. C++ writeMessage
+	 * writes it. The root read is a separate step. */
+	pad_builder_root(c);
 	header_calc(c, &headerlen, &headersz);
 
 	if (sizeof(buf) < headersz)
 		return -1;
 
-	ret = header_render(c, root.seg, buf, headerlen, &datasz);
+	ret = header_render(c, c->seglist, buf, headerlen, &datasz);
 	if (ret != 0)
 		return -1;
 
@@ -599,7 +611,7 @@ int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, siz
 		return -1;
 
 	datasz = headersz;
-	for (seg = root.seg; seg; seg = seg->next) {
+	for (seg = c->seglist; seg; seg = seg->next) {
 		if (packed) {
 			struct write_fd_ctx e;
 			e.write_fd = write_fd;
@@ -645,7 +657,6 @@ int capn_write_fp(struct capn *c, FILE *f, int packed)
 {
 	unsigned char buf[4096];
 	struct capn_segment *seg;
-	struct capn_ptr root;
 	uint32_t headerlen;
 	size_t headersz, datasz = 0;
 	int ret;
@@ -655,13 +666,13 @@ int capn_write_fp(struct capn *c, FILE *f, int packed)
 	if (c->segnum == 0 || f == NULL)
 		return -1;
 
-	root = capn_root(c);
+	pad_builder_root(c);
 	header_calc(c, &headerlen, &headersz);
 
 	if (sizeof(buf) < headersz)
 		return -1;
 
-	ret = header_render(c, root.seg, buf, headerlen, &datasz);
+	ret = header_render(c, c->seglist, buf, headerlen, &datasz);
 	if (ret != 0)
 		return -1;
 
@@ -691,7 +702,7 @@ int capn_write_fp(struct capn *c, FILE *f, int packed)
 		return -1;
 
 	datasz = headersz;
-	for (seg = root.seg; seg; seg = seg->next) {
+	for (seg = c->seglist; seg; seg = seg->next) {
 		if (packed) {
 			ret = packed_emit_seg(&z, buf, sizeof(buf),
 				(const uint8_t *)seg->data, seg->len,
@@ -722,15 +733,14 @@ int capn_write_fp(struct capn *c, FILE *f, int packed)
 int64_t capn_size(struct capn *c)
 {
 	size_t headersz, datasz = 0;
-	struct capn_ptr root;
 	struct capn_segment *seg;
 	uint32_t i;
 
 	if (c->segnum == 0)
 		return -1;
 
-	root = capn_root(c);
-	seg = root.seg;
+	pad_builder_root(c);
+	seg = c->seglist;
 
 	headersz = 8 * ((2 + c->segnum) / 2);
 

@@ -984,6 +984,15 @@ int capn_validate(struct capn *c)
 	memset(&vs, 0, sizeof(vs));
 	limit = session_nesting(c);
 
+	/* A wire segment whose first segment cannot hold a pointer has
+	 * no root. A builder segment is larger than the bytes written
+	 * so far, and a null root there is still a valid message. */
+	s = lookup_segment(c, NULL, 0);
+	if (s && s->cap == s->len && s->len < 8) {
+		rc = -1;
+		goto done;
+	}
+
 	root = capn_root(c);
 	if (!root.seg || !root.data) {
 		rc = 0;
@@ -2106,7 +2115,12 @@ capn_ptr capn_root(struct capn *c) {
 	r.nesting = session_nesting(c);
 
 	if (!r.seg || r.seg->cap < 8) {
+		/* The segment is real and too short for a pointer.
+		 * The reader was built; this read is what fails. */
+		int missing = r.seg && r.seg->cap < 8;
 		memset(&r, 0, sizeof(r));
+		if (missing)
+			c->decode_err = 1;
 	} else if (r.seg->len < 8) {
 		r.seg->len = 8;
 	}
