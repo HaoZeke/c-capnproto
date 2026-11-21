@@ -1212,6 +1212,12 @@ capn_ptr capn_getp(capn_ptr p, int off, int resolve) {
 		/* Return an inner pointer */
 		if (off < p.len) {
 			capn_ptr inner = {CAPN_STRUCT};
+			/* C++ `getStructElement` spends a nesting level. */
+			if (p.is_composite_list) {
+				if (rem == 0)
+					goto err;
+				rem--;
+			}
 			inner.is_list_member = 1;
 			inner.data = p.data + off * (p.datasz + 8*p.ptrs);
 			inner.seg = p.seg;

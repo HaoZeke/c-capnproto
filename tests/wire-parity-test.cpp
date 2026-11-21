@@ -1468,6 +1468,25 @@ static int copy_frame_root(const std::vector<uint8_t> &frame) {
 	return rc;
 }
 
+TEST(WireParity, CompositeElementsSpendANestingLevel) {
+	/* C++ 1.4.0 `getStructElement` needs a nesting level for each
+	 * element, so 33 list and element hops run out at 64. */
+	std::vector<uint8_t> frame = framed_comp_chain(33);
+	struct capn c;
+	capn_ptr p;
+
+	ASSERT_EQ(0, capn_init_mem(&c, frame.data(), frame.size(), 0));
+	p = capn_getp(capn_root(&c), 0, 1);
+	for (int i = 0; i < 33 && capn_ok(&c); i++) {
+		p = capn_getp(p, 0, 1);
+		if (i != 32)
+			p = capn_getp(p, 0, 1);
+	}
+	EXPECT_EQ(CAPN_NULL, p.type);
+	EXPECT_EQ(0, capn_ok(&c));
+	capn_free(&c);
+}
+
 static int copy_frame_root_with_limit(const std::vector<uint8_t> &frame, int limit) {
 	struct capn src, dst;
 	int rc;
