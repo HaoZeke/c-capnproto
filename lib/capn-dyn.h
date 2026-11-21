@@ -192,7 +192,8 @@ CAPN_EXPORT char *capn_dyn_to_text(const struct capn_dyn_struct *s, capn_ptr st)
 
 /* Multi-line text format, as `capnp decode` prints it (without --short).
  * Returns a malloc'd string, or NULL on out of memory. */
-char *capn_dyn_to_text_pretty(const struct capn_dyn_struct *s, capn_ptr st);
+CAPN_EXPORT char *capn_dyn_to_text_pretty(const struct capn_dyn_struct *s,
+                                          capn_ptr st);
 
 /* JSON, as `capnp convert binary:json` prints it (`--short` is
  * CAPN_DYN_COMPACT). 64-bit integers are strings, Data is an array of

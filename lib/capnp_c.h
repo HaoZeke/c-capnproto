@@ -57,10 +57,11 @@ typedef SSIZE_T ssize_t;
 #define ALIGNED_(x) __attribute__ ((aligned(x)))
 #endif
 
-/* Shared-library export. MSVC only writes an import library (capnp_c.lib)
- * when at least one symbol is __declspec(dllexport). Static builds
- * (CAPNP_C_STATIC) and non-Windows leave this empty. Define
- * CAPNP_C_BUILDING when compiling the library objects.
+/* Shared-library export. MSVC needs __declspec(dllexport) to write an
+ * import library (capnp_c.lib); GCC and Clang use default visibility so
+ * hidden-visibility builds still export the public API. Static builds
+ * (CAPNP_C_STATIC) leave this empty. Define CAPNP_C_BUILDING when
+ * compiling the library objects.
  */
 #if defined(CAPNP_C_STATIC)
 #define CAPN_EXPORT
@@ -70,6 +71,8 @@ typedef SSIZE_T ssize_t;
 #else
 #define CAPN_EXPORT __declspec(dllimport)
 #endif
+#elif defined(__GNUC__) || defined(__clang__)
+#define CAPN_EXPORT __attribute__((visibility("default")))
 #else
 #define CAPN_EXPORT
 #endif

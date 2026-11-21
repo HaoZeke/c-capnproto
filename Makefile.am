@@ -38,10 +38,12 @@ libcapnp_c_la_SOURCES = \
 	lib/capn.c \
 	lib/capn-rpc.c \
 	lib/capn-dyn.c \
+	lib/capn-rpc-schema.c \
+	lib/capn-rpc-threeparty-schema.c
+EXTRA_DIST += \
+	lib/capn-list.inc \
 	compiler/rpc.capnp.c \
 	compiler/rpc-threeparty.capnp.c
-EXTRA_DIST += \
-	lib/capn-list.inc
 
 bin_PROGRAMS += capnpc-c
 capnpc_c_SOURCES = \
@@ -55,7 +57,9 @@ include_HEADERS += \
 	lib/capnp_c.h \
 	lib/capn-rpc.h \
 	lib/capn-dyn.h \
-	compiler/c.capnp.h
+	compiler/c.capnp.h \
+	compiler/rpc.capnp.h \
+	compiler/rpc-threeparty.capnp.h
 
 noinst_HEADERS += \
 	lib/capnp_priv.h \
@@ -83,7 +87,10 @@ endif
 
 # Tests
 check_PROGRAMS += \
-	capn-test
+	capn-test \
+	rpc-schema-export-test
+rpc_schema_export_test_SOURCES = tests/rpc-schema-export-test.c
+rpc_schema_export_test_LDADD = libcapnp_c.la
 capn_test_SOURCES = \
 	tests/capn-test.cpp \
 	tests/capn-stream-test.cpp \
@@ -138,9 +145,7 @@ EXTRA_DIST += \
 	compiler/c.capnp.c \
 	compiler/c++.capnp.c \
 	compiler/rpc.capnp \
-	compiler/rpc.capnp.h \
 	compiler/rpc-threeparty.capnp \
-	compiler/rpc-threeparty.capnp.h \
 	compiler/rpc-threeparty-frames.capnp \
 	compiler/rpc-twoparty.capnp \
 	compiler/rpc-twoparty.capnp.c \
@@ -156,6 +161,8 @@ EXTRA_DIST += \
 	scripts/regen-generated.sh \
 	scripts/smoke-m32.sh \
 	tests/compiler-str-test.c \
+	tests/check-dyn-export.sh \
+	tests/check-dyn-export-comment.sh \
 	tests/data-codec.capnp \
 	tests/data-codec.h \
 	tests/data-codec-test.cpp \
@@ -179,6 +186,7 @@ EXTRA_DIST += \
 	tests/fixtures/addressbook.canonical.bin \
 	tests/fixtures/addressbook.txt \
 	tests/fixtures/testalltypes.txt \
+	tests/fixtures/dyn-export-comment.h \
 	tests/capnp-cli-interop-test.cpp \
 	tests/capnp-cli.h \
 	tests/reflect-test.cpp \
@@ -212,7 +220,33 @@ capn_test_CPPFLAGS = $(AM_CPPFLAGS) $(GTEST_CPPFLAGS) \
 capn_test_CXXFLAGS = -std=gnu++14 -pthread
 capn_test_LDADD = libcapnp_c.la $(GTEST_LDADD)
 capn_test_LDFLAGS = -pthread
-TESTS = capn-test
+check_SCRIPTS = capn-public-exports.sh capn-public-exports-comment.sh
+CLEANFILES = $(check_SCRIPTS)
+
+capn-public-exports.sh: libcapnp_c.la $(srcdir)/tests/check-dyn-export.sh
+	@{ \
+	  printf '%s\n' '#!/bin/sh' 'set -eu' 'dlname=""; old_library=""'; \
+	  printf '%s\n' '. ./libcapnp_c.la'; \
+	  printf '%s\n' 'lib=".libs/$${dlname:-$$old_library}"'; \
+	  printf '%s\n' 's="$(abs_srcdir)/tests/check-dyn-export.sh"'; \
+	  printf '%s\n' 'exec sh "$$s" "$$lib" "$(abs_srcdir)/lib"'; \
+	} > $@
+	@chmod +x $@
+
+capn-public-exports-comment.sh: libcapnp_c.la \
+	$(srcdir)/tests/check-dyn-export-comment.sh
+	@{ \
+	  printf '%s\n' '#!/bin/sh' 'set -eu' 'dlname=""; old_library=""'; \
+	  printf '%s\n' '. ./libcapnp_c.la'; \
+	  printf '%s\n' 'lib=".libs/$${dlname:-$$old_library}"'; \
+	  printf '%s\n' 's="$(abs_srcdir)/tests/check-dyn-export-comment.sh"'; \
+	  printf '%s\n' 'f="$(abs_srcdir)/tests/fixtures/dyn-export-comment.h"'; \
+	  printf '%s\n' 'exec sh "$$s" "$$lib" "$$f"'; \
+	} > $@
+	@chmod +x $@
+
+TESTS = capn-test rpc-schema-export-test \
+	capn-public-exports.sh capn-public-exports-comment.sh
 
 CAPNP_SCHEMA_FILES := $(shell find . -type f -name \*.capnp)
 

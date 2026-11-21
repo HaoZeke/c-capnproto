@@ -460,29 +460,31 @@ CAPN_EXPORT int capn_rpc_export(struct capn_rpc_conn *c, void *server,
 /* Export a promise. Calls are held until capn_rpc_resolve,
  * capn_rpc_resolve_import, or capn_rpc_resolve_exception. The id is what
  * a senderPromise descriptor names. -1 when the table cannot grow. */
-int capn_rpc_export_promise(struct capn_rpc_conn *c, void *server,
-                            capn_rpc_dispatch_fn dispatch);
+CAPN_EXPORT int capn_rpc_export_promise(struct capn_rpc_conn *c, void *server,
+                                        capn_rpc_dispatch_fn dispatch);
 
 /* Resolve `promise_id` to a capability this vat hosts. Queued calls are
  * delivered before the Resolve message, so their Returns precede it. */
-int capn_rpc_resolve(struct capn_rpc_conn *c, int promise_id, void *server,
-                     capn_rpc_dispatch_fn dispatch);
+CAPN_EXPORT int capn_rpc_resolve(struct capn_rpc_conn *c, int promise_id,
+                                 void *server, capn_rpc_dispatch_fn dispatch);
 
 /* Resolve `promise_id` to a capability the peer hosts. Queued calls are
  * forwarded to `import_id` before Resolve, which carries receiverHosted. */
-int capn_rpc_resolve_import(struct capn_rpc_conn *c, int promise_id,
-                            uint32_t import_id);
+CAPN_EXPORT int capn_rpc_resolve_import(struct capn_rpc_conn *c,
+                                        int promise_id, uint32_t import_id);
 
 /* Reject `promise_id`. Queued calls are answered with `reason`, then a
  * Resolve carrying that exception is sent. */
-int capn_rpc_resolve_exception(struct capn_rpc_conn *c, int promise_id,
-                               const char *reason);
+CAPN_EXPORT int capn_rpc_resolve_exception(struct capn_rpc_conn *c,
+                                           int promise_id,
+                                           const char *reason);
 
 /* 1 when a Resolve has been applied to `import_id`. `*broken` is set when
  * the promise rejected. `*to_export` is 1 when `*target` is a local export,
  * 0 when it is an import id, and -1 when the target is a pipeline or absent. */
-int capn_rpc_promise_state(const struct capn_rpc_conn *c, uint32_t import_id,
-                           int *broken, int *to_export, uint32_t *target);
+CAPN_EXPORT int capn_rpc_promise_state(const struct capn_rpc_conn *c,
+                                       uint32_t import_id, int *broken,
+                                       int *to_export, uint32_t *target);
 
 /* Handle one framed message. Returns 0 when handled, non-zero on a
  * malformed frame. Replies go out through the send callback. */
