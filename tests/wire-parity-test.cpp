@@ -1787,6 +1787,33 @@ TEST(WireParity, PackedRunCrossesASegmentBoundary) {
 	capn_free(&c);
 }
 
+TEST(WireParity, PackedWriteOfManySegments) {
+	/* 510 segments. The packed header is larger than 4096 bytes
+	 * and C++ 1.4.0 still reads the stream (its limit is 511). */
+	struct capn c, r;
+	FILE *f;
+	int i, n;
+
+	capn_init_malloc(&c);
+	for (i = 0; i < 510; i++) {
+		struct capn_segment *s = c.create(c.user, 0, 8);
+		ASSERT_NE(nullptr, s);
+		memset(s->data, 0, 8);
+		s->len = 8;
+		capn_append_segment(&c, s);
+	}
+	f = tmpfile();
+	ASSERT_NE(nullptr, f);
+	n = capn_write_fp(&c, f, 1);
+	EXPECT_GT(n, 0);
+	ASSERT_EQ(0, fseek(f, 0, SEEK_SET));
+	EXPECT_EQ(0, capn_init_fp(&r, f, 1));
+	EXPECT_EQ(510u, r.segnum);
+	capn_free(&r);
+	capn_free(&c);
+	fclose(f);
+}
+
 TEST(WireParity, EmptyBufferIsAnEmptyMessage) {
 	struct capn c;
 	capn_ptr root;

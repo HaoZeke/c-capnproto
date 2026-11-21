@@ -795,9 +795,31 @@ static int emit_fd(void *ctx, const void *p, size_t n)
 	return _write_fd(e->write_fd, e->fd, (void *)p, n);
 }
 
+/* The segment table grows with the segment count. A packed header
+ * needs a second copy of that table plus two bytes. The 4096 byte
+ * floor is the chunk size a small message already used. */
+static unsigned char *header_buf(size_t headersz, int packed, size_t *cap_out)
+{
+	size_t need = headersz;
+	size_t cap = 4096;
+
+	if (packed) {
+		if (headersz > (SIZE_MAX - 2) / 2)
+			return NULL;
+		need = headersz * 2 + 2;
+	}
+	if (need > cap)
+		cap = need;
+	if (cap == 0)
+		cap = 1;
+	*cap_out = cap;
+	return (unsigned char *) malloc(cap);
+}
+
 int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, size_t count), int fd, int packed)
 {
-	unsigned char buf[4096];
+	unsigned char *buf = NULL;
+	size_t bufcap = 0;
 	struct capn_segment *seg;
 	uint32_t headerlen;
 	size_t headersz, datasz = 0;
@@ -813,18 +835,21 @@ int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, siz
 	pad_builder_root(c);
 	header_calc(c, &headerlen, &headersz);
 
-	if (sizeof(buf) < headersz)
+	buf = header_buf(headersz, packed, &bufcap);
+	if (buf == NULL)
 		return -1;
 
 	ret = header_render(c, c->seglist, buf, headerlen, &datasz);
 	if (ret != 0)
-		return -1;
+		goto out;
 
 	if (packed) {
-		const int headerrem = sizeof(buf) - headersz;
-		const int maxpack = headersz + 2;
-		if (headerrem < maxpack)
-			return -1;
+		size_t headerrem = bufcap - headersz;
+		size_t maxpack = headersz + 2;
+		if (headerrem < maxpack) {
+			ret = -1;
+			goto out;
+		}
 
 		memset(&z, 0, sizeof(z));
 		z.next_in = buf;
@@ -833,7 +858,7 @@ int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, siz
 		z.avail_out = headerrem;
 		ret = capn_deflate(&z);
 		if (ret != 0)
-			return -1;
+			goto out;
 
 		p = buf + headersz;
 		headersz = headerrem - z.avail_out;
@@ -843,7 +868,7 @@ int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, siz
 
 	ret = _write_fd(write_fd, fd, p, headersz);
 	if (ret < 0)
-		return -1;
+		goto out;
 
 	datasz = headersz;
 	for (seg = c->seglist; seg; seg = seg->next) {
@@ -851,21 +876,26 @@ int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, siz
 			struct write_fd_ctx e;
 			e.write_fd = write_fd;
 			e.fd = fd;
-			ret = packed_emit_seg(&z, buf, sizeof(buf),
+			ret = packed_emit_seg(&z, buf, bufcap,
 				(const uint8_t *)seg->data, seg->len,
 				emit_fd, &e, &datasz);
 			if (ret < 0)
-				return -1;
+				goto out;
 		} else {
 			ret = _write_fd(write_fd, fd, (uint8_t *)seg->data, seg->len);
 			if (ret < 0)
-				return -1;
-			if (add_size(&datasz, seg->len))
-				return -1;
+				goto out;
+			if (add_size(&datasz, seg->len)) {
+				ret = -1;
+				goto out;
+			}
 		}
 	}
 
-	return datasz;
+	ret = (int) datasz;
+out:
+	free(buf);
+	return ret;
 }
 
 #ifndef __KERNEL__
@@ -890,7 +920,8 @@ static int emit_fp(void *ctx, const void *p, size_t n)
 
 int capn_write_fp(struct capn *c, FILE *f, int packed)
 {
-	unsigned char buf[4096];
+	unsigned char *buf = NULL;
+	size_t bufcap = 0;
 	struct capn_segment *seg;
 	uint32_t headerlen;
 	size_t headersz, datasz = 0;
@@ -904,18 +935,21 @@ int capn_write_fp(struct capn *c, FILE *f, int packed)
 	pad_builder_root(c);
 	header_calc(c, &headerlen, &headersz);
 
-	if (sizeof(buf) < headersz)
+	buf = header_buf(headersz, packed, &bufcap);
+	if (buf == NULL)
 		return -1;
 
 	ret = header_render(c, c->seglist, buf, headerlen, &datasz);
 	if (ret != 0)
-		return -1;
+		goto out;
 
 	if (packed) {
-		const int headerrem = sizeof(buf) - headersz;
-		const int maxpack = headersz + 2;
-		if (headerrem < maxpack)
-			return -1;
+		size_t headerrem = bufcap - headersz;
+		size_t maxpack = headersz + 2;
+		if (headerrem < maxpack) {
+			ret = -1;
+			goto out;
+		}
 
 		memset(&z, 0, sizeof(z));
 		z.next_in = buf;
@@ -924,7 +958,7 @@ int capn_write_fp(struct capn *c, FILE *f, int packed)
 		z.avail_out = headerrem;
 		ret = capn_deflate(&z);
 		if (ret != 0)
-			return -1;
+			goto out;
 
 		p = buf + headersz;
 		headersz = headerrem - z.avail_out;
@@ -934,29 +968,36 @@ int capn_write_fp(struct capn *c, FILE *f, int packed)
 
 	ret = _write_fp(f, p, headersz);
 	if (ret < 0)
-		return -1;
+		goto out;
 
 	datasz = headersz;
 	for (seg = c->seglist; seg; seg = seg->next) {
 		if (packed) {
-			ret = packed_emit_seg(&z, buf, sizeof(buf),
+			ret = packed_emit_seg(&z, buf, bufcap,
 				(const uint8_t *)seg->data, seg->len,
 				emit_fp, f, &datasz);
 			if (ret < 0)
-				return -1;
+				goto out;
 		} else {
 			ret = _write_fp(f, seg->data, seg->len);
 			if (ret < 0)
-				return -1;
-			if (add_size(&datasz, seg->len))
-				return -1;
+				goto out;
+			if (add_size(&datasz, seg->len)) {
+				ret = -1;
+				goto out;
+			}
 		}
 	}
 
-	if (fflush(f) != 0)
-		return -1;
+	if (fflush(f) != 0) {
+		ret = -1;
+		goto out;
+	}
 
-	return (int)datasz;
+	ret = (int) datasz;
+out:
+	free(buf);
+	return ret;
 }
 #else /* __KERNEL__ */
 int capn_write_fp(struct capn *c, FILE *f, int packed)
