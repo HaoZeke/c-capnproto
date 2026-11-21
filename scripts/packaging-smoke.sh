@@ -102,7 +102,7 @@ cc -o "$WORK/pc-smoke" "$ROOT/cmake/consumer_smoke/smoke.c" \
 
 echo "== 3b. meson pkg-config"
 MESON_PREFIX="$WORK/meson-prefix"
-meson setup "$WORK/meson-b" "$ROOT" --prefix="$MESON_PREFIX" -Denable_tests=false \
+meson setup "$WORK/meson-b" "$ROOT" --prefix="$MESON_PREFIX" -Denable_tests=disabled \
   >"$WORK/meson-b.log" 2>&1 || { tail -40 "$WORK/meson-b.log"; exit 1; }
 meson compile -C "$WORK/meson-b" >>"$WORK/meson-b.log" 2>&1 || { tail -40 "$WORK/meson-b.log"; exit 1; }
 meson install -C "$WORK/meson-b" >>"$WORK/meson-b.log" 2>&1 || { tail -40 "$WORK/meson-b.log"; exit 1; }

@@ -38,6 +38,10 @@ Pre-1.0 minor releases may include breaking wire or API changes.
   offset is not a misaligned `uint32_t` store.
 - The Meson shared library SONAME is `libcapnp_c.so.0`. Builds before
   0.4.2 used an unversioned `libcapnp_c.so`, so those consumers should relink.
+- With `enable_tests` set to `auto`, unit tests are skipped when `gtest`
+  is absent. `-Denable_tests=enabled` fails setup if `gtest` cannot be built.
+- `-Denable_tests=true` and `-Denable_tests=false` still select the
+  feature values. Meson warns that those booleans are deprecated.
 
 ## [0.4.1] - 2026-08-15
 

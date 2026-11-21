@@ -39,6 +39,8 @@ meson compile -C build
 meson install -C build   # optional: put capnpc-c on PATH
 ```
 
+`enable_tests` defaults to `auto`: setup skips the unit tests when `gtest` is absent. `-Denable_tests=enabled` fails if `gtest` cannot be built.
+
 ## Building (CMake, optional)
 
 Meson is the recommended build. CMake is an install-path alternative
@@ -299,7 +301,7 @@ seed; it does not launch unbounded AFL.
 ### Meson (libFuzzer or AFL++)
 
 ```sh
-meson setup build-fuzz -Dfuzz=true -Denable_tests=false
+meson setup build-fuzz -Dfuzz=true -Denable_tests=disabled
 meson compile -C build-fuzz
 # harnesses: build-fuzz/fuzz-mem  build-fuzz/fuzz-fp
 meson test -C build-fuzz   # fuzz-mem-smoke / fuzz-fp-smoke on Person.bin

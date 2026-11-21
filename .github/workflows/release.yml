@@ -37,7 +37,7 @@ jobs:
       - name: Install capnproto, xz, and autotools
         run: sudo apt-get update && sudo apt-get install -y capnproto xz-utils autoconf automake libtool pkg-config g++ make
       - name: Configure
-        run: meson setup build -Dbuildtype=release -Denable_tests=true -Dfuzz=true
+        run: meson setup build -Dbuildtype=release -Denable_tests=enabled -Dfuzz=true
       - name: Build
         run: meson compile -C build
       - name: Test
@@ -218,7 +218,7 @@ jobs:
           rt="libclang-rt-$(clang -dumpversion | cut -d. -f1)-dev"
           sudo apt-get install -y "$rt"
       - name: Configure
-        run: meson setup build -Dbuildtype=debugoptimized -Db_sanitize=address,undefined -Db_lundef=false -Denable_tests=true
+        run: meson setup build -Dbuildtype=debugoptimized -Db_sanitize=address,undefined -Db_lundef=false -Denable_tests=enabled
       - name: Unit tests are registered
         run: test "$(meson test -C build --list | wc -l)" -ge 17
       - name: Build
@@ -262,7 +262,7 @@ jobs:
       - name: Install capnproto and libcapnp-rpc
         run: sudo apt-get update && sudo apt-get install -y capnproto libcapnp-dev
       - name: Configure
-        run: meson setup build -Denable_tests=true
+        run: meson setup build -Denable_tests=enabled
       - name: Build
         run: meson compile -C build
       - name: The interop test ran rather than being skipped

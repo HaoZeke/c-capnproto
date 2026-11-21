@@ -1,2 +1,2 @@
-option('enable_tests', type: 'boolean', value: true, description: 'Build unit tests in tests/ and compiler/')
+option('enable_tests', type: 'feature', value: 'auto', description: 'Build unit tests in tests/ and compiler/', deprecated: {'true': 'enabled', 'false': 'disabled'})
 option('fuzz', type: 'boolean', value: false, description: 'Build AFL/libFuzzer harnesses in fuzz/')

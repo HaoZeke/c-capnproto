@@ -122,11 +122,15 @@ install_data(
   install_dir: get_option('datadir') / 'c-capnproto',
 )
 
-if get_option('enable_tests') and not meson.is_subproject()
+if not meson.is_subproject() and get_option('enable_tests').allowed()
+  gtest_proj = subproject('gtest', required: get_option('enable_tests'))
+  if not gtest_proj.found()
+    message('gtest is absent; unit tests are skipped')
+  endif
+  if gtest_proj.found()
   # The suites are C++; ask for the compiler here rather than at the top.
   add_languages('cpp', native: false)
   thread_dep = dependency('threads')
-  gtest_proj = subproject('gtest')
   gtest_dep = gtest_proj.get_variable('gtest_dep')
   gmock_dep = gtest_proj.get_variable('gmock_dep')
   gtest_main_dep = gtest_proj.get_variable('gtest_main_dep')
@@ -500,6 +504,7 @@ if get_option('enable_tests') and not meson.is_subproject()
       )
       test(t + '-test', t_exe)
     endforeach
+  endif
   endif
 endif
 

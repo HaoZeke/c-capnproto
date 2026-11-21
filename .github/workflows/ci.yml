@@ -25,11 +25,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            meson_opts: -Denable_tests=true -Dfuzz=true
+            meson_opts: -Denable_tests=enabled -Dfuzz=true
             run_tests: true
             fuzz_smoke: true
           - os: macos-latest
-            meson_opts: -Denable_tests=true
+            meson_opts: -Denable_tests=enabled
             run_tests: true
             fuzz_smoke: false
           # x64 only. No win32 matrix (no validated ILP32 Windows
@@ -37,7 +37,7 @@ jobs:
           # optional scripts/smoke-m32.sh when gcc -m32 exists.
           # See MAINTAINING.md (32-bit / alignment).
           - os: windows-latest
-            meson_opts: --vsenv -Denable_tests=false
+            meson_opts: --vsenv -Denable_tests=disabled
             run_tests: false
             fuzz_smoke: false
     steps:
@@ -100,7 +100,7 @@ jobs:
           ./build/fuzz-fp fuzz/in/Person.bin
       - name: Skip tests (MSVC gtest)
         if: ${{ !matrix.run_tests }}
-        run: echo "Windows job builds libcapnp_c and capnpc-c only; gtest subproject is not built (-Denable_tests=false)."
+        run: echo "Windows job builds libcapnp_c and capnpc-c only; gtest subproject is not built (-Denable_tests=disabled)."
       - name: Install smoke
         if: runner.os != 'Windows'
         run: |
@@ -150,7 +150,7 @@ jobs:
           rt="libclang-rt-$(clang -dumpversion | cut -d. -f1)-dev"
           sudo apt-get install -y "$rt"
       - name: Configure
-        run: meson setup build -Dbuildtype=debugoptimized -Db_sanitize=address,undefined -Db_lundef=false -Denable_tests=true
+        run: meson setup build -Dbuildtype=debugoptimized -Db_sanitize=address,undefined -Db_lundef=false -Denable_tests=enabled
       - name: Unit tests are registered
         run: test "$(meson test -C build --list | wc -l)" -ge 17
       - name: Build
@@ -197,7 +197,7 @@ jobs:
       # the reference implementation will talk to us. This bootstraps a
       # real EzRpcServer and calls it.
       - name: Configure
-        run: meson setup build -Denable_tests=true
+        run: meson setup build -Denable_tests=enabled
       - name: Build
         run: meson compile -C build
       - name: The interop test ran rather than being skipped
