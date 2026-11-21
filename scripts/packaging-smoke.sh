@@ -47,6 +47,22 @@ echo "== 3. pkg-config"
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:$PREFIX/lib64/pkgconfig"
 pkg-config --exists c-capnproto
 echo "   version $(pkg-config --modversion c-capnproto)"
+pc_file=$(find "$PREFIX" -name c-capnproto.pc -print -quit)
+echo "----- ${pc_file} -----"
+cat "$pc_file"
+if grep -n '@[[:alnum:]_]*@' "$pc_file"; then
+  echo "c-capnproto.pc has unsubstituted @VAR@ markers" >&2
+  exit 1
+fi
+want=$(tr -d '[:space:]' < "$ROOT/VERSION.txt")
+got=$(pkg-config --modversion c-capnproto)
+if [ "$got" != "$want" ]; then
+  echo "pkg-config version ${got} differs from VERSION.txt ${want}" >&2
+  exit 1
+fi
+codegen=$(pkg-config --variable=codegen c-capnproto)
+echo "   codegen ${codegen}"
+test -x "$codegen"
 # shellcheck disable=SC2046
 cc -o "$WORK/pc-smoke" "$ROOT/cmake/consumer_smoke/smoke.c" \
   $(pkg-config --cflags --libs c-capnproto)

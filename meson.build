@@ -65,13 +65,37 @@ libcapnp_dep = declare_dependency(
 # to this subproject via a .wrap.
 meson.override_dependency('c-capnproto', libcapnp_dep)
 
-pkg = import('pkgconfig')
-pkg.generate(
-  libcapnp_c,
-  name: 'c-capnproto',
-  description: 'Cap\'n Proto pure-C runtime (HaoZeke fork)',
-  filebase: 'c-capnproto',
-  url: 'https://github.com/HaoZeke/c-capnproto',
+# c-capnproto.pc.in is the file autotools and CMake install too.
+# Substitute @PACKAGE_VERSION@ and the path variables for this prefix.
+pc_prefix = get_option('prefix')
+pc_bindir = get_option('bindir')
+pc_libdir = get_option('libdir')
+pc_includedir = get_option('includedir')
+pc_data = configuration_data()
+pc_data.set('prefix', pc_prefix)
+pc_data.set('exec_prefix', '${prefix}')
+if pc_bindir.startswith('/')
+  pc_data.set('bindir', pc_bindir)
+else
+  pc_data.set('bindir', '${exec_prefix}/' + pc_bindir)
+endif
+if pc_libdir.startswith('/')
+  pc_data.set('libdir', pc_libdir)
+else
+  pc_data.set('libdir', '${exec_prefix}/' + pc_libdir)
+endif
+if pc_includedir.startswith('/')
+  pc_data.set('includedir', pc_includedir)
+else
+  pc_data.set('includedir', '${prefix}/' + pc_includedir)
+endif
+pc_data.set('PACKAGE_VERSION', meson.project_version())
+configure_file(
+  input: 'c-capnproto.pc.in',
+  output: 'c-capnproto.pc',
+  configuration: pc_data,
+  install: true,
+  install_dir: get_option('libdir') / 'pkgconfig',
 )
 
 capnpc_src = [
