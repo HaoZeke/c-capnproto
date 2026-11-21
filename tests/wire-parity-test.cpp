@@ -775,3 +775,92 @@ TEST(WireParity, LandingPadMayRepeatTheDoubleFarBit) {
 	capn_free(&dst);
 	capn_free(&c);
 }
+
+TEST(WireParity, OutOfRangeEmptyListIsClamped) {
+	const uint8_t byte_list[] = {
+		0,0,0,0, 2,0,0,0,
+		0,0,0,0, 0,0,1,0,
+		0xf1,0xff,0xff,0x0f, 2,0,0,0,
+	};
+	const uint8_t void_list[] = {
+		0,0,0,0, 2,0,0,0,
+		0,0,0,0, 0,0,1,0,
+		0xf1,0xff,0xff,0x0f, 0x28,0,0,0,
+	};
+	const uint8_t expect_byte[] = {
+		0,0,0,0, 0,0,1,0,
+		1,0,0,0, 2,0,0,0,
+	};
+	const uint8_t ptr_list[] = {
+		0,0,0,0, 2,0,0,0,
+		0,0,0,0, 0,0,1,0,
+		0xf1,0xff,0xff,0x0f, 6,0,0,0,
+	};
+	const uint8_t expect_void[] = {
+		0,0,0,0, 0,0,1,0,
+		1,0,0,0, 0x28,0,0,0,
+	};
+	const uint8_t expect_ptr[] = {
+		0,0,0,0, 0,0,1,0,
+		1,0,0,0, 6,0,0,0,
+	};
+	struct capn c, dst;
+	ASSERT_EQ(0, load_frame(&c, byte_list, sizeof byte_list));
+	EXPECT_EQ(0, capn_validate(&c));
+	capn_init_malloc(&dst);
+	ASSERT_EQ(0, capn_canonicalize(&c, &dst));
+	ASSERT_EQ(sizeof expect_byte, dst.seglist->len);
+	EXPECT_EQ(0, memcmp(expect_byte, dst.seglist->data, sizeof expect_byte));
+	capn_free(&dst);
+	capn_free(&c);
+	ASSERT_EQ(0, load_frame(&c, void_list, sizeof void_list));
+	EXPECT_EQ(0, capn_validate(&c));
+	capn_init_malloc(&dst);
+	ASSERT_EQ(0, capn_canonicalize(&c, &dst));
+	ASSERT_EQ(sizeof expect_void, dst.seglist->len);
+	EXPECT_EQ(0, memcmp(expect_void, dst.seglist->data, sizeof expect_void));
+	capn_free(&dst);
+	capn_free(&c);
+	ASSERT_EQ(0, load_frame(&c, ptr_list, sizeof ptr_list));
+	EXPECT_EQ(0, capn_validate(&c));
+	capn_init_malloc(&dst);
+	ASSERT_EQ(0, capn_canonicalize(&c, &dst));
+	ASSERT_EQ(sizeof expect_ptr, dst.seglist->len);
+	EXPECT_EQ(0, memcmp(expect_ptr, dst.seglist->data, sizeof expect_ptr));
+	capn_free(&dst);
+	capn_free(&c);
+}
+
+TEST(WireParity, OutOfRangeEmptyStructIsClamped) {
+	/* A zero-size struct whose offset leaves the segment. C++
+	 * clamps that to the end, and a zero-length object there is
+	 * in range. A struct that has bytes is still rejected. */
+	const uint8_t direct[] = {
+		0x00,0,0,0, 0x01,0,0,0,
+		0xbc,0xff,0xfe,0xff, 0x00,0,0,0,
+	};
+	const uint8_t small[] = {
+		0x00,0,0,0, 0x01,0,0,0,
+		0xdc,0xff,0xff,0xff, 0x00,0,0,0,
+	};
+	const uint8_t farw[] = {
+		0x01,0,0,0, 0x01,0,0,0, 0x01,0,0,0, 0x00,0,0,0,
+		0x02,0,0,0, 0x01,0,0,0,
+		0x00,0x04,0,0, 0x00,0,0,0,
+	};
+	const uint8_t nonempty[] = {
+		0x00,0,0,0, 0x01,0,0,0,
+		0xbc,0xff,0xfe,0xff, 0x01,0,0,0,
+	};
+	const uint8_t canon[] = { 0xfc,0xff,0xff,0xff, 0x00,0,0,0 };
+	struct capn c;
+
+	expect_empty_struct_canon(direct, sizeof direct, canon, sizeof canon);
+	expect_empty_struct_canon(small, sizeof small, canon, sizeof canon);
+	expect_empty_struct_canon(farw, sizeof farw, canon, sizeof canon);
+
+	ASSERT_EQ(0, load_frame(&c, nonempty, sizeof nonempty));
+	EXPECT_NE(0, capn_validate(&c));
+	EXPECT_EQ(0, capn_ok(&c));
+	capn_free(&c);
+}

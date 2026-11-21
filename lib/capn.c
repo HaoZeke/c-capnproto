@@ -551,8 +551,27 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 		return ret;
 	}
 
-	if (!apply_offset(s, &d, val))
-		goto err;
+	if (!apply_offset(s, &d, val)) {
+		/* A zero-size object has no bytes to read. C++ clamps an
+		 * offset past the segment to the end, where a zero-length
+		 * object is in range. An object with bytes stays rejected.
+		 * A void list is zero-size at any count. An empty list of
+		 * any element size is too. A composite list still has a tag. */
+		int zero = 0;
+		if ((val & 3) == STRUCT_PTR && U32(val >> 32) == 0)
+			zero = 1;
+		else if ((val & 3) == LIST_PTR) {
+			unsigned es = (unsigned) ((val >> 32) & 7);
+			if (es == VOID_LIST)
+				zero = 1;
+			else if (es != COMPOSITE_LIST && (val >> 35) == 0)
+				zero = 1;
+		}
+		if (zero)
+			d = s->data + s->len;
+		else
+			goto err;
+	}
 
 	switch (val & 3) {
 	case STRUCT_PTR:
