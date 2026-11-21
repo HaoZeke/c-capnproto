@@ -186,3 +186,40 @@ jobs:
         run: |
           meson test -C build rpc_interop_cpp --print-errorlogs
           test -x build/rpc_peer_server
+
+  autotools:
+    name: autotools
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Install autotools
+        run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool pkg-config g++ make capnproto
+      - name: Configure
+        run: |
+          autoreconf -fi
+          ./configure
+      - name: Build
+        run: make -j"$(nproc)"
+      - name: Test
+        run: make -j"$(nproc)" check
+
+  cmake:
+    name: cmake
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Install CMake and GTest
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ pkg-config libgtest-dev capnproto
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+      - name: Test
+        run: |
+          ctest --test-dir build --output-on-failure
+          ctest --test-dir build -N | grep -E 'Test #.*capn-test'
