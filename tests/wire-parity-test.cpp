@@ -166,6 +166,37 @@ static void expect_cli_agrees(struct capn *c) {
 	EXPECT_EQ(0, memcmp(packed.data(), pk.out.data(), packed.size()));
 }
 
+TEST(WireParity, DoubleFarIgnoresANonzeroTagOffset) {
+	/* Pad is a far pointer to word 0 of segment 2. The tag is a
+	 * struct pointer with offset 1. C++ 1.4.0 reads word 0. */
+	std::vector<uint8_t> s0 = {0x06, 0, 0, 0, 0x01, 0, 0, 0};
+	std::vector<uint8_t> s1 = {
+		0x02, 0, 0, 0, 0x02, 0, 0, 0,
+		0x04, 0, 0, 0, 0x01, 0, 0, 0,
+	};
+	std::vector<uint8_t> s2 = {
+		0x11, 0x22, 0x33, 0x44, 0, 0, 0, 0,
+		0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa,
+	};
+	std::vector<uint8_t> fr = frame_segs({s0, s1, s2});
+	struct capn c;
+	uint8_t expect[16] = {
+		0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+		0x11, 0x22, 0x33, 0x44, 0x00, 0x00, 0x00, 0x00,
+	};
+
+	ASSERT_EQ(0, capn_init_mem(&c, fr.data(), fr.size(), 0));
+	EXPECT_EQ(0, capn_validate(&c));
+	capn_ptr root = capn_getp(capn_root(&c), 0, 1);
+	ASSERT_EQ(CAPN_STRUCT, root.type);
+	EXPECT_EQ(0x44332211u, capn_read32(root, 0));
+	EXPECT_EQ(1, capn_ok(&c));
+	std::vector<uint8_t> got = canon_bytes(&c);
+	ASSERT_EQ(sizeof expect, got.size());
+	EXPECT_EQ(0, memcmp(expect, got.data(), sizeof expect));
+	capn_free(&c);
+}
+
 TEST(WireParity, BuilderMessagesMatchTheCapnpTool) {
 	std::mt19937 rng(0xC0FFEE);
 	for (int n = 0; n < 20; n++) {

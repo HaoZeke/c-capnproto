@@ -397,9 +397,10 @@ static uint64_t lookup_double(struct capn_segment **s, char **d, uint64_t val) {
 	far = capn_flip64(*(uint64_t*) p);
 	tag = capn_flip64(*(uint64_t*) (p+8));
 
-	/* the far tag should not be another double, and the tag
-	 * should be struct/list and have no offset */
-	if ((far&7) != FAR_PTR || U32(tag) > LIST_PTR) {
+	/* The landing far must be a single far. The tag is a struct
+	 * or a list. C++ 1.4.0 ignores a nonzero offset in that tag
+	 * and uses the far target as the object's address. */
+	if ((far & 7) != FAR_PTR || (U32(tag) & 3u) > LIST_PTR) {
 		*s = NULL;
 		return 0;
 	}
@@ -417,7 +418,9 @@ static uint64_t lookup_double(struct capn_segment **s, char **d, uint64_t val) {
 	 * ptr would be.
 	 */
 	*d = seg->data - 8;
-	return U64(U32(far) >> 3 << 2) | tag;
+	return (tag & 0xffffffff00000000ull)
+		| (U64(U32(far) >> 3) << 2)
+		| (U64(U32(tag) & 3u));
 }
 
 static uint64_t lookup_far(struct capn_segment **s, char **d, uint64_t val) {
