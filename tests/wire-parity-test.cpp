@@ -1773,3 +1773,15 @@ TEST(WireParity, PackedRunStopsAtASegmentBoundary) {
 	capn_free(&c);
 	capn_free(&w);
 }
+
+TEST(WireParity, EmptyBufferIsAnEmptyMessage) {
+	struct capn c;
+	capn_ptr root;
+
+	EXPECT_EQ(0, capn_init_mem(&c, NULL, 0, 0));
+	root = capn_root(&c);
+	EXPECT_EQ(CAPN_NULL, root.type);
+	EXPECT_EQ(0, capn_ok(&c));
+	EXPECT_EQ(0, capn_is_canonical(&c));
+	capn_free(&c);
+}

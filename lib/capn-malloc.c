@@ -262,6 +262,17 @@ static int init_fp(struct capn *c, FILE *f,
 	else
 		c->traversal_limit = max_bytes;
 
+	/* C++ FlatArrayMessageReader treats a zero-length buffer as an
+	 * empty message. The root read is what fails, not the open. */
+	if (!packed && !f && !read_fd && z->avail_in == 0) {
+		s = (struct capn_segment *) calloc(1, sizeof(*s));
+		if (!s)
+			goto err;
+		s->user = s;
+		capn_append_segment(c, s);
+		return 0;
+	}
+
 	/* Read the first four bytes to know how many headers we have.
 	 * A packed stream is a sequence of words. C++ reads the first
 	 * word, then the rest of the table, and a zero or raw run that
