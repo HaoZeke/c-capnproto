@@ -152,7 +152,8 @@ EXTRA_DIST += \
 	.github/workflows/ci.yml \
 	interop/frame_wrap_test.c \
 	tests/gate-r5-test.cpp \
-	cross/s390x.ini
+	cross/s390x.ini \
+	tests/wire-parity-test.cpp
 
 EXTRA_DIST += \
 	compiler/c.capnp \

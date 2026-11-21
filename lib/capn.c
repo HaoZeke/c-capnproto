@@ -572,6 +572,11 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 				goto err;
 
 			tag = capn_flip64(*(uint64_t*) d);
+			/* The tag is shaped like a struct pointer: its offset
+			 * field is the element count. A list, far, or other
+			 * tag is not a list C++ 1.4.0 will read. */
+			if ((tag & 3) != STRUCT_PTR)
+				goto err;
 			d += 8;
 			if (!bounds_ok(s, d, words))
 				goto err;

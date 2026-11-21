@@ -362,6 +362,28 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
     capnp = find_program('capnp', native: true, required: false)
     have_host_capnp = capnp.found()
   endif
+  wire_cli = []
+  if have_host_capnp
+    wire_cli = [
+      '-DCAPNP_CLI="' + capnp.full_path() + '"',
+      '-DCAPNP_SOURCE_ROOT="' + meson.project_source_root() + '"',
+    ]
+  endif
+  wire_parity_test = executable(
+    'wire-parity-test',
+    'tests' / 'wire-parity-test.cpp',
+    include_directories: include_directories(['lib', 'tests', 'compiler']),
+    dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
+    cpp_args: common_cpp_args + wire_cli,
+    implicit_include_directories: false,
+    install: false,
+  )
+  test(
+    'wire-parity-test',
+    wire_parity_test,
+    env: have_host_capnp ? {'CAPNP_CLI': capnp.full_path()} : {},
+  )
+
   if have_host_capnp
     codec_c_args = common_c_args + ['-D_POSIX_C_SOURCE=200809L']
 
