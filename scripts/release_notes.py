@@ -1,22 +1,28 @@
 #!/usr/bin/env python3
 """Print the CHANGELOG.md section for one version.
 
-Exit non-zero when that section is missing. Link reference lines at the
-bottom of a section are dropped so the text can be used as release notes.
+Exit non-zero when that section is missing. A prerelease such as
+0.4.2-rc1 uses its own section when one exists, and the X.Y.Z section
+otherwise. Link reference lines at the bottom of a section are dropped
+so the text can be used as release notes.
 """
 import argparse
 import re
 import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+CHANGELOG = ROOT / "CHANGELOG.md"
 
 
-def section(text, version):
+def find_section(text, version):
     head = re.search(
         r"^## \[" + re.escape(version) + r"\] - .*?$",
         text,
         re.M,
     )
     if not head:
-        sys.exit("CHANGELOG.md has no section for %s" % version)
+        return None
     rest = text[head.end():]
     nxt = re.search(r"^## \[", rest, re.M)
     body = rest[: nxt.start()] if nxt else rest
@@ -28,13 +34,23 @@ def section(text, version):
     return "\n".join(lines).strip() + "\n"
 
 
+def section(text, version):
+    body = find_section(text, version)
+    if body is None and "-" in version:
+        core = version.split("-", 1)[0]
+        if core and core != version:
+            body = find_section(text, core)
+    if body is None:
+        sys.exit("CHANGELOG.md has no section for %s" % version)
+    return body
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("version", help="version without a leading v, such as 0.4.2")
     parser.add_argument("-o", "--output", help="write the section here")
     args = parser.parse_args(argv)
-    with open("CHANGELOG.md", encoding="utf-8") as fh:
-        text = fh.read()
+    text = CHANGELOG.read_text(encoding="utf-8")
     body = section(text, args.version)
     if args.output:
         with open(args.output, "w", encoding="utf-8") as out:
