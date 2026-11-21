@@ -53,8 +53,8 @@ add_library(capnp_c
   lib/capn-stream.c
   lib/capn-rpc.c
   lib/capn-dyn.c
-  compiler/rpc.capnp.c
-  compiler/rpc-threeparty.capnp.c
+  lib/capn-rpc-schema.c
+  lib/capn-rpc-threeparty-schema.c
 )
 set_target_properties(capnp_c PROPERTIES
   OUTPUT_NAME capnp_c
@@ -106,8 +106,14 @@ install(TARGETS capnp_c capnpc-c
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 install(FILES lib/capnp_c.h lib/capn-rpc.h lib/capn-dyn.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-# Generated user headers #include "c.capnp.h"; ship it beside capnp_c.h.
-install(FILES compiler/c.capnp.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+# Generated user headers #include "c.capnp.h", and capn-rpc.h includes
+# rpc.capnp.h; install the RPC schema headers beside capnp_c.h.
+install(FILES
+  compiler/c.capnp.h
+  compiler/rpc.capnp.h
+  compiler/rpc-threeparty.capnp.h
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
 install(FILES compiler/c.capnp DESTINATION ${CMAKE_INSTALL_DATADIR}/c-capnproto)
 
 install(EXPORT c_capnprotoTargets
@@ -162,6 +168,31 @@ endif()
 
 if(BUILD_TESTING)
   include(CTest)
+  add_executable(rpc-schema-export-test
+    tests/rpc-schema-export-test.c
+  )
+  target_link_libraries(rpc-schema-export-test PRIVATE capnp_c)
+  add_test(NAME rpc-schema-export-test COMMAND rpc-schema-export-test)
+
+  find_program(CAPNP_SH sh)
+  if(CAPNP_SH)
+    add_test(
+      NAME capn-public-exports
+      COMMAND ${CAPNP_SH}
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/check-dyn-export.sh"
+        "$<TARGET_FILE:capnp_c>"
+        "${CMAKE_CURRENT_SOURCE_DIR}/lib"
+    )
+    set_tests_properties(capn-public-exports PROPERTIES SKIP_RETURN_CODE 77)
+    add_test(
+      NAME capn-public-exports-comment
+      COMMAND ${CAPNP_SH}
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/check-dyn-export-comment.sh"
+        "$<TARGET_FILE:capnp_c>"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/dyn-export-comment.h"
+    )
+  endif()
+
   find_package(GTest QUIET)
   if(GTest_FOUND)
     if(TARGET GTest::gtest)

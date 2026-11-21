@@ -22,10 +22,11 @@ libcapnp_src = [
   'lib' / 'capn.c',
   'lib' / 'capn-rpc.c',
   'lib' / 'capn-dyn.c',
-  # RPC needs the rpc.capnp / rpc-twoparty.capnp readers; they are checked
-  # in beside the other generated schema code.
-  'compiler' / 'rpc.capnp.c',
-  'compiler' / 'rpc-threeparty.capnp.c',
+  # RPC needs the rpc.capnp / rpc-threeparty.capnp accessors; the wrappers
+  # push default visibility so generated accessors stay exported under
+  # hidden builds.
+  'lib' / 'capn-rpc-schema.c',
+  'lib' / 'capn-rpc-threeparty-schema.c',
 ]
 
 # MSVC shared builds only emit capnp_c.lib when something is dllexport.
@@ -49,6 +50,7 @@ libcapnp_c = library(
   c_args: common_c_args + libcapnp_c_args + capnp_c_consumer_args,
   c_shared_args: ['-DCAPNP_C_BUILDING'],
   c_static_args: ['-DCAPNP_C_STATIC'],
+  gnu_symbol_visibility: 'hidden',
   include_directories: include_directories(['lib', 'compiler']),
   implicit_include_directories: false,
   override_options: lib_override,
@@ -57,12 +59,15 @@ libcapnp_c = library(
   version: meson.project_version(),
 )
 
-# Generated user headers #include "c.capnp.h"; ship it next to capnp_c.h.
+# Generated user headers #include "c.capnp.h" and capn-rpc.h includes
+# rpc.capnp.h; install the generated schema headers next to capnp_c.h.
 install_headers(
   'lib' / 'capnp_c.h',
   'lib' / 'capn-rpc.h',
   'lib' / 'capn-dyn.h',
   'compiler' / 'c.capnp.h',
+  'compiler' / 'rpc.capnp.h',
+  'compiler' / 'rpc-threeparty.capnp.h',
 )
 
 libcapnp_dep = declare_dependency(
@@ -222,6 +227,30 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
     implicit_include_directories: false,
   )
   test('compiler-str-test', compiler_str_test)
+  export_sh = find_program('sh', required: false)
+  if export_sh.found()
+    export_tests = meson.project_source_root() / 'tests'
+    test(
+      'capn-public-exports',
+      export_sh,
+      args: [
+        export_tests / 'check-dyn-export.sh',
+        libcapnp_c.full_path(),
+        meson.project_source_root() / 'lib',
+      ],
+      depends: [libcapnp_c],
+    )
+    test(
+      'capn-public-exports-comment',
+      export_sh,
+      args: [
+        export_tests / 'check-dyn-export-comment.sh',
+        libcapnp_c.full_path(),
+        export_tests / 'fixtures' / 'dyn-export-comment.h',
+      ],
+      depends: [libcapnp_c],
+    )
+  endif
 
   null_ptr_write_test = executable(
     'null-ptr-write-test',
@@ -265,6 +294,16 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
   # The vat tests read checked-in generated sources, so they must not sit
   # behind the `capnp` CLI: gating them on it would make the whole RPC
   # suite disappear on a runner without the compiler installed.
+  rpc_schema_export_test = executable(
+    'rpc-schema-export-test',
+    'tests' / 'rpc-schema-export-test.c',
+    dependencies: [libcapnp_dep],
+    c_args: common_c_args,
+    implicit_include_directories: false,
+    install: false,
+  )
+  test('rpc-schema-export-test', rpc_schema_export_test)
+
   rpc_join_test = executable(
     'rpc-join-test',
     'tests' / 'rpc-join-test.cpp',
