@@ -4,7 +4,7 @@
 project(
   'c-capnproto',
   'c',
-  version: '0.4.1',
+  version: '0.4.2',
   # c_shared_args / c_static_args below arrived in 1.3.0.
   meson_version: '>=1.3.0',
   default_options: ['c_std=c99', 'cpp_std=c++14', 'warning_level=1'],
