@@ -1125,6 +1125,19 @@ TEST(WireParity, FlatWriteDuplicatesASharedStruct) {
 	capn_free(&c);
 }
 
+TEST(WireParity, FlatWriteCopiesAListRoot) {
+	struct capn c;
+	capn_init_malloc(&c);
+	capn_list64 nums = capn_new_list64(capn_root(&c).seg, 2);
+	ASSERT_NE(CAPN_NULL, nums.p.type);
+	capn_set64(nums, 0, 1);
+	capn_set64(nums, 1, 2);
+	ASSERT_EQ(0, capn_set_root(&c, nums.p));
+	uint8_t flat[64];
+	EXPECT_EQ(24, capn_write_flat(&c, flat, sizeof flat));
+	capn_free(&c);
+}
+
 TEST(WireParity, CanonicalPredicateMatchesTheLayout) {
 	const uint8_t nullroot[] = {
 		0,0,0,0, 1,0,0,0,

@@ -516,8 +516,8 @@ CAPN_EXPORT int64_t capn_write_mem(struct capn *c, uint8_t *p, size_t sz, int pa
  * `capnp convert binary:flat` writes. The object is copied first,
  * so a dirty list tail is cleared. flat-packed is that segment
  * in the packed codec, with no segment table. A broken pointer, a
- * capability root, or a spent traversal budget returns -1. A null
- * root is the empty-struct pointer. */
+ * capability root, or a spent traversal budget returns -1. A list
+ * root is copied. A null root is the empty-struct pointer. */
 CAPN_EXPORT int64_t capn_write_flat(struct capn *c, uint8_t *p, size_t sz);
 CAPN_EXPORT int64_t capn_write_flat_packed(struct capn *c, uint8_t *p, size_t sz);
 

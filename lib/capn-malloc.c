@@ -482,7 +482,8 @@ static int copy_for_flat(struct capn *src, struct capn *dst)
 			return -1;
 		return 0;
 	}
-	if (obj.type == CAPN_INTERFACE || obj.type != CAPN_STRUCT)
+	/* A capability has no single-segment encoding. Lists and structs do. */
+	if (obj.type == CAPN_INTERFACE)
 		return -1;
 
 	saved_used = src->traversal_used;
