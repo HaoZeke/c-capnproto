@@ -45,6 +45,8 @@ libcapnp_c = library(
   include_directories: include_directories(['lib', 'compiler']),
   implicit_include_directories: false,
   install: true,
+  version: meson.project_version(),
+  soversion: '0',
 )
 
 # Generated user headers #include "c.capnp.h"; ship it next to capnp_c.h.

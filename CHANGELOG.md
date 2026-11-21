@@ -36,6 +36,8 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 - Encoding a null pointer no longer applies an offset to a null data address.
 - Packed framing copies the segment header with `memcpy`. The two-byte
   offset is not a misaligned `uint32_t` store.
+- The Meson shared library SONAME is `libcapnp_c.so.0`. Builds before
+  0.4.2 used an unversioned `libcapnp_c.so`, so those consumers should relink.
 
 ## [0.4.1] - 2026-08-15
 
