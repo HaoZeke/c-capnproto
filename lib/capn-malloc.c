@@ -309,21 +309,23 @@ static void header_calc(struct capn *c, uint32_t *headerlen, size_t *headersz)
 	*headersz = 4 * *headerlen;
 }
 
-static int header_render(struct capn *c, struct capn_segment *seg, uint32_t *header, uint32_t headerlen, size_t *datasz)
+static int header_render(struct capn *c, struct capn_segment *seg, uint8_t *header, uint32_t headerlen, size_t *datasz)
 {
 	size_t i;
 	uint32_t val;
 
+	/* Byte copies: packed framing places this header at a 2-byte
+	 * offset, which is not a valid uint32_t store. */
 	val = capn_flip32(c->segnum - 1);
-	memcpy(&header[0], &val, sizeof(val));
+	memcpy(header, &val, sizeof(val));
 	val = 0;
-	memcpy(&header[headerlen-1], &val, sizeof(val)); /* Zero out the spare position in the header sizes */
+	memcpy(header + (size_t)(headerlen - 1) * 4, &val, sizeof(val)); /* Zero out the spare position in the header sizes */
 	for (i = 0; i < c->segnum; i++, seg = seg->next) {
 		if (0 == seg)
 			return -1;
 		*datasz += seg->len;
 		val = capn_flip32(seg->len / 8);
-		memcpy(&header[1 + i], &val, sizeof(val));
+		memcpy(header + (1 + i) * 4, &val, sizeof(val));
 	}
 	if (0 != seg)
 		return -1;
@@ -337,7 +339,7 @@ static int64_t capn_write_mem_packed(struct capn *c, uint8_t *p, size_t sz)
 	struct capn_ptr root;
 	uint32_t headerlen;
 	size_t headersz, datasz = 0;
-	uint32_t *header;
+	uint8_t *header;
 	struct capn_stream z;
 	int ret;
 
@@ -354,14 +356,14 @@ static int64_t capn_write_mem_packed(struct capn *c, uint8_t *p, size_t sz)
 	if (headerlen > (sz - headersz - 2) / 4)
 		return -1;
 
-	header = (uint32_t*) (p + headersz + 2);
+	header = p + headersz + 2;
 
 	ret = header_render(c, root.seg, header, headerlen, &datasz);
 	if (ret != 0)
 		return -1;
 
 	memset(&z, 0, sizeof(z));
-	z.next_in = (uint8_t *)header;
+	z.next_in = header;
 	z.avail_in = headersz;
 	z.next_out = p;
 	z.avail_out = sz;
@@ -389,7 +391,7 @@ capn_write_mem(struct capn *c, uint8_t *p, size_t sz, int packed)
 	struct capn_ptr root;
 	uint32_t headerlen;
 	size_t headersz, datasz = 0;
-	uint32_t *header;
+	uint8_t *header;
 	int ret;
 
 	if (c->segnum == 0)
@@ -400,7 +402,7 @@ capn_write_mem(struct capn *c, uint8_t *p, size_t sz, int packed)
 
 	root = capn_root(c);
 	header_calc(c, &headerlen, &headersz);
-	header = (uint32_t*) p;
+	header = p;
 
 	if (sz < headersz)
 		return -1;
@@ -510,7 +512,7 @@ int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, siz
 	if (sizeof(buf) < headersz)
 		return -1;
 
-	ret = header_render(c, root.seg, (uint32_t*)buf, headerlen, &datasz);
+	ret = header_render(c, root.seg, buf, headerlen, &datasz);
 	if (ret != 0)
 		return -1;
 
@@ -601,7 +603,7 @@ int capn_write_fp(struct capn *c, FILE *f, int packed)
 	if (sizeof(buf) < headersz)
 		return -1;
 
-	ret = header_render(c, root.seg, (uint32_t*)buf, headerlen, &datasz);
+	ret = header_render(c, root.seg, buf, headerlen, &datasz);
 	if (ret != 0)
 		return -1;
 
