@@ -31,7 +31,9 @@ tag and clears it when the tag has no hyphen.
 directory. For a prerelease it prints `## [X.Y.Z-<id>]` when that section
 exists, and `## [X.Y.Z]` otherwise. It fails when neither section exists.
 
-Cut the release by tagging `vX.Y.Z` on `main`. `release.yml` runs for tags
+Cut the release with an annotated `vX.Y.Z` tag on `main` (run
+`cog bump --auto -A "Release {{version}}"` and push with
+`git push origin main --follow-tags`). `release.yml` runs for tags
 that match `v*`. Before publishing it runs the Ubuntu checks from CI:
 meson tests, the capnp CLI parity guard, `scripts/gen-rpc-frames.sh --check`,
 the fuzz and install smokes, ASan+UBSan with gcc and clang,

@@ -80,6 +80,11 @@ if [[ -n "$tag" ]]; then
     echo "version ${vt} does not match tag ${tag}" >&2
     exit 1
   fi
+  # The Actions checkout ref is a lightweight tag. check-annotated-tag.sh
+  # rejects that ref, so run it only for a local tag outside Actions.
+  if [[ -z "${GITHUB_ACTIONS+x}" ]] && git show-ref --verify --quiet "refs/tags/${tag}"; then
+    bash scripts/check-annotated-tag.sh "$tag"
+  fi
 else
   echo "no exact v tag on HEAD; checked file agreement only"
 fi

@@ -75,4 +75,17 @@ hooks = [
       "for h in version concepts ranges bit memory format thread filesystem; do if [ -e \"$h\" ]; then echo \"root file '$h' shadows #include <$h> on case-insensitive filesystems\"; exit 1; fi; done; for f in VERSION CONCEPTS RANGES BIT MEMORY FORMAT THREAD FILESYSTEM; do if [ -e \"$f\" ]; then echo \"root file '$f' shadows the same-named C++ header on macOS/Windows\"; exit 1; fi; done",
     ],
   },
+  {
+    id = "annotated-tag-pre-push",
+    name = "pushed v* tags are annotated",
+    entry = "bash",
+    language = "system",
+    pass_filenames = false,
+    always_run = true,
+    stages = ["pre-push"],
+    args = [
+      "-c",
+      "set -eu; seen=''; for ref in \"${PRE_COMMIT_LOCAL_BRANCH:-}\" \"${PRE_COMMIT_REMOTE_BRANCH:-}\"; do case \"$ref\" in refs/tags/v*) tag=${ref#refs/tags/}; case \" $seen \" in *\" $tag \"*) ;; *) seen=\"$seen $tag\"; bash scripts/check-annotated-tag.sh \"$tag\";; esac;; esac; done",
+    ],
+  },
 ]
