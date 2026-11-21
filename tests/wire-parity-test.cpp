@@ -1746,3 +1746,30 @@ TEST(WireParity, CanonicalCompositeNeedsAnElementLevel) {
 	capn_free(&dst);
 	capn_free(&src);
 }
+
+TEST(WireParity, PackedRunStopsAtASegmentBoundary) {
+	/* The packed bytes are one message whose zero-run crosses a
+	 * segment. C++ 1.4.0 rejects that. A message this library
+	 * packed itself still reads back. */
+	const uint8_t bad[] = {
+		0x11,0x02,0x03,0x11,0x04,0x02,0x40,0x02,
+		0x11,0x02,0x01,0x11,0x02,0x02,0x11,0x01,
+		0xfc,0xff,0xff,0xfb,0x00,0x00,0x00,0x00,
+		0xe5,0x8c,0x01,0x85,0xc1,0xe9,0x45,0xc4,
+		0x14,0x00,0x00,0x00,0x01,0x00,0x01,0x00,
+		0x01,0x07,0x50,0x02,
+	};
+	struct capn c, w;
+	uint8_t packed[64];
+	int64_t n;
+
+	EXPECT_NE(0, capn_init_mem(&c, (uint8_t *) bad, sizeof bad, 1));
+
+	capn_init_malloc(&w);
+	ASSERT_EQ(CAPN_STRUCT, capn_new_struct(capn_root(&w).seg, 8, 0).type);
+	n = capn_write_mem(&w, packed, sizeof packed, 1);
+	ASSERT_GT(n, (int64_t) 0);
+	EXPECT_EQ(0, capn_init_mem(&c, packed, (size_t) n, 1));
+	capn_free(&c);
+	capn_free(&w);
+}

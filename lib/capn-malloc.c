@@ -262,8 +262,18 @@ static int init_fp(struct capn *c, FILE *f,
 	else
 		c->traversal_limit = max_bytes;
 
-	/* Read the first four bytes to know how many headers we have */
-	if (read_fp(&segnum, 4, f, read_fd, fd, z, zbuf, packed))
+	/* Read the first four bytes to know how many headers we have.
+	 * A packed stream is a sequence of words. C++ reads the first
+	 * word, then the rest of the table, and a zero or raw run that
+	 * continues past that read is an error. */
+	if (packed) {
+		uint8_t word[8];
+		if (read_fp(word, 8, f, read_fd, fd, z, zbuf, 1) ||
+		    z->zeros || z->raw || z->avail_buf)
+			goto err;
+		memcpy(&segnum, word, 4);
+		memcpy(&hdr[0], word + 4, 4);
+	} else if (read_fp(&segnum, 4, f, read_fd, fd, z, zbuf, 0))
 		goto err;
 
 	segnum = capn_flip32(segnum);
@@ -272,7 +282,14 @@ static int init_fp(struct capn *c, FILE *f,
 	segnum++; /* The wire encoding was zero-based */
 
 	/* Read the header list */
-	if (read_fp(hdr, 8 * (segnum/2) + 4, f, read_fd, fd, z, zbuf, packed))
+	if (packed) {
+		if (segnum > 1) {
+			size_t rest = (size_t) (segnum & ~1u) * 4u;
+			if (read_fp(hdr + 1, rest, f, read_fd, fd, z, zbuf, 1) ||
+			    z->zeros || z->raw || z->avail_buf)
+				goto err;
+		}
+	} else if (read_fp(hdr, 8 * (segnum/2) + 4, f, read_fd, fd, z, zbuf, 0))
 		goto err;
 
 	for (i = 0; i < segnum; i++) {
@@ -312,9 +329,21 @@ static int init_fp(struct capn *c, FILE *f,
 	if (!s)
 		goto err;
 
-	/* Now read the data and setup the capn_segment structs */
+	/* Now read the data and setup the capn_segment structs.
+	 * Each packed segment is its own inflate: a run that crosses
+	 * into the next segment is not a message C++ will read. */
 	data = (char*) (s+segnum);
-	if (read_fp(data, total, f, read_fd, fd, z, zbuf, packed))
+	if (packed) {
+		char *p = data;
+		for (i = 0; i < segnum; i++) {
+			if (hdr[i] == 0)
+				continue;
+			if (read_fp(p, hdr[i], f, read_fd, fd, z, zbuf, 1) ||
+			    z->zeros || z->raw || z->avail_buf)
+				goto err;
+			p += hdr[i];
+		}
+	} else if (read_fp(data, total, f, read_fd, fd, z, zbuf, 0))
 		goto err;
 
 	for (i = 0; i < segnum; i++) {
