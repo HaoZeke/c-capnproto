@@ -1124,6 +1124,7 @@ TEST(WireParity, FlatWriteDuplicatesASharedStruct) {
 	EXPECT_EQ(40, n);
 	capn_free(&c);
 }
+
 TEST(WireParity, CanonicalPredicateMatchesTheLayout) {
 	const uint8_t nullroot[] = {
 		0,0,0,0, 1,0,0,0,
@@ -1221,8 +1222,10 @@ TEST(WireParity, VoidListOffsetFollowsTheReadHead) {
 	ASSERT_EQ(0, load_frame(&c, good, sizeof good));
 	EXPECT_EQ(1, capn_is_canonical(&c));
 	capn_free(&c);
+	/* The offset lands past the segment. A void list is clamped to
+	 * the end, and that end is the read head, so the form is canonical. */
 	ASSERT_EQ(0, load_frame(&c, bad, sizeof bad));
-	EXPECT_EQ(0, capn_is_canonical(&c));
+	EXPECT_EQ(1, capn_is_canonical(&c));
 	capn_free(&c);
 }
 
@@ -1331,6 +1334,34 @@ TEST(WireParity, TwoVoidListsShareTheCanonicalBudget) {
 	EXPECT_EQ(0, capn_is_canonical(&c));
 	capn_free(&c);
 	ASSERT_EQ(0, load_frame(&c, one, sizeof one));
+	EXPECT_EQ(1, capn_is_canonical(&c));
+	capn_free(&c);
+}
+
+TEST(WireParity, ClampedEmptyListIsCanonical) {
+	const uint8_t byte_list[] = {
+		0,0,0,0, 2,0,0,0,
+		0,0,0,0, 0,0,1,0,
+		0xf1,0xff,0xff,0x0f, 2,0,0,0,
+	};
+	const uint8_t void_list[] = {
+		0,0,0,0, 2,0,0,0,
+		0,0,0,0, 0,0,1,0,
+		0xf1,0xff,0xff,0x0f, 0x28,0,0,0,
+	};
+	const uint8_t ptr_list[] = {
+		0,0,0,0, 2,0,0,0,
+		0,0,0,0, 0,0,1,0,
+		0xf1,0xff,0xff,0x0f, 6,0,0,0,
+	};
+	struct capn c;
+	ASSERT_EQ(0, load_frame(&c, byte_list, sizeof byte_list));
+	EXPECT_EQ(1, capn_is_canonical(&c));
+	capn_free(&c);
+	ASSERT_EQ(0, load_frame(&c, void_list, sizeof void_list));
+	EXPECT_EQ(1, capn_is_canonical(&c));
+	capn_free(&c);
+	ASSERT_EQ(0, load_frame(&c, ptr_list, sizeof ptr_list));
 	EXPECT_EQ(1, capn_is_canonical(&c));
 	capn_free(&c);
 }

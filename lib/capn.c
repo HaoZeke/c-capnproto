@@ -3127,6 +3127,23 @@ static int canonical_word(struct capn_segment *s, char *ptrword, char **head,
 		return 0;
 	off = signed_off(val);
 	obj = ptrword + 8 + (int64_t) off * 8;
+	/* A zero-size object past the segment is clamped to the end,
+	 * which is where C++ reads it. An in-range offset is left
+	 * where it lands. */
+	{
+		int zero = 0;
+		if ((val & 3) == STRUCT_PTR && U32(val >> 32) == 0)
+			zero = 1;
+		else if ((val & 3) == LIST_PTR) {
+			unsigned esz = (unsigned) ((val >> 32) & 7);
+			if (esz == VOID_LIST)
+				zero = 1;
+			else if (esz != COMPOSITE_LIST && (val >> 35) == 0)
+				zero = 1;
+		}
+		if (zero && (obj < s->data || obj > s->data + s->len))
+			obj = s->data + s->len;
+	}
 	if ((val & 3) == STRUCT_PTR) {
 		int dt = 0, pt = 0;
 		dw = (int) U16(val >> 32);
