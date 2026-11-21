@@ -2533,6 +2533,10 @@ static int canon_measure(capn_ptr p, int rem, struct capn_vset *vs,
 
 	case CAPN_LIST:
 		if (p.is_composite_list) {
+			/* getStructElement needs a nesting level for every
+			 * element, including one with no pointers. */
+			if (p.len > 0 && rem <= 0)
+				goto fail;
 			trunc_composite(p, &dw, &pw);
 			if (!mul_size((size_t) p.len, (size_t) dw + (size_t) pw, &add))
 				goto fail;
@@ -2672,6 +2676,10 @@ static int canon_emit(struct capn_segment *ds, char *ptr_loc, capn_ptr p,
 
 	case CAPN_LIST:
 		if (p.is_composite_list) {
+			/* getStructElement needs a nesting level for every
+			 * element, including one with no pointers. */
+			if (p.len > 0 && rem <= 0)
+				goto fail;
 			trunc_composite(p, &dw, &pw);
 			if (!mul_size((size_t) p.len, (size_t) dw + (size_t) pw, &add))
 				goto fail;

@@ -1713,3 +1713,36 @@ TEST(WireParity, ByteListChargesAWholeWord) {
 	EXPECT_EQ(0, capn_ok(&c));
 	capn_free(&c);
 }
+
+TEST(WireParity, CanonicalCompositeNeedsAnElementLevel) {
+	/* A zero-stride composite of two empty structs. isCanonical
+	 * does not enter the elements. canonicalize calls
+	 * getStructElement, which spends one more nesting level. */
+	const uint8_t z2[] = {
+		0x00,0x00,0x00,0x00, 0x03,0x00,0x00,0x00,
+		0x00,0x00,0x00,0x00, 0x00,0x00,0x01,0x00,
+		0x01,0x00,0x00,0x00, 0x07,0x00,0x00,0x00,
+		0x08,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,
+	};
+	struct capn src, dst;
+	int rc;
+
+	ASSERT_EQ(0, capn_init_mem(&src, (uint8_t *) z2, sizeof z2, 0));
+	src.nesting_limit = 2;
+	src.traversal_used = 0;
+	EXPECT_EQ(1, capn_is_canonical(&src));
+	capn_init_malloc(&dst);
+	rc = capn_canonicalize(&src, &dst);
+	EXPECT_NE(0, rc);
+	capn_free(&dst);
+	capn_free(&src);
+
+	ASSERT_EQ(0, capn_init_mem(&src, (uint8_t *) z2, sizeof z2, 0));
+	src.nesting_limit = 3;
+	src.traversal_used = 0;
+	capn_init_malloc(&dst);
+	rc = capn_canonicalize(&src, &dst);
+	EXPECT_EQ(0, rc);
+	capn_free(&dst);
+	capn_free(&src);
+}
