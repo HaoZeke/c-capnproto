@@ -1,0 +1,130 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  meson:
+    runs-on: ubuntu-latest
+    outputs:
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: meta
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          case "$VERSION" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+      - name: Changelog section for this tag
+        run: python3 scripts/release_notes.py "${GITHUB_REF_NAME#v}" -o "${RUNNER_TEMP}/notes.md"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install meson ninja
+        run: pip install meson ninja
+      - name: Install capnproto and xz
+        run: sudo apt-get update && sudo apt-get install -y capnproto xz-utils
+      - name: Configure
+        run: meson setup build -Dbuildtype=release -Denable_tests=true -Dfuzz=true
+      - name: Build
+        run: meson compile -C build
+      - name: Test
+        run: meson test -C build --print-errorlogs
+      - name: Source tarball
+        run: |
+          meson dist -C build --no-tests
+          find build/meson-dist -type f -name 'c-capnproto-*.tar.*' | grep .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notes
+          path: ${{ runner.temp }}/notes.md
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: build/meson-dist/c-capnproto-*.tar.*
+          if-no-files-found: error
+
+  autotools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Install autotools
+        run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool pkg-config g++ make capnproto
+      - name: Configure
+        run: |
+          autoreconf -fi
+          ./configure
+      - name: Build
+        run: make -j"$(nproc)"
+      - name: Test
+        run: make -j"$(nproc)" check
+
+  cmake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install CMake and GTest
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ pkg-config libgtest-dev capnproto
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+      - name: Test
+        run: |
+          ctest --test-dir build --output-on-failure
+          ctest --test-dir build -N | grep -E 'Test #.*capn-test'
+
+  github-release:
+    needs: [meson, autotools, cmake]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: notes
+          path: notes
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          PRE: ${{ needs.meson.outputs.prerelease }}
+        run: |
+          shopt -s nullglob
+          tarballs=(dist/*)
+          if [ "${#tarballs[@]}" -eq 0 ]; then
+            echo "meson dist produced no tarball" >&2
+            exit 1
+          fi
+          args=(--repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file notes/notes.md)
+          if [ "$PRE" = "true" ]; then
+            args+=(--prerelease)
+          fi
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes/notes.md
+            if [ "$PRE" = "true" ]; then
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease
+            fi
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "${tarballs[@]}"
+          else
+            gh release create "$TAG" "${args[@]}" "${tarballs[@]}"
+          fi
