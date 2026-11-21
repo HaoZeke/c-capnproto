@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # VERSION.txt, meson.build, and configure.ac carry one version.
-# On a vX.Y.Z tag (GITHUB_REF_TYPE=tag, or an exact tag on HEAD) that
-# version must be X.Y.Z. A tag vX.Y.Z-<id> is a prerelease of X.Y.Z
-# when the files still say X.Y.Z.
+# CMakeLists.txt GIT_TAG and the README wrap revision are v plus that
+# version. On a vX.Y.Z tag (GITHUB_REF_TYPE=tag, or an exact tag on
+# HEAD) the files must say X.Y.Z. A tag vX.Y.Z-<id> is a prerelease of
+# X.Y.Z when the files still say X.Y.Z.
 set -euo pipefail
 
 root=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
@@ -22,6 +23,21 @@ if [[ -z "$vt" || -z "$meson_v" || -z "$ac_v" ]]; then
 fi
 if [[ "$vt" != "$meson_v" ]] || [[ "$vt" != "$ac_v" ]]; then
   echo "version files disagree" >&2
+  exit 1
+fi
+
+# The FetchContent comment and the wrap snippet are copied by users.
+cmake_tag=$(sed -n 's/^#[[:space:]]*GIT_TAG[[:space:]]\{1,\}\(v[^[:space:]]*\).*/\1/p' CMakeLists.txt | head -1)
+wrap_rev=$(sed -n 's/^revision = \(v[^[:space:]]*\).*/\1/p' README.md | head -1)
+echo "CMakeLists.txt GIT_TAG=${cmake_tag}"
+echo "README wrap revision=${wrap_rev}"
+expect="v${vt}"
+if [[ -z "$cmake_tag" || "$cmake_tag" != "$expect" ]]; then
+  echo "CMakeLists.txt GIT_TAG ${cmake_tag} does not match ${expect}" >&2
+  exit 1
+fi
+if [[ -z "$wrap_rev" || "$wrap_rev" != "$expect" ]]; then
+  echo "README wrap revision ${wrap_rev} does not match ${expect}" >&2
   exit 1
 fi
 
