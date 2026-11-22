@@ -171,7 +171,13 @@ EXTRA_DIST += \
 	tests/frame-le-test.c \
 	interop/mirror.capnp \
 	interop/reflect_client.c++ \
-	interop/reflect_server.c
+	interop/reflect_server.c \
+	tests/a.capnp \
+	tests/b.capnp \
+	tests/brand-import.sh \
+	tests/brand-multifile.capnp \
+	tests/brand-reuse.capnp \
+	tests/e.capnp
 
 EXTRA_DIST += \
 	compiler/c.capnp \

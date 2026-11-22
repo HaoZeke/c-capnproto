@@ -313,6 +313,36 @@ struct brand_done {
 };
 static struct brand_done *g_brand_done;
 
+/* Several generated files can name the same brand, and one program can
+ * include all of their headers and link all of their sources. The first
+ * header a translation unit sees defines the brand and maps each function
+ * name to the copy in its own source file. */
+static uint64_t g_brand_file_id;
+static struct str *g_brand_hdr, *g_brand_src;
+
+static void brand_name_macros(struct str *out, const struct str *src) {
+	const char *p = src->str, *end = src->str + src->len;
+
+	while (p < end) {
+		const char *eol = memchr(p, '\n', (size_t) (end - p));
+		const char *paren, *id;
+		if (eol == NULL)
+			eol = end;
+		if ((isalpha((unsigned char) *p) || *p == '_') &&
+		    strncmp(p, "static", 6) != 0 &&
+		    (paren = memchr(p, '(', (size_t) (eol - p))) != NULL) {
+			id = paren;
+			while (id > p && (isalnum((unsigned char) id[-1]) || id[-1] == '_'))
+				id--;
+			if (id < paren)
+				str_addf(out, "#define %.*s %.*s_%" PRIx64 "\n",
+				         (int) (paren - id), id,
+				         (int) (paren - id), id, g_brand_file_id);
+		}
+		p = eol + 1;
+	}
+}
+
 static void brand_done_clear(void) {
 	while (g_brand_done) {
 		struct brand_done *n = g_brand_done->next;
@@ -1851,26 +1881,72 @@ static void define_struct(struct node *n, const char *extattr, const char *extat
 	strings_release(&s);
 }
 
+static void emit_branded_body(struct node *n, Brand_ptr brand, const char *name);
+
 static void emit_branded(struct node *n, Brand_ptr brand, const char *name) {
-	int saved, flen, j;
-	struct node inst;
-	struct str nm = STR_INIT;
+	struct str up_hdr, up_src, hdr, src;
+	int outer;
 
 	if (n == NULL || name == NULL || name[0] == 0)
 		return;
 	if (brand_emitted(name))
 		return;
 	brand_mark(name);
+	if (n->n.which != Node__interface &&
+	    (n->n.which != Node__struct || n->n._struct.isGroup))
+		return;
+
+	/* A brand nested in this one is written out first, outside this
+	 * guard, so its names are never mapped to this brand's file. */
+	outer = g_brand_hdr == NULL;
+	up_hdr = HDR;
+	up_src = SRC;
+	if (outer) {
+		g_brand_hdr = &up_hdr;
+		g_brand_src = &up_src;
+	}
+	HDR = (struct str) STR_INIT;
+	SRC = (struct str) STR_INIT;
+	emit_branded_body(n, brand, name);
+	hdr = HDR;
+	src = SRC;
+	HDR = up_hdr;
+	SRC = up_src;
+	if (outer)
+		g_brand_hdr = g_brand_src = NULL;
+
+	{
+		struct str *oh = outer ? &HDR : g_brand_hdr;
+		struct str *os = outer ? &SRC : g_brand_src;
+		str_addf(oh, "\n#ifndef CAPNP_C_BRAND_%s\n", name);
+		str_addf(oh, "#define CAPNP_C_BRAND_%s 0x%" PRIx64 "\n",
+		         name, g_brand_file_id);
+		brand_name_macros(oh, &src);
+		str_add(oh, hdr.str, hdr.len);
+		str_addf(oh, "#endif\n");
+		if (src.len > 0) {
+			str_addf(os, "\n#if CAPNP_C_BRAND_%s == 0x%" PRIx64 "\n",
+			         name, g_brand_file_id);
+			str_add(os, src.str, src.len);
+			str_addf(os, "#endif\n");
+		}
+	}
+	str_release(&hdr);
+	str_release(&src);
+}
+
+static void emit_branded_body(struct node *n, Brand_ptr brand, const char *name) {
+	int saved, flen, j;
+	struct node inst;
+	struct str nm = STR_INIT;
 
 	if (n->n.which == Node__interface) {
-		str_addf(&HDR, "\ntypedef struct {capn_ptr p;} %s_ptr;\n", name);
+		str_addf(&HDR, "typedef struct {capn_ptr p;} %s_ptr;\n", name);
 		str_addf(&HDR, "typedef struct {capn_ptr p;} %s_list;\n", name);
 		return;
 	}
-	if (n->n.which != Node__struct || n->n._struct.isGroup)
-		return;
 
-	str_addf(&HDR, "\nstruct %s;\n", name);
+	str_addf(&HDR, "struct %s;\n", name);
 	str_addf(&HDR, "typedef struct {capn_ptr p;} %s_ptr;\n", name);
 	str_addf(&HDR, "typedef struct {capn_ptr p;} %s_list;\n", name);
 
@@ -2575,6 +2651,7 @@ int main() {
 		char *p;
 		const char *nameinfix = NULL;
 		FILE *srcf, *hdrf;
+		const char *unused;
 		struct id_bst * donotinclude_ids = NULL;
 		struct string_list * extraheader_strings = NULL;
 		const char *extattr = NULL;
@@ -2669,6 +2746,7 @@ int main() {
 		str_reset(&HDR);
 		str_reset(&SRC);
 		brand_done_clear();
+		g_brand_file_id = file_node->n.id;
 
 		str_addf(&HDR, "#ifndef CAPN_%X%X\n", (uint32_t) (file_node->n.id >> 32), (uint32_t) file_node->n.id);
 		str_addf(&HDR, "#define CAPN_%X%X\n", (uint32_t) (file_node->n.id >> 32), (uint32_t) file_node->n.id);
@@ -2831,20 +2909,23 @@ int main() {
 			fprintf(srcf, "#include <string.h>\n");
 		}
 
+		/* A brand defined by another header skips its code here, and
+		 * that code can be the only user of these. */
+		unused = g_brand_done != NULL ? " capnp_unused" : "";
 		if (g_val0used)
 			/* A named object, not a string literal: the compiler may merge
 			 * equal literals across translation units, and the writer
 			 * tells this placeholder from a caller's own "" by address. */
 			fprintf(srcf, "static const char capn_val0_str[1] = {0};\n"
-					"static const capn_text capn_val0 = {0,capn_val0_str,0};\n");
+					"static const capn_text capn_val0%s = {0,capn_val0_str,0};\n", unused);
 		if (g_nullused)
-			fprintf(srcf, "static const capn_ptr capn_null = {CAPN_NULL};\n");
+			fprintf(srcf, "static const capn_ptr capn_null%s = {CAPN_NULL};\n", unused);
 		if (g_textnullused)
-			fprintf(srcf, "static const capn_text capn_text_null = {0,0,0};\n");
+			fprintf(srcf, "static const capn_text capn_text_null%s = {0,0,0};\n", unused);
 
 		if (g_valseg.len > 8) {
 			size_t k;
-			fprintf(srcf, "static const uint8_t capn_buf[%zu] = {", g_valseg.len-8);
+			fprintf(srcf, "static const uint8_t capn_buf[%zu]%s = {", g_valseg.len-8, unused);
 			for (k = 8; k < g_valseg.len; k++) {
 				if (k > 8)
 					fprintf(srcf, ",");
@@ -2854,8 +2935,8 @@ int main() {
 			}
 			fprintf(srcf, "\n};\n");
 
-			fprintf(srcf, "static const struct capn_segment capn_seg = {{0},0,0,0,(char*)&capn_buf[0],%zu,%zu,0};\n",
-					g_valseg.len-8, g_valseg.len-8);
+			fprintf(srcf, "static const struct capn_segment capn_seg%s = {{0},0,0,0,(char*)&capn_buf[0],%zu,%zu,0};\n",
+					unused, g_valseg.len-8, g_valseg.len-8);
 		}
 
 		fwrite(SRC.str, 1, SRC.len, srcf);
