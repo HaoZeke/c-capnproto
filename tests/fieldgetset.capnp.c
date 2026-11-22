@@ -24,7 +24,7 @@ Leaf_list new_Leaf_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_Leaf(struct Leaf *s capnp_unused, Leaf_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->value = (int32_t) ((int32_t)capn_read32(p.p, 0));
 }
@@ -35,6 +35,7 @@ void write_Leaf(const struct Leaf *s capnp_unused, Leaf_ptr p) {
 }
 void get_Leaf(struct Leaf *s, Leaf_list l, int i) {
 	Leaf_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Leaf(s, p);
 }
@@ -46,7 +47,7 @@ void set_Leaf(const struct Leaf *s, Leaf_list l, int i) {
 
 int32_t Leaf_get_value(Leaf_ptr p)
 {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	int32_t value;
 	value = (int32_t) ((int32_t)capn_read32(p.p, 0));
 	return value;
@@ -69,7 +70,7 @@ Inner_list new_Inner_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_Inner(struct Inner *s capnp_unused, Inner_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->left.p = capn_getp(p.p, 0, 0);
 if (s->left.p.type == CAPN_FAR_POINTER && s->left.p.data != NULL && *(const uint64_t*)s->left.p.data == 0) s->left.p.type = CAPN_NULL;
@@ -84,6 +85,7 @@ void write_Inner(const struct Inner *s capnp_unused, Inner_ptr p) {
 }
 void get_Inner(struct Inner *s, Inner_list l, int i) {
 	Inner_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Inner(s, p);
 }
@@ -95,15 +97,16 @@ void set_Inner(const struct Inner *s, Inner_list l, int i) {
 
 TreeNode_ptr Inner_get_left(Inner_ptr p)
 {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	TreeNode_ptr left;
 	left.p = capn_getp(p.p, 0, 1);
+	capn_resolve_struct(&left.p);
 	return left;
 }
 
 int Inner_has_left(Inner_ptr p)
 {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capn_ptr left;
 	left = capn_getp(p.p, 0, 1);
 	return left.type != CAPN_NULL;
@@ -111,15 +114,16 @@ int Inner_has_left(Inner_ptr p)
 
 TreeNode_ptr Inner_get_right(Inner_ptr p)
 {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	TreeNode_ptr right;
 	right.p = capn_getp(p.p, 1, 1);
+	capn_resolve_struct(&right.p);
 	return right;
 }
 
 int Inner_has_right(Inner_ptr p)
 {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capn_ptr right;
 	right = capn_getp(p.p, 1, 1);
 	return right.type != CAPN_NULL;
@@ -148,7 +152,7 @@ TreeNode_list new_TreeNode_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_TreeNode(struct TreeNode *s capnp_unused, TreeNode_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->nodeType = (int32_t) ((int32_t)capn_read32(p.p, 0));
 	s->leaf.p = capn_getp(p.p, 0, 0);
@@ -165,6 +169,7 @@ void write_TreeNode(const struct TreeNode *s capnp_unused, TreeNode_ptr p) {
 }
 void get_TreeNode(struct TreeNode *s, TreeNode_list l, int i) {
 	TreeNode_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_TreeNode(s, p);
 }
@@ -176,7 +181,7 @@ void set_TreeNode(const struct TreeNode *s, TreeNode_list l, int i) {
 
 int32_t TreeNode_get_nodeType(TreeNode_ptr p)
 {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	int32_t nodeType;
 	nodeType = (int32_t) ((int32_t)capn_read32(p.p, 0));
 	return nodeType;
@@ -184,15 +189,16 @@ int32_t TreeNode_get_nodeType(TreeNode_ptr p)
 
 Leaf_ptr TreeNode_get_leaf(TreeNode_ptr p)
 {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	Leaf_ptr leaf;
 	leaf.p = capn_getp(p.p, 0, 1);
+	capn_resolve_struct(&leaf.p);
 	return leaf;
 }
 
 int TreeNode_has_leaf(TreeNode_ptr p)
 {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capn_ptr leaf;
 	leaf = capn_getp(p.p, 0, 1);
 	return leaf.type != CAPN_NULL;
@@ -200,15 +206,16 @@ int TreeNode_has_leaf(TreeNode_ptr p)
 
 Inner_ptr TreeNode_get_inner(TreeNode_ptr p)
 {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	Inner_ptr inner;
 	inner.p = capn_getp(p.p, 1, 1);
+	capn_resolve_struct(&inner.p);
 	return inner;
 }
 
 int TreeNode_has_inner(TreeNode_ptr p)
 {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capn_ptr inner;
 	inner = capn_getp(p.p, 1, 1);
 	return inner.type != CAPN_NULL;
@@ -243,7 +250,7 @@ Bag_list new_Bag_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_Bag(struct Bag *s capnp_unused, Bag_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->note = capn_get_text(p.p, 0, capn_val0);
 	s->blob = capn_get_data(p.p, 1);
@@ -256,6 +263,7 @@ void write_Bag(const struct Bag *s capnp_unused, Bag_ptr p) {
 }
 void get_Bag(struct Bag *s, Bag_list l, int i) {
 	Bag_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Bag(s, p);
 }
@@ -267,7 +275,7 @@ void set_Bag(const struct Bag *s, Bag_list l, int i) {
 
 capn_text Bag_get_note(Bag_ptr p)
 {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capn_text note;
 	note = capn_get_text(p.p, 0, capn_val0);
 	return note;
@@ -275,7 +283,7 @@ capn_text Bag_get_note(Bag_ptr p)
 
 int Bag_has_note(Bag_ptr p)
 {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capn_ptr note;
 	note = capn_getp(p.p, 0, 1);
 	return note.type != CAPN_NULL;
@@ -283,7 +291,7 @@ int Bag_has_note(Bag_ptr p)
 
 capn_data Bag_get_blob(Bag_ptr p)
 {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capn_data blob;
 	blob = capn_get_data(p.p, 1);
 	return blob;
@@ -291,7 +299,7 @@ capn_data Bag_get_blob(Bag_ptr p)
 
 int Bag_has_blob(Bag_ptr p)
 {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capn_ptr blob;
 	blob = capn_getp(p.p, 1, 1);
 	return blob.type != CAPN_NULL;

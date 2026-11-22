@@ -640,6 +640,46 @@ TEST(DecodeBounds, AddressBookRoundTrip) {
 	}
 }
 
+/* Reads the root as an AddressBook and its first person. Returns
+ * capn_ok afterwards, or -1 when the frame does not load. */
+static int read_first_person(const std::vector<uint64_t> &words, uint32_t *id) {
+	std::vector<uint8_t> seg(words.size() * 8), framed(8 + words.size() * 8);
+	struct capn c;
+	struct AddressBook b;
+	struct Person p;
+	AddressBook_ptr root;
+	int ok;
+	for (size_t i = 0; i < words.size(); i++)
+		wr64(seg.data() + 8 * i, words[i]);
+	if (init_one_seg(&c, seg.data(), seg.size(), framed.data(), framed.size()) != 0)
+		return -1;
+	memset(&b, 0, sizeof b);
+	memset(&p, 0, sizeof p);
+	p.id = 99;
+	root.p = root_getp(&c);
+	read_AddressBook(&b, root);
+	get_Person(&p, b.people, 0);
+	*id = p.id;
+	ok = capn_ok(&c);
+	capn_free(&c);
+	return ok;
+}
+
+TEST(DecodeBounds, SchemaMismatchedStructPointersAreErrors) {
+	/* C++ 1.4.0 throws "Schema mismatch" for a list where a struct is
+	 * expected, and for a struct or bit list where List(Struct) is. */
+	uint32_t id;
+	EXPECT_EQ(0, read_first_person({0x0000004200000001ull, 0}, &id));
+	EXPECT_EQ(0, read_first_person({3}, &id));
+	EXPECT_EQ(0, read_first_person({0x0001000000000000ull, 0x0000001900000001ull, 0}, &id));
+	EXPECT_EQ(0, read_first_person({0x0001000000000000ull, 0x0000000100000000ull, 5}, &id));
+	/* Byte and pointer lists upgrade to struct lists. */
+	EXPECT_EQ(1, read_first_person({0x0001000000000000ull, 0x0000001200000001ull, 0x0201}, &id));
+	EXPECT_EQ(0u, id);
+	EXPECT_EQ(1, read_first_person({0x0001000000000000ull, 0x0000000e00000001ull, 0}, &id));
+	EXPECT_EQ(0u, id);
+}
+
 TEST(NewObjectLimits, RefusesSizesThatWouldWrapOrNotFit) {
   struct capn c;
   capn_init_malloc(&c);

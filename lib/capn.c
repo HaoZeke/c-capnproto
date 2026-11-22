@@ -763,6 +763,32 @@ void capn_resolve(capn_ptr *p) {
 	}
 }
 
+static void schema_mismatch(capn_ptr *p) {
+	capn_ptr null = {CAPN_NULL};
+	if (p->seg && p->seg->capn)
+		p->seg->capn->decode_err = 1;
+	null.seg = p->seg;
+	*p = null;
+}
+
+void capn_resolve_struct(capn_ptr *p) {
+	capn_resolve(p);
+	if (p->type != CAPN_NULL && p->type != CAPN_STRUCT)
+		schema_mismatch(p);
+}
+
+void capn_resolve_struct_list(capn_ptr *p) {
+	capn_resolve(p);
+	switch (p->type) {
+	case CAPN_NULL:
+	case CAPN_LIST:
+	case CAPN_PTR_LIST:
+		break;
+	default:
+		schema_mismatch(p);
+	}
+}
+
 #define CAPN_V_EMPTY 0
 #define CAPN_V_PATH 1
 #define CAPN_V_DONE 2

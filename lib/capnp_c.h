@@ -275,6 +275,12 @@ CAPN_EXPORT void capn_append_segment(struct capn*, struct capn_segment*);
 
 CAPN_EXPORT capn_ptr capn_root(struct capn *c);
 CAPN_EXPORT void capn_resolve(capn_ptr *p);
+/* Generated readers resolve with these. C++ reads a struct only from a
+ * struct pointer, and List(Struct) from any list but a bit list. Any
+ * other pointer becomes CAPN_NULL and sets decode_err, the C++
+ * "Schema mismatch" error. */
+CAPN_EXPORT void capn_resolve_struct(capn_ptr *p);
+CAPN_EXPORT void capn_resolve_struct_list(capn_ptr *p);
 
 /* capn_validate walks the pointer graph from the message root.
  * Returns 0 if landings are in-segment, nesting stays within

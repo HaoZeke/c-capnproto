@@ -24,7 +24,7 @@ Message_list new_Message_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_Message(struct Message *s capnp_unused, Message_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->which = (enum Message_which)(int) capn_read16(p.p, 0);
 	switch (s->which) {
@@ -141,6 +141,7 @@ void write_Message(const struct Message *s capnp_unused, Message_ptr p) {
 }
 void get_Message(struct Message *s, Message_list l, int i) {
 	Message_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Message(s, p);
 }
@@ -161,7 +162,7 @@ Bootstrap_list new_Bootstrap_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_Bootstrap(struct Bootstrap *s capnp_unused, Bootstrap_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->questionId = capn_read32(p.p, 0);
 	s->deprecatedObjectId = capn_getp(p.p, 0, 0);
@@ -175,6 +176,7 @@ void write_Bootstrap(const struct Bootstrap *s capnp_unused, Bootstrap_ptr p) {
 }
 void get_Bootstrap(struct Bootstrap *s, Bootstrap_list l, int i) {
 	Bootstrap_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Bootstrap(s, p);
 }
@@ -195,7 +197,7 @@ Call_list new_Call_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_Call(struct Call *s capnp_unused, Call_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->questionId = capn_read32(p.p, 0);
 	s->target.p = capn_getp(p.p, 0, 0);
@@ -239,6 +241,7 @@ void write_Call(const struct Call *s capnp_unused, Call_ptr p) {
 }
 void get_Call(struct Call *s, Call_list l, int i) {
 	Call_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Call(s, p);
 }
@@ -259,7 +262,7 @@ Return_list new_Return_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_Return(struct Return *s capnp_unused, Return_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->answerId = capn_read32(p.p, 0);
 	s->releaseParamCaps = (capn_read8(p.p, 4) & 1) != 1;
@@ -311,6 +314,7 @@ void write_Return(const struct Return *s capnp_unused, Return_ptr p) {
 }
 void get_Return(struct Return *s, Return_list l, int i) {
 	Return_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Return(s, p);
 }
@@ -331,7 +335,7 @@ Finish_list new_Finish_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_Finish(struct Finish *s capnp_unused, Finish_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->questionId = capn_read32(p.p, 0);
 	s->releaseResultCaps = (capn_read8(p.p, 4) & 1) != 1;
@@ -346,6 +350,7 @@ void write_Finish(const struct Finish *s capnp_unused, Finish_ptr p) {
 }
 void get_Finish(struct Finish *s, Finish_list l, int i) {
 	Finish_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Finish(s, p);
 }
@@ -366,7 +371,7 @@ Resolve_list new_Resolve_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_Resolve(struct Resolve *s capnp_unused, Resolve_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->promiseId = capn_read32(p.p, 0);
 	s->which = (enum Resolve_which)(int) capn_read16(p.p, 4);
@@ -401,6 +406,7 @@ void write_Resolve(const struct Resolve *s capnp_unused, Resolve_ptr p) {
 }
 void get_Resolve(struct Resolve *s, Resolve_list l, int i) {
 	Resolve_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Resolve(s, p);
 }
@@ -421,7 +427,7 @@ Release_list new_Release_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_Release(struct Release *s capnp_unused, Release_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->id = capn_read32(p.p, 0);
 	s->referenceCount = capn_read32(p.p, 4);
@@ -434,6 +440,7 @@ void write_Release(const struct Release *s capnp_unused, Release_ptr p) {
 }
 void get_Release(struct Release *s, Release_list l, int i) {
 	Release_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Release(s, p);
 }
@@ -454,7 +461,7 @@ Disembargo_list new_Disembargo_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_Disembargo(struct Disembargo *s capnp_unused, Disembargo_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->target.p = capn_getp(p.p, 0, 0);
 if (s->target.p.type == CAPN_FAR_POINTER && s->target.p.data != NULL && *(const uint64_t*)s->target.p.data == 0) s->target.p.type = CAPN_NULL;
@@ -494,6 +501,7 @@ void write_Disembargo(const struct Disembargo *s capnp_unused, Disembargo_ptr p)
 }
 void get_Disembargo(struct Disembargo *s, Disembargo_list l, int i) {
 	Disembargo_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Disembargo(s, p);
 }
@@ -514,7 +522,7 @@ Provide_list new_Provide_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_Provide(struct Provide *s capnp_unused, Provide_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->questionId = capn_read32(p.p, 0);
 	s->target.p = capn_getp(p.p, 0, 0);
@@ -531,6 +539,7 @@ void write_Provide(const struct Provide *s capnp_unused, Provide_ptr p) {
 }
 void get_Provide(struct Provide *s, Provide_list l, int i) {
 	Provide_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Provide(s, p);
 }
@@ -551,7 +560,7 @@ Accept_list new_Accept_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_Accept(struct Accept *s capnp_unused, Accept_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->questionId = capn_read32(p.p, 0);
 	s->provision = capn_getp(p.p, 0, 0);
@@ -567,6 +576,7 @@ void write_Accept(const struct Accept *s capnp_unused, Accept_ptr p) {
 }
 void get_Accept(struct Accept *s, Accept_list l, int i) {
 	Accept_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Accept(s, p);
 }
@@ -587,7 +597,7 @@ Join_list new_Join_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_Join(struct Join *s capnp_unused, Join_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->questionId = capn_read32(p.p, 0);
 	s->target.p = capn_getp(p.p, 0, 0);
@@ -604,6 +614,7 @@ void write_Join(const struct Join *s capnp_unused, Join_ptr p) {
 }
 void get_Join(struct Join *s, Join_list l, int i) {
 	Join_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Join(s, p);
 }
@@ -624,7 +635,7 @@ MessageTarget_list new_MessageTarget_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_MessageTarget(struct MessageTarget *s capnp_unused, MessageTarget_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->which = (enum MessageTarget_which)(int) capn_read16(p.p, 4);
 	switch (s->which) {
@@ -656,6 +667,7 @@ void write_MessageTarget(const struct MessageTarget *s capnp_unused, MessageTarg
 }
 void get_MessageTarget(struct MessageTarget *s, MessageTarget_list l, int i) {
 	MessageTarget_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_MessageTarget(s, p);
 }
@@ -676,7 +688,7 @@ Payload_list new_Payload_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_Payload(struct Payload *s capnp_unused, Payload_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->content = capn_getp(p.p, 0, 0);
 if (s->content.type == CAPN_FAR_POINTER && s->content.data != NULL && *(const uint64_t*)s->content.data == 0) s->content.type = CAPN_NULL;
@@ -691,6 +703,7 @@ void write_Payload(const struct Payload *s capnp_unused, Payload_ptr p) {
 }
 void get_Payload(struct Payload *s, Payload_list l, int i) {
 	Payload_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Payload(s, p);
 }
@@ -711,7 +724,7 @@ CapDescriptor_list new_CapDescriptor_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_CapDescriptor(struct CapDescriptor *s capnp_unused, CapDescriptor_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->which = (enum CapDescriptor_which)(int) capn_read16(p.p, 0);
 	switch (s->which) {
@@ -764,6 +777,7 @@ void write_CapDescriptor(const struct CapDescriptor *s capnp_unused, CapDescript
 }
 void get_CapDescriptor(struct CapDescriptor *s, CapDescriptor_list l, int i) {
 	CapDescriptor_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_CapDescriptor(s, p);
 }
@@ -784,7 +798,7 @@ PromisedAnswer_list new_PromisedAnswer_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_PromisedAnswer(struct PromisedAnswer *s capnp_unused, PromisedAnswer_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->questionId = capn_read32(p.p, 0);
 	s->transform.p = capn_getp(p.p, 0, 0);
@@ -798,6 +812,7 @@ void write_PromisedAnswer(const struct PromisedAnswer *s capnp_unused, PromisedA
 }
 void get_PromisedAnswer(struct PromisedAnswer *s, PromisedAnswer_list l, int i) {
 	PromisedAnswer_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_PromisedAnswer(s, p);
 }
@@ -818,7 +833,7 @@ PromisedAnswer_Op_list new_PromisedAnswer_Op_list(struct capn_segment *s, int le
 	return p;
 }
 void read_PromisedAnswer_Op(struct PromisedAnswer_Op *s capnp_unused, PromisedAnswer_Op_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->which = (enum PromisedAnswer_Op_which)(int) capn_read16(p.p, 0);
 	switch (s->which) {
@@ -843,6 +858,7 @@ void write_PromisedAnswer_Op(const struct PromisedAnswer_Op *s capnp_unused, Pro
 }
 void get_PromisedAnswer_Op(struct PromisedAnswer_Op *s, PromisedAnswer_Op_list l, int i) {
 	PromisedAnswer_Op_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_PromisedAnswer_Op(s, p);
 }
@@ -863,7 +879,7 @@ ThirdPartyCapDescriptor_list new_ThirdPartyCapDescriptor_list(struct capn_segmen
 	return p;
 }
 void read_ThirdPartyCapDescriptor(struct ThirdPartyCapDescriptor *s capnp_unused, ThirdPartyCapDescriptor_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->id = capn_getp(p.p, 0, 0);
 if (s->id.type == CAPN_FAR_POINTER && s->id.data != NULL && *(const uint64_t*)s->id.data == 0) s->id.type = CAPN_NULL;
@@ -877,6 +893,7 @@ void write_ThirdPartyCapDescriptor(const struct ThirdPartyCapDescriptor *s capnp
 }
 void get_ThirdPartyCapDescriptor(struct ThirdPartyCapDescriptor *s, ThirdPartyCapDescriptor_list l, int i) {
 	ThirdPartyCapDescriptor_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_ThirdPartyCapDescriptor(s, p);
 }
@@ -897,7 +914,7 @@ Exception_list new_Exception_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_Exception(struct Exception *s capnp_unused, Exception_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->reason = capn_get_text(p.p, 0, capn_val0);
 	s->type = (enum Exception_Type)(int) capn_read16(p.p, 4);
@@ -916,6 +933,7 @@ void write_Exception(const struct Exception *s capnp_unused, Exception_ptr p) {
 }
 void get_Exception(struct Exception *s, Exception_list l, int i) {
 	Exception_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Exception(s, p);
 }

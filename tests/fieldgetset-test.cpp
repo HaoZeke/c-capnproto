@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 #include "capnp_c.h"
 #include "fieldgetset.capnp.h"
@@ -247,4 +248,53 @@ TEST(FieldGetSet, LeafListCopyKeepsCompositeC7) {
 
   capn_free(&src);
   capn_free(&dst);
+}
+
+/* One segment of little-endian words, framed and opened. */
+static int open_words(struct capn *c, const std::vector<uint64_t> &words) {
+  std::vector<uint8_t> buf(8 + 8 * words.size(), 0);
+  buf[4] = (uint8_t) words.size();
+  for (size_t i = 0; i < words.size(); i++)
+    for (int b = 0; b < 8; b++)
+      buf[8 + 8 * i + b] = (uint8_t) (words[i] >> (8 * b));
+  return capn_init_mem(c, buf.data(), buf.size(), 0);
+}
+
+/* A TreeNode root, nodeType 7, whose leaf pointer is `leaf`. Word 4
+ * follows the inner pointer and holds `body`. */
+static int leaf_value(uint64_t leaf, uint64_t body, int *value) {
+  struct capn c;
+  TreeNode_ptr root;
+  int ok;
+  if (open_words(&c, {0x0002000100000000ull, 7, leaf, 0, body}) != 0)
+    return -1;
+  root.p = capn_getp(capn_root(&c), 0, 1);
+  *value = Leaf_get_value(TreeNode_get_leaf(root));
+  ok = capn_ok(&c);
+  capn_free(&c);
+  return ok;
+}
+
+TEST(FieldGetSet, StructGetterRejectsAMismatchedPointer) {
+  /* C++ 1.4.0 getLeaf() throws "Schema mismatch" on a list or a
+   * capability, and returns the default Leaf. */
+  int v = -1;
+  EXPECT_EQ(1, leaf_value(0x0000000100000004ull, 5, &v));
+  EXPECT_EQ(5, v);
+  EXPECT_EQ(0, leaf_value(0x0000004200000005ull, 5, &v));
+  EXPECT_EQ(0, v);
+  EXPECT_EQ(0, leaf_value(0x0000000e00000005ull, 0, &v));
+  EXPECT_EQ(0, v);
+  EXPECT_EQ(0, leaf_value(3, 0, &v));
+  EXPECT_EQ(0, v);
+}
+
+TEST(FieldGetSet, GetterRejectsAHolderThatIsNotAStruct) {
+  struct capn c;
+  TreeNode_ptr root;
+  ASSERT_EQ(0, open_words(&c, {0x0000004200000001ull, 0x0707070707070707ull}));
+  root.p = capn_getp(capn_root(&c), 0, 1);
+  EXPECT_EQ(0, TreeNode_get_nodeType(root));
+  EXPECT_EQ(0, capn_ok(&c));
+  capn_free(&c);
 }

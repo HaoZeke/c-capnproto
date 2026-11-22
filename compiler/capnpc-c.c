@@ -1194,6 +1194,10 @@ static void get_member(struct str *func, struct field *f, const char *ptr, const
 	case Type_anyPointer:
 	case Type__list:
 		str_addf(func, "%s = capn_getp(%s, %d, %d);\n", pvar, ptr, f->f.slot.offset, resolve);
+		/* A getter reads the field as C++ getFoo() does, which
+		 * throws on a pointer of the wrong kind. */
+		if (resolve && f->v.t.which == Type__struct)
+			str_addf(func, "%scapn_resolve_struct(&%s);\n", tab, pvar);
 		/* read_ leaves the pointer word unresolved. A zero word
 		 * is the null that a default replaces. A word that is
 		 * present stays unread until that field is fetched. */
@@ -1570,12 +1574,11 @@ static void define_getter_functions(struct node* node, struct field* field,
                  field->v.tname, node->name.str,
                  field_name(field), node->name.str);
         struct str getter_body = STR_INIT;
-        get_member(&getter_body, field, "p.p", "", field_name(field), 1);
+        get_member(&getter_body, field, "p.p", s->ftab.str, field_name(field), 1);
 		str_addf(&s->pub_get, "{\n");
-        str_addf(&s->pub_get, "%scapn_resolve(&p.p);\n", s->ftab.str);
+        str_addf(&s->pub_get, "%scapn_resolve_struct(&p.p);\n", s->ftab.str);
         str_addf(&s->pub_get, "%s%s %s;\n", s->ftab.str, field->v.tname, field_name(field));
-        str_addf(&s->pub_get, "%s%s", s->ftab.str,
-                 getter_body.str);
+        str_addf(&s->pub_get, "%s", getter_body.str);
         str_release(&getter_body);
         str_addf(&s->pub_get, "%sreturn %s;\n}\n", s->ftab.str,
                  field_name(field));
@@ -1630,7 +1633,7 @@ static void define_has_function(struct node* node, struct field* field,
 	         extattr, extattr_space,
 	         node->name.str, field_name(field), node->name.str);
 	str_addf(&s->pub_get, "{\n");
-	str_addf(&s->pub_get, "%scapn_resolve(&p.p);\n", s->ftab.str);
+	str_addf(&s->pub_get, "%scapn_resolve_struct(&p.p);\n", s->ftab.str);
 	str_addf(&s->pub_get, "%scapn_ptr %s;\n", s->ftab.str, field_name(field));
 	str_addf(&s->pub_get, "%s%s = capn_getp(p.p, %d, 1);\n",
 	         s->ftab.str, field_name(field), field->f.slot.offset);
@@ -1842,7 +1845,7 @@ static void define_struct(struct node *n, const char *extattr, const char *extat
 	str_addf(&SRC, "}\n");
 
 	str_addf(&SRC, "%s%svoid read_%s(struct %s *s capnp_unused, %s_ptr p) {\n", extattr, extattr_space, n->name.str, n->name.str, n->name.str);
-	str_addf(&SRC, "\tcapn_resolve(&p.p);\n\tcapnp_use(s);\n");
+	str_addf(&SRC, "\tcapn_resolve_struct(&p.p);\n\tcapnp_use(s);\n");
 	str_add(&SRC, s.get.str, s.get.len);
 	str_addf(&SRC, "}\n");
 
@@ -1853,6 +1856,7 @@ static void define_struct(struct node *n, const char *extattr, const char *extat
 
 	str_addf(&SRC, "%s%svoid get_%s(struct %s *s, %s_list l, int i) {\n", extattr, extattr_space, n->name.str, n->name.str, n->name.str);
 	str_addf(&SRC, "\t%s_ptr p;\n", n->name.str);
+	str_addf(&SRC, "\tcapn_resolve_struct_list(&l.p);\n");
 	str_addf(&SRC, "\tp.p = capn_getp(l.p, i, 0);\n");
 	str_addf(&SRC, "\tread_%s(s, p);\n", n->name.str);
 	str_addf(&SRC, "}\n");

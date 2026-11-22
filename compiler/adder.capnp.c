@@ -25,7 +25,7 @@ Adder_borrow_results_list new_Adder_borrow_results_list(struct capn_segment *s, 
 	return p;
 }
 void read_Adder_borrow_results(struct Adder_borrow_results *s capnp_unused, Adder_borrow_results_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->n = (int32_t) ((int32_t)capn_read32(p.p, 0));
 	s->cap.p = capn_getp(p.p, 0, 0);
@@ -39,6 +39,7 @@ void write_Adder_borrow_results(const struct Adder_borrow_results *s capnp_unuse
 }
 void get_Adder_borrow_results(struct Adder_borrow_results *s, Adder_borrow_results_list l, int i) {
 	Adder_borrow_results_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Adder_borrow_results(s, p);
 }
@@ -59,7 +60,7 @@ Adder_borrow_params_list new_Adder_borrow_params_list(struct capn_segment *s, in
 	return p;
 }
 void read_Adder_borrow_params(struct Adder_borrow_params *s capnp_unused, Adder_borrow_params_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->n = (int32_t) ((int32_t)capn_read32(p.p, 0));
 }
@@ -70,6 +71,7 @@ void write_Adder_borrow_params(const struct Adder_borrow_params *s capnp_unused,
 }
 void get_Adder_borrow_params(struct Adder_borrow_params *s, Adder_borrow_params_list l, int i) {
 	Adder_borrow_params_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Adder_borrow_params(s, p);
 }
@@ -90,7 +92,7 @@ Adder_seq_results_list new_Adder_seq_results_list(struct capn_segment *s, int le
 	return p;
 }
 void read_Adder_seq_results(struct Adder_seq_results *s capnp_unused, Adder_seq_results_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->prev = (int64_t) ((int64_t)(capn_read64(p.p, 0)));
 }
@@ -101,6 +103,7 @@ void write_Adder_seq_results(const struct Adder_seq_results *s capnp_unused, Add
 }
 void get_Adder_seq_results(struct Adder_seq_results *s, Adder_seq_results_list l, int i) {
 	Adder_seq_results_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Adder_seq_results(s, p);
 }
@@ -121,7 +124,7 @@ Adder_seq_params_list new_Adder_seq_params_list(struct capn_segment *s, int len)
 	return p;
 }
 void read_Adder_seq_params(struct Adder_seq_params *s capnp_unused, Adder_seq_params_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->n = (int64_t) ((int64_t)(capn_read64(p.p, 0)));
 }
@@ -132,6 +135,7 @@ void write_Adder_seq_params(const struct Adder_seq_params *s capnp_unused, Adder
 }
 void get_Adder_seq_params(struct Adder_seq_params *s, Adder_seq_params_list l, int i) {
 	Adder_seq_params_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Adder_seq_params(s, p);
 }
@@ -152,7 +156,7 @@ Adder_echo_results_list new_Adder_echo_results_list(struct capn_segment *s, int 
 	return p;
 }
 void read_Adder_echo_results(struct Adder_echo_results *s capnp_unused, Adder_echo_results_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->cap.p = capn_getp(p.p, 0, 0);
 if (s->cap.p.type == CAPN_FAR_POINTER && s->cap.p.data != NULL && *(const uint64_t*)s->cap.p.data == 0) s->cap.p.type = CAPN_NULL;
@@ -164,6 +168,7 @@ void write_Adder_echo_results(const struct Adder_echo_results *s capnp_unused, A
 }
 void get_Adder_echo_results(struct Adder_echo_results *s, Adder_echo_results_list l, int i) {
 	Adder_echo_results_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Adder_echo_results(s, p);
 }
@@ -184,7 +189,7 @@ Adder_echo_params_list new_Adder_echo_params_list(struct capn_segment *s, int le
 	return p;
 }
 void read_Adder_echo_params(struct Adder_echo_params *s capnp_unused, Adder_echo_params_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->cap.p = capn_getp(p.p, 0, 0);
 if (s->cap.p.type == CAPN_FAR_POINTER && s->cap.p.data != NULL && *(const uint64_t*)s->cap.p.data == 0) s->cap.p.type = CAPN_NULL;
@@ -196,6 +201,7 @@ void write_Adder_echo_params(const struct Adder_echo_params *s capnp_unused, Add
 }
 void get_Adder_echo_params(struct Adder_echo_params *s, Adder_echo_params_list l, int i) {
 	Adder_echo_params_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Adder_echo_params(s, p);
 }
@@ -216,7 +222,7 @@ Adder_watch_results_list new_Adder_watch_results_list(struct capn_segment *s, in
 	return p;
 }
 void read_Adder_watch_results(struct Adder_watch_results *s capnp_unused, Adder_watch_results_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 }
 void write_Adder_watch_results(const struct Adder_watch_results *s capnp_unused, Adder_watch_results_ptr p) {
@@ -225,6 +231,7 @@ void write_Adder_watch_results(const struct Adder_watch_results *s capnp_unused,
 }
 void get_Adder_watch_results(struct Adder_watch_results *s, Adder_watch_results_list l, int i) {
 	Adder_watch_results_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Adder_watch_results(s, p);
 }
@@ -245,7 +252,7 @@ Adder_watch_params_list new_Adder_watch_params_list(struct capn_segment *s, int 
 	return p;
 }
 void read_Adder_watch_params(struct Adder_watch_params *s capnp_unused, Adder_watch_params_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->cap.p = capn_getp(p.p, 0, 0);
 if (s->cap.p.type == CAPN_FAR_POINTER && s->cap.p.data != NULL && *(const uint64_t*)s->cap.p.data == 0) s->cap.p.type = CAPN_NULL;
@@ -257,6 +264,7 @@ void write_Adder_watch_params(const struct Adder_watch_params *s capnp_unused, A
 }
 void get_Adder_watch_params(struct Adder_watch_params *s, Adder_watch_params_list l, int i) {
 	Adder_watch_params_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Adder_watch_params(s, p);
 }
@@ -277,7 +285,7 @@ Adder_fulfill_results_list new_Adder_fulfill_results_list(struct capn_segment *s
 	return p;
 }
 void read_Adder_fulfill_results(struct Adder_fulfill_results *s capnp_unused, Adder_fulfill_results_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 }
 void write_Adder_fulfill_results(const struct Adder_fulfill_results *s capnp_unused, Adder_fulfill_results_ptr p) {
@@ -286,6 +294,7 @@ void write_Adder_fulfill_results(const struct Adder_fulfill_results *s capnp_unu
 }
 void get_Adder_fulfill_results(struct Adder_fulfill_results *s, Adder_fulfill_results_list l, int i) {
 	Adder_fulfill_results_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Adder_fulfill_results(s, p);
 }
@@ -306,7 +315,7 @@ Adder_fulfill_params_list new_Adder_fulfill_params_list(struct capn_segment *s, 
 	return p;
 }
 void read_Adder_fulfill_params(struct Adder_fulfill_params *s capnp_unused, Adder_fulfill_params_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 }
 void write_Adder_fulfill_params(const struct Adder_fulfill_params *s capnp_unused, Adder_fulfill_params_ptr p) {
@@ -315,6 +324,7 @@ void write_Adder_fulfill_params(const struct Adder_fulfill_params *s capnp_unuse
 }
 void get_Adder_fulfill_params(struct Adder_fulfill_params *s, Adder_fulfill_params_list l, int i) {
 	Adder_fulfill_params_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Adder_fulfill_params(s, p);
 }
@@ -335,7 +345,7 @@ Adder_defer_results_list new_Adder_defer_results_list(struct capn_segment *s, in
 	return p;
 }
 void read_Adder_defer_results(struct Adder_defer_results *s capnp_unused, Adder_defer_results_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->cap.p = capn_getp(p.p, 0, 0);
 if (s->cap.p.type == CAPN_FAR_POINTER && s->cap.p.data != NULL && *(const uint64_t*)s->cap.p.data == 0) s->cap.p.type = CAPN_NULL;
@@ -347,6 +357,7 @@ void write_Adder_defer_results(const struct Adder_defer_results *s capnp_unused,
 }
 void get_Adder_defer_results(struct Adder_defer_results *s, Adder_defer_results_list l, int i) {
 	Adder_defer_results_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Adder_defer_results(s, p);
 }
@@ -367,7 +378,7 @@ Adder_defer_params_list new_Adder_defer_params_list(struct capn_segment *s, int 
 	return p;
 }
 void read_Adder_defer_params(struct Adder_defer_params *s capnp_unused, Adder_defer_params_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 }
 void write_Adder_defer_params(const struct Adder_defer_params *s capnp_unused, Adder_defer_params_ptr p) {
@@ -376,6 +387,7 @@ void write_Adder_defer_params(const struct Adder_defer_params *s capnp_unused, A
 }
 void get_Adder_defer_params(struct Adder_defer_params *s, Adder_defer_params_list l, int i) {
 	Adder_defer_params_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Adder_defer_params(s, p);
 }
@@ -396,7 +408,7 @@ Adder_tag_results_list new_Adder_tag_results_list(struct capn_segment *s, int le
 	return p;
 }
 void read_Adder_tag_results(struct Adder_tag_results *s capnp_unused, Adder_tag_results_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->n = (int32_t) ((int32_t)capn_read32(p.p, 0));
 	s->label = capn_get_text(p.p, 0, capn_val0);
@@ -409,6 +421,7 @@ void write_Adder_tag_results(const struct Adder_tag_results *s capnp_unused, Add
 }
 void get_Adder_tag_results(struct Adder_tag_results *s, Adder_tag_results_list l, int i) {
 	Adder_tag_results_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Adder_tag_results(s, p);
 }
@@ -429,7 +442,7 @@ Adder_tag_params_list new_Adder_tag_params_list(struct capn_segment *s, int len)
 	return p;
 }
 void read_Adder_tag_params(struct Adder_tag_params *s capnp_unused, Adder_tag_params_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->n = (int32_t) ((int32_t)capn_read32(p.p, 0));
 	s->label = capn_get_text(p.p, 0, capn_val0);
@@ -442,6 +455,7 @@ void write_Adder_tag_params(const struct Adder_tag_params *s capnp_unused, Adder
 }
 void get_Adder_tag_params(struct Adder_tag_params *s, Adder_tag_params_list l, int i) {
 	Adder_tag_params_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Adder_tag_params(s, p);
 }
@@ -462,7 +476,7 @@ Adder_add_results_list new_Adder_add_results_list(struct capn_segment *s, int le
 	return p;
 }
 void read_Adder_add_results(struct Adder_add_results *s capnp_unused, Adder_add_results_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->sum = (int64_t) ((int64_t)(capn_read64(p.p, 0)));
 }
@@ -473,6 +487,7 @@ void write_Adder_add_results(const struct Adder_add_results *s capnp_unused, Add
 }
 void get_Adder_add_results(struct Adder_add_results *s, Adder_add_results_list l, int i) {
 	Adder_add_results_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Adder_add_results(s, p);
 }
@@ -493,7 +508,7 @@ Adder_add_params_list new_Adder_add_params_list(struct capn_segment *s, int len)
 	return p;
 }
 void read_Adder_add_params(struct Adder_add_params *s capnp_unused, Adder_add_params_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->a = (int64_t) ((int64_t)(capn_read64(p.p, 0)));
 	s->b = (int64_t) ((int64_t)(capn_read64(p.p, 8)));
@@ -506,6 +521,7 @@ void write_Adder_add_params(const struct Adder_add_params *s capnp_unused, Adder
 }
 void get_Adder_add_params(struct Adder_add_params *s, Adder_add_params_list l, int i) {
 	Adder_add_params_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Adder_add_params(s, p);
 }
@@ -526,7 +542,7 @@ CountBase_inc_results_list new_CountBase_inc_results_list(struct capn_segment *s
 	return p;
 }
 void read_CountBase_inc_results(struct CountBase_inc_results *s capnp_unused, CountBase_inc_results_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->n = (int32_t) ((int32_t)capn_read32(p.p, 0));
 }
@@ -537,6 +553,7 @@ void write_CountBase_inc_results(const struct CountBase_inc_results *s capnp_unu
 }
 void get_CountBase_inc_results(struct CountBase_inc_results *s, CountBase_inc_results_list l, int i) {
 	CountBase_inc_results_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_CountBase_inc_results(s, p);
 }
@@ -557,7 +574,7 @@ CountBase_inc_params_list new_CountBase_inc_params_list(struct capn_segment *s, 
 	return p;
 }
 void read_CountBase_inc_params(struct CountBase_inc_params *s capnp_unused, CountBase_inc_params_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->n = (int32_t) ((int32_t)capn_read32(p.p, 0));
 }
@@ -568,6 +585,7 @@ void write_CountBase_inc_params(const struct CountBase_inc_params *s capnp_unuse
 }
 void get_CountBase_inc_params(struct CountBase_inc_params *s, CountBase_inc_params_list l, int i) {
 	CountBase_inc_params_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_CountBase_inc_params(s, p);
 }
@@ -588,7 +606,7 @@ CountMid_twice_results_list new_CountMid_twice_results_list(struct capn_segment 
 	return p;
 }
 void read_CountMid_twice_results(struct CountMid_twice_results *s capnp_unused, CountMid_twice_results_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->n = (int32_t) ((int32_t)capn_read32(p.p, 0));
 }
@@ -599,6 +617,7 @@ void write_CountMid_twice_results(const struct CountMid_twice_results *s capnp_u
 }
 void get_CountMid_twice_results(struct CountMid_twice_results *s, CountMid_twice_results_list l, int i) {
 	CountMid_twice_results_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_CountMid_twice_results(s, p);
 }
@@ -619,7 +638,7 @@ CountMid_twice_params_list new_CountMid_twice_params_list(struct capn_segment *s
 	return p;
 }
 void read_CountMid_twice_params(struct CountMid_twice_params *s capnp_unused, CountMid_twice_params_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->n = (int32_t) ((int32_t)capn_read32(p.p, 0));
 }
@@ -630,6 +649,7 @@ void write_CountMid_twice_params(const struct CountMid_twice_params *s capnp_unu
 }
 void get_CountMid_twice_params(struct CountMid_twice_params *s, CountMid_twice_params_list l, int i) {
 	CountMid_twice_params_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_CountMid_twice_params(s, p);
 }
@@ -650,7 +670,7 @@ CountLeaf_dec_results_list new_CountLeaf_dec_results_list(struct capn_segment *s
 	return p;
 }
 void read_CountLeaf_dec_results(struct CountLeaf_dec_results *s capnp_unused, CountLeaf_dec_results_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->n = (int32_t) ((int32_t)capn_read32(p.p, 0));
 }
@@ -661,6 +681,7 @@ void write_CountLeaf_dec_results(const struct CountLeaf_dec_results *s capnp_unu
 }
 void get_CountLeaf_dec_results(struct CountLeaf_dec_results *s, CountLeaf_dec_results_list l, int i) {
 	CountLeaf_dec_results_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_CountLeaf_dec_results(s, p);
 }
@@ -681,7 +702,7 @@ CountLeaf_dec_params_list new_CountLeaf_dec_params_list(struct capn_segment *s, 
 	return p;
 }
 void read_CountLeaf_dec_params(struct CountLeaf_dec_params *s capnp_unused, CountLeaf_dec_params_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->n = (int32_t) ((int32_t)capn_read32(p.p, 0));
 }
@@ -692,6 +713,7 @@ void write_CountLeaf_dec_params(const struct CountLeaf_dec_params *s capnp_unuse
 }
 void get_CountLeaf_dec_params(struct CountLeaf_dec_params *s, CountLeaf_dec_params_list l, int i) {
 	CountLeaf_dec_params_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_CountLeaf_dec_params(s, p);
 }

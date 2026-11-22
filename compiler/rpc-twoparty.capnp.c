@@ -21,7 +21,7 @@ VatId_list new_VatId_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_VatId(struct VatId *s capnp_unused, VatId_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->side = (enum Side)(int) capn_read16(p.p, 0);
 }
@@ -32,6 +32,7 @@ void write_VatId(const struct VatId *s capnp_unused, VatId_ptr p) {
 }
 void get_VatId(struct VatId *s, VatId_list l, int i) {
 	VatId_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_VatId(s, p);
 }
@@ -52,7 +53,7 @@ ProvisionId_list new_ProvisionId_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_ProvisionId(struct ProvisionId *s capnp_unused, ProvisionId_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->joinId = capn_read32(p.p, 0);
 }
@@ -63,6 +64,7 @@ void write_ProvisionId(const struct ProvisionId *s capnp_unused, ProvisionId_ptr
 }
 void get_ProvisionId(struct ProvisionId *s, ProvisionId_list l, int i) {
 	ProvisionId_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_ProvisionId(s, p);
 }
@@ -83,7 +85,7 @@ RecipientId_list new_RecipientId_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_RecipientId(struct RecipientId *s capnp_unused, RecipientId_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 }
 void write_RecipientId(const struct RecipientId *s capnp_unused, RecipientId_ptr p) {
@@ -92,6 +94,7 @@ void write_RecipientId(const struct RecipientId *s capnp_unused, RecipientId_ptr
 }
 void get_RecipientId(struct RecipientId *s, RecipientId_list l, int i) {
 	RecipientId_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_RecipientId(s, p);
 }
@@ -112,7 +115,7 @@ ThirdPartyCapId_list new_ThirdPartyCapId_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_ThirdPartyCapId(struct ThirdPartyCapId *s capnp_unused, ThirdPartyCapId_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 }
 void write_ThirdPartyCapId(const struct ThirdPartyCapId *s capnp_unused, ThirdPartyCapId_ptr p) {
@@ -121,6 +124,7 @@ void write_ThirdPartyCapId(const struct ThirdPartyCapId *s capnp_unused, ThirdPa
 }
 void get_ThirdPartyCapId(struct ThirdPartyCapId *s, ThirdPartyCapId_list l, int i) {
 	ThirdPartyCapId_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_ThirdPartyCapId(s, p);
 }
@@ -141,7 +145,7 @@ JoinKeyPart_list new_JoinKeyPart_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_JoinKeyPart(struct JoinKeyPart *s capnp_unused, JoinKeyPart_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->joinId = capn_read32(p.p, 0);
 	s->partCount = capn_read16(p.p, 4);
@@ -156,6 +160,7 @@ void write_JoinKeyPart(const struct JoinKeyPart *s capnp_unused, JoinKeyPart_ptr
 }
 void get_JoinKeyPart(struct JoinKeyPart *s, JoinKeyPart_list l, int i) {
 	JoinKeyPart_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_JoinKeyPart(s, p);
 }
@@ -176,7 +181,7 @@ JoinResult_list new_JoinResult_list(struct capn_segment *s, int len) {
 	return p;
 }
 void read_JoinResult(struct JoinResult *s capnp_unused, JoinResult_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->joinId = capn_read32(p.p, 0);
 	s->succeeded = (capn_read8(p.p, 4) & 1) != 0;
@@ -192,6 +197,7 @@ void write_JoinResult(const struct JoinResult *s capnp_unused, JoinResult_ptr p)
 }
 void get_JoinResult(struct JoinResult *s, JoinResult_list l, int i) {
 	JoinResult_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_JoinResult(s, p);
 }

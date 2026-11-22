@@ -23,7 +23,7 @@ EXTRAHEADER_EXTATTR Widget_list new_Widget_list(struct capn_segment *s, int len)
 	return p;
 }
 EXTRAHEADER_EXTATTR void read_Widget(struct Widget *s capnp_unused, Widget_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->id = capn_read32(p.p, 0);
 	s->name = capn_get_text(p.p, 0, capn_val0);
@@ -36,6 +36,7 @@ EXTRAHEADER_EXTATTR void write_Widget(const struct Widget *s capnp_unused, Widge
 }
 EXTRAHEADER_EXTATTR void get_Widget(struct Widget *s, Widget_list l, int i) {
 	Widget_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Widget(s, p);
 }
@@ -47,7 +48,7 @@ EXTRAHEADER_EXTATTR void set_Widget(const struct Widget *s, Widget_list l, int i
 
 EXTRAHEADER_EXTATTR uint32_t Widget_get_id(Widget_ptr p)
 {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	uint32_t id;
 	id = capn_read32(p.p, 0);
 	return id;
@@ -55,7 +56,7 @@ EXTRAHEADER_EXTATTR uint32_t Widget_get_id(Widget_ptr p)
 
 EXTRAHEADER_EXTATTR capn_text Widget_get_name(Widget_ptr p)
 {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capn_text name;
 	name = capn_get_text(p.p, 0, capn_val0);
 	return name;
@@ -63,7 +64,7 @@ EXTRAHEADER_EXTATTR capn_text Widget_get_name(Widget_ptr p)
 
 EXTRAHEADER_EXTATTR int Widget_has_name(Widget_ptr p)
 {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capn_ptr name;
 	name = capn_getp(p.p, 0, 1);
 	return name.type != CAPN_NULL;
