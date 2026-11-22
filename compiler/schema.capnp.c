@@ -10,7 +10,7 @@
 
 static const char capn_val0_str[1] = {0};
 static const capn_text capn_val0 = {0,capn_val0_str,0};
-static const capn_ptr capn_null = {CAPN_NULL};
+static const capn_ptr capn_null = {CAPN_NULL,0,0,0,0,0,0,0,0,0,0,0};
 static const capn_text capn_text_null = {0,0,0};
 const uint16_t Field_noDiscriminant = FIELD_NO_DISCRIMINANT;
 

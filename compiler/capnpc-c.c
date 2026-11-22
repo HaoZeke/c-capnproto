@@ -852,7 +852,7 @@ static void decode_value(struct value* v, Type_ptr type, Value_ptr value, const 
 				str_addf(&SRC, "{");
 
 			if (use_buf) {
-				str_addf(&SRC, "%d,%d,%d,%d,%d,%d,%d,(char*)&capn_buf[%d],(struct capn_segment*)&capn_seg,0,0",
+				str_addf(&SRC, "%d,%d,%d,%d,%d,%d,%d,(char*)&capn_buf[%d],(struct capn_segment*)&capn_seg,0,0,0",
 						p.type,
 						p.has_ptr_tag,
 						p.is_list_member,
@@ -862,7 +862,7 @@ static void decode_value(struct value* v, Type_ptr type, Value_ptr value, const 
 						p.len,
 						off);
 			} else {
-				str_addf(&SRC, "CAPN_NULL");
+				str_addf(&SRC, "CAPN_NULL,0,0,0,0,0,0,0,0,0,0,0");
 			}
 
 			if (strcmp(v->tname, "capn_ptr"))
@@ -2984,7 +2984,7 @@ int main() {
 			fprintf(srcf, "static const char capn_val0_str[1] = {0};\n"
 					"static const capn_text capn_val0%s = {0,capn_val0_str,0};\n", unused);
 		if (g_nullused)
-			fprintf(srcf, "static const capn_ptr capn_null%s = {CAPN_NULL};\n", unused);
+			fprintf(srcf, "static const capn_ptr capn_null%s = {CAPN_NULL,0,0,0,0,0,0,0,0,0,0,0};\n", unused);
 		if (g_textnullused)
 			fprintf(srcf, "static const capn_text capn_text_null%s = {0,0,0};\n", unused);
 

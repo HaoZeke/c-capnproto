@@ -862,6 +862,30 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
     )
     test('nested-const', nested_const_test)
 
+    ptr_const_gen = custom_target(
+      'ptr-const-capnp',
+      input: 'tests' / 'ptr-const.capnp',
+      output: ['ptr-const.capnp.c', 'ptr-const.capnp.h'],
+      command: [
+        capnp, 'compile',
+        '-o', capnpc_codegen.full_path() + ':' + '@OUTDIR@',
+        '-I', meson.current_source_dir() / 'compiler',
+        '--src-prefix', meson.current_source_dir() / 'tests',
+        '@INPUT@',
+      ],
+      depends: [capnpc_codegen],
+    )
+    ptr_const_test = executable(
+      'ptr-const-test',
+      'tests' / 'ptr-const-test.c',
+      ptr_const_gen,
+      c_args: cc.get_supported_arguments(
+        ['-Wextra', '-Werror=missing-field-initializers']),
+      include_directories: include_directories(['lib', 'compiler']),
+      dependencies: [libcapnp_dep],
+    )
+    test('ptr-const', ptr_const_test)
+
     codec_roundtrip_gen = custom_target(
       'codec-roundtrip-capnp',
       input: 'tests' / 'codec-roundtrip.capnp',

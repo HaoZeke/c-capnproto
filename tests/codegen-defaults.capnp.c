@@ -10,7 +10,7 @@
 
 static const char capn_val0_str[1] = {0};
 static const capn_text capn_val0 = {0,capn_val0_str,0};
-static const capn_ptr capn_null = {CAPN_NULL};
+static const capn_ptr capn_null = {CAPN_NULL,0,0,0,0,0,0,0,0,0,0,0};
 static const capn_text capn_text_null = {0,0,0};
 static const uint8_t capn_buf[8] = {
 	104,105,0,0,0,0,0,0
@@ -23,8 +23,8 @@ const uint64_t big = BIG;
 const enum Color hue = (enum Color) HUE;
 const union capn_conv_f32 ratio = {0x3fc00000u};
 const int32_t answerCamel = ANSWER_CAMEL;
-static capn_data capn_val1 = {{CAPN_NULL}};
-static capn_ptr_list capn_val2 = {{CAPN_NULL}};
+static capn_data capn_val1 = {{CAPN_NULL,0,0,0,0,0,0,0,0,0,0,0}};
+static capn_ptr_list capn_val2 = {{CAPN_NULL,0,0,0,0,0,0,0,0,0,0,0}};
 
 Rec_ptr new_Rec(struct capn_segment *s) {
 	Rec_ptr p;

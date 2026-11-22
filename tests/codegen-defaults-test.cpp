@@ -280,9 +280,10 @@ TEST(CodegenDefaults, ConstantInitializersNameEveryField) {
     bool is_text = line.find("capn_text ") != std::string::npos;
     if (!is_text && line.find("&capn_seg") != std::string::npos) {
       checked++;
-      EXPECT_NE(std::string::npos, line.find("&capn_seg,0,0}"))
-          << "capn_ptr constants must initialise nesting and nesting_valid, "
-             "or -Wextra warns in every including translation unit: " << line;
+      EXPECT_NE(std::string::npos, line.find("&capn_seg,0,0,0}"))
+          << "capn_ptr constants must initialise nesting, nesting_valid "
+             "and cap_idx, or -Wextra warns in every including translation "
+             "unit: " << line;
     }
   }
   EXPECT_GT(checked, 0u);

@@ -8,7 +8,7 @@
 # define capnp_use(x)
 #endif
 
-static const capn_ptr capn_null = {CAPN_NULL};
+static const capn_ptr capn_null = {CAPN_NULL,0,0,0,0,0,0,0,0,0,0,0};
 
 VatId_ptr new_VatId(struct capn_segment *s) {
 	VatId_ptr p;

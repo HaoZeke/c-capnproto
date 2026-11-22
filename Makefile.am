@@ -182,7 +182,9 @@ EXTRA_DIST += \
 	tests/brand-clash.sh \
 	tests/brand-hold.capnp \
 	tests/brand-separate.capnp \
-	tests/interop-wrapper-check.sh
+	tests/interop-wrapper-check.sh \
+	tests/ptr-const.capnp \
+	tests/ptr-const-test.c
 
 EXTRA_DIST += \
 	compiler/c.capnp \
