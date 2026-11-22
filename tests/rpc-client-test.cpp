@@ -3047,6 +3047,56 @@ TEST_F(RpcClient, TakeFromOtherQuestionIsOnce)
 	EXPECT_TRUE(wire_has_abort_reason(wire.to_client, kTakeFromReuse));
 }
 
+
+/* An Unimplemented that echoes `orig`, as a level 0 peer replies. */
+std::vector<uint8_t> unimplemented_of(const std::vector<uint8_t> &orig)
+{
+	struct capn in;
+	struct capn msg;
+	std::vector<uint8_t> out;
+	if (capn_init_mem(&in, orig.data(), orig.size(), 0) != 0)
+		return out;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_unimplemented;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(mp.p, 0, capn_getp(capn_root(&in), 0, 1));
+	capn_setp(capn_root(&msg), 0, mp.p);
+	out = finish_message(&msg);
+	capn_free(&in);
+	return out;
+}
+
+int g_lent_obj;
+
+TEST_F(RpcClient, UnimplementedResolveDropsTheResolvedExport)
+{
+	int promise = capn_rpc_export_promise(&client, &promise_obj, counter_dispatch);
+	ASSERT_GE(promise, 0);
+	ASSERT_EQ(0, capn_rpc_resolve(&client, promise, &g_lent_obj, counter_dispatch));
+	ASSERT_EQ(1, count_which(wire.to_vat, Message_resolve));
+	EXPECT_EQ(1, export_refcount(&client, &g_lent_obj));
+	std::vector<uint8_t> back = unimplemented_of(wire.to_vat.back());
+	ASSERT_FALSE(back.empty());
+	EXPECT_EQ(0, capn_rpc_handle(&client, back.data(), back.size()));
+	EXPECT_EQ(0, export_refcount(&client, &g_lent_obj));
+}
+
+TEST_F(RpcClient, UnimplementedResolveToItselfKeepsThePromise)
+{
+	int promise = capn_rpc_export_promise(&client, &promise_obj, counter_dispatch);
+	ASSERT_GE(promise, 0);
+	ASSERT_EQ(0, capn_rpc_resolve(&client, promise, &promise_obj, counter_dispatch));
+	int before = export_refcount(&client, &promise_obj);
+	ASSERT_GT(before, 0);
+	std::vector<uint8_t> back = unimplemented_of(wire.to_vat.back());
+	EXPECT_EQ(0, capn_rpc_handle(&client, back.data(), back.size()));
+	EXPECT_EQ(before, export_refcount(&client, &promise_obj));
+}
+
 } // namespace
 
 TEST(RpcFd, TwoVatsTalkOverASocketPair)

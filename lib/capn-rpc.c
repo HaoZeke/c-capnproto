@@ -5330,6 +5330,32 @@ static void handle_unimplemented(struct capn_rpc_conn *c, Message_ptr orig)
 	if (orig.p.type == CAPN_NULL)
 		return;
 	read_Message(&m, orig);
+	if (m.which == Message_resolve) {
+		/* rpc.c++ handleUnimplemented: the peer never took the
+		 * reference the Resolve gave it. */
+		struct Resolve res;
+		struct CapDescriptor cd;
+
+		read_Resolve(&res, m.resolve);
+		if (res.which != Resolve_cap || res.cap.p.type == CAPN_NULL)
+			return;
+		read_CapDescriptor(&cd, res.cap);
+		/* capn_rpc_resolve names the promise itself without a
+		 * new reference when it resolves to the same server. */
+		if (cd.which == CapDescriptor_senderHosted &&
+		    cd.senderHosted != res.promiseId)
+			release_export_ref(c, cd.senderHosted);
+		else if (cd.which == CapDescriptor_senderPromise)
+			release_export_ref(c, cd.senderPromise);
+		else if (cd.which == CapDescriptor_thirdPartyHosted &&
+		         cd.thirdPartyHosted.p.type != CAPN_NULL) {
+			struct ThirdPartyCapDescriptor tp;
+
+			read_ThirdPartyCapDescriptor(&tp, cd.thirdPartyHosted);
+			release_export_ref(c, tp.vineId);
+		}
+		return;
+	}
 	if (m.which == Message_call) {
 		struct Call call;
 		read_Call(&call, m.call);
