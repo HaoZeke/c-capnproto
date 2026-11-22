@@ -625,6 +625,17 @@ static int field_has(const struct capn_dyn_struct *s, capn_ptr st,
 	return 1;
 }
 
+/* `capnp decode` prints the active union member even when its pointer
+ * is unset, unless it is the union's first member. */
+static int text_shown(const struct capn_dyn_struct *s, capn_ptr st,
+                      const struct capn_dyn_field *f, const struct capn_dyn_type *rt)
+{
+	if (field_has(s, st, f, rt))
+		return 1;
+	return f->discriminant != CAPN_DYN_NO_DISCRIMINANT && f->discriminant != 0 &&
+	       capn_dyn_is_active(s, st, f);
+}
+
 static void text_struct(struct sb *b, const struct capn_dyn_struct *s, capn_ptr st,
                         const struct frame *fr)
 {
@@ -637,7 +648,7 @@ static void text_struct(struct sb *b, const struct capn_dyn_struct *s, capn_ptr 
 		const struct capn_dyn_field *f = &s->fields[i];
 		const struct frame *ffr = fr;
 		const struct capn_dyn_type *rt = resolve(&f->type, &ffr);
-		if (!field_has(s, st, f, rt))
+		if (!text_shown(s, st, f, rt))
 			continue;
 		if (!first)
 			sb_str(b, ", ");
@@ -835,7 +846,7 @@ static struct piece pretty_struct(const struct capn_dyn_struct *s, capn_ptr st,
 		struct piece val;
 		struct sb item;
 
-		if (!field_has(s, st, f, rt))
+		if (!text_shown(s, st, f, rt))
 			continue;
 		get_field_value(st, f, rt, &v);
 		if (f->is_group)
@@ -1140,9 +1151,11 @@ static const struct capn_dyn_field *active_union_field(const struct capn_dyn_str
 	return NULL;
 }
 
+/* `active` writes the field even when its pointer is unset, as the JSON
+ * handler of `capnp convert` does for the active union member. */
 static int json_emit_field(struct jctx *j, const struct capn_dyn_struct *s, capn_ptr st,
                            const struct capn_dyn_field *f, const struct frame *fr,
-                           const char *prefix, const char *key, int first)
+                           const char *prefix, const char *key, int first, int active)
 {
 	struct dv v;
 	const struct frame *ffr = fr;
@@ -1153,7 +1166,7 @@ static int json_emit_field(struct jctx *j, const struct capn_dyn_struct *s, capn
 		return first;
 	if (rt->kind == CAPN_DYN_STRUCT && !f->is_group && rt->st == NULL)
 		return first;
-	if (!field_has(s, st, f, rt))
+	if (!active && !field_has(s, st, f, rt))
 		return first;
 	get_field_value(st, f, rt, &v);
 	if (f->json_flatten && rt->kind == CAPN_DYN_STRUCT && rt->st != NULL) {
@@ -1194,7 +1207,7 @@ static int json_fields(struct jctx *j, const struct capn_dyn_struct *s, capn_ptr
 	capn_resolve(&st);
 	for (i = 0; i < s->nfields; i++) {
 		if (s->fields[i].discriminant == CAPN_DYN_NO_DISCRIMINANT)
-			first = json_emit_field(j, s, st, &s->fields[i], fr, prefix, NULL, first);
+			first = json_emit_field(j, s, st, &s->fields[i], fr, prefix, NULL, first, 0);
 	}
 	u = active_union_field(s, st);
 	if (u == NULL)
@@ -1215,8 +1228,8 @@ static int json_fields(struct jctx *j, const struct capn_dyn_struct *s, capn_ptr
 	if (s->json_has_disc && u->type.kind == CAPN_DYN_VOID)
 		return first;
 	if (s->json_has_disc && s->json_disc_value != NULL)
-		return json_emit_field(j, s, st, u, fr, prefix, s->json_disc_value, first);
-	return json_emit_field(j, s, st, u, fr, prefix, NULL, first);
+		return json_emit_field(j, s, st, u, fr, prefix, s->json_disc_value, first, 1);
+	return json_emit_field(j, s, st, u, fr, prefix, NULL, first, 1);
 }
 
 static void json_struct(struct jctx *j, const struct capn_dyn_struct *s, capn_ptr st,

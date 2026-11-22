@@ -124,6 +124,14 @@ class Reflect : public ::testing::Test {
     EXPECT_EQ(want_text(c, bin), text) << what;
     free(text);
 
+    char *pretty = capn_dyn_to_text_pretty(c.desc, root);
+    ASSERT_NE(nullptr, pretty);
+    CmdResult want_pretty = run_argv(cli("decode", nullptr, c.type, false),
+                                     bin.data(), bin.size());
+    EXPECT_EQ(0, want_pretty.status) << want_pretty.err;
+    EXPECT_EQ(strip(want_pretty.out), pretty) << what;
+    free(pretty);
+
     char *json = capn_dyn_to_json(c.desc, root, CAPN_DYN_COMPACT);
     ASSERT_NE(nullptr, json);
     EXPECT_EQ(want_json(c, bin), json) << what;
@@ -246,6 +254,36 @@ TEST_F(Reflect, UnknownEnumsPrintLikeTheTool) {
   write_Ordered(&o, root);
   ASSERT_EQ(0, capn_set_root(&c, root.p));
   check_built({"Ordered", &Ordered_dyn, ""}, &c, "kind 12");
+  capn_free(&c);
+}
+
+TEST_F(Reflect, UnsetUnionPointersPrintLikeTheTool) {
+  static const enum Ordered_which kWhich[] = {Ordered_txt, Ordered_lst, Ordered_sub};
+  for (enum Ordered_which w : kWhich) {
+    struct capn c;
+    capn_init_malloc(&c);
+    Ordered_ptr root = new_Ordered(capn_root(&c).seg);
+    struct Ordered o;
+    memset(&o, 0, sizeof o);
+    o.which = w;
+    o.early = 1;
+    write_Ordered(&o, root);
+    ASSERT_EQ(0, capn_set_root(&c, root.p));
+    EXPECT_EQ(CAPN_NULL, capn_getp(root.p, 0, 1).type);
+    check_built({"Ordered", &Ordered_dyn, ""}, &c, "Ordered");
+    capn_free(&c);
+  }
+  struct capn c;
+  capn_init_malloc(&c);
+  FirstIsPointer_ptr root = new_FirstIsPointer(capn_root(&c).seg);
+  struct FirstIsPointer f;
+  memset(&f, 0, sizeof f);
+  f.which = FirstIsPointer_t;
+  f.after = 3;
+  write_FirstIsPointer(&f, root);
+  ASSERT_EQ(0, capn_set_root(&c, root.p));
+  EXPECT_EQ(CAPN_NULL, capn_getp(root.p, 0, 1).type);
+  check_built({"FirstIsPointer", &FirstIsPointer_dyn, ""}, &c, "FirstIsPointer");
   capn_free(&c);
 }
 
