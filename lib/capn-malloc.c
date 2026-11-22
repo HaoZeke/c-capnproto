@@ -643,7 +643,7 @@ int64_t capn_write_flat(struct capn *c, uint8_t *p, size_t sz)
 	struct capn_segment *seg;
 	int64_t n;
 
-	if (!c || !p)
+	if (!c || !p || no_segments(c))
 		return -1;
 	if (copy_for_flat(c, &dst) != 0)
 		return -1;
@@ -676,7 +676,7 @@ int64_t capn_write_flat_packed(struct capn *c, uint8_t *p, size_t sz)
 	struct capn_stream z;
 	int ret;
 
-	if (!c || !p)
+	if (!c || !p || no_segments(c))
 		return -1;
 	{
 		struct capn dst;

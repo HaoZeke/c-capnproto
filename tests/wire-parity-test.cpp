@@ -1002,11 +1002,18 @@ TEST(WireParity, FlatBytesMatchTheCapnpTool) {
 	ASSERT_GT(pn, 0);
 
 	/* A null root re-encodes as a canonical empty struct. */
+	static const uint8_t null_root[16] = {0,0,0,0, 1,0,0,0};
 	struct capn empty;
-	capn_init_malloc(&empty);
 	uint8_t zeros[8];
+	ASSERT_EQ(0, load_frame(&empty, null_root, sizeof null_root));
 	EXPECT_EQ(8, capn_write_flat(&empty, zeros, sizeof zeros));
 	EXPECT_EQ(0, memcmp(zeros, "\xfc\xff\xff\xff\x00\x00\x00\x00", 8));
+	capn_free(&empty);
+	/* With no root word C++ throws "Message did not contain a root
+	 * pointer." */
+	capn_init_malloc(&empty);
+	EXPECT_EQ(-1, capn_write_flat(&empty, zeros, sizeof zeros));
+	EXPECT_EQ(-1, capn_write_flat_packed(&empty, zeros, sizeof zeros));
 	capn_free(&empty);
 
 	if (capnp_present()) {
