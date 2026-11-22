@@ -1408,4 +1408,46 @@ TEST_F(RpcJoin, PendingExceptionIsSharedWithThePipeline)
 	capn_rpc_free(&vat);
 }
 
+static void send_results_to(struct capn_rpc_conn *c, uint32_t qid, uint32_t export_id,
+                            int which)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+	struct MessageTarget t;
+	memset(&t, 0, sizeof t);
+	t.which = MessageTarget_importedCap;
+	t.importedCap = export_id;
+	MessageTarget_ptr tp = new_MessageTarget(cs);
+	write_MessageTarget(&t, tp);
+	struct Call call;
+	memset(&call, 0, sizeof call);
+	call.questionId = qid;
+	call.target = tp;
+	call.sendResultsTo_which = (enum Call_sendResultsTo_which) which;
+	Call_ptr cp = new_Call(cs);
+	write_Call(&call, cp);
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_call;
+	m.call = cp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	uint8_t buf[4096];
+	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
+	capn_free(&msg);
+	ASSERT_GT(sz, 0);
+	capn_rpc_handle(c, buf, static_cast<size_t>(sz));
+}
+
+TEST_F(RpcJoin, ThirdPartyResultsAbort)
+{
+	out.frames.clear();
+	send_results_to(&conn, 20, live, Call_sendResultsTo_thirdParty);
+	EXPECT_TRUE(capn_rpc_is_aborted(&conn));
+	ASSERT_FALSE(out.frames.empty());
+	EXPECT_EQ(1, return_which(out.frames.back(), NULL, NULL));
+}
+
 } // namespace

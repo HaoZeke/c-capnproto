@@ -160,7 +160,10 @@ EXTRA_DIST += \
 	tests/posix-socket-test.c \
 	tests/spell-finish-test.c \
 	tests/read-defaults.capnp \
-	tests/read-defaults-test.cpp
+	tests/read-defaults-test.cpp \
+	interop/tail.capnp \
+	interop/tail_client.c \
+	interop/tail_server.c++
 
 EXTRA_DIST += \
 	compiler/c.capnp \

@@ -633,6 +633,43 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
         depends: [rpc_promise_server, rpc_peer_server],
         timeout: 60,
       )
+
+      tail_cpp = custom_target(
+        'tail-capnp-cpp',
+        input: 'interop' / 'tail.capnp',
+        output: ['tail.capnp.c++', 'tail.capnp.h'],
+        command: [
+          capnp, 'compile',
+          '--src-prefix=' + meson.current_source_dir() / 'interop',
+          '-o' + capnpc_cpp.full_path() + ':@OUTDIR@',
+          '@INPUT@',
+        ],
+      )
+      tail_server = executable(
+        'tail_server',
+        ['interop' / 'tail_server.c++', tail_cpp],
+        dependencies: capnp_rpc_dep,
+        override_options: ['cpp_std=c++17'],
+      )
+      tail_client = executable(
+        'tail_client',
+        'interop' / 'tail_client.c',
+        include_directories: include_directories(['lib', 'compiler']),
+        dependencies: [libcapnp_dep],
+        c_args: ['-D_POSIX_C_SOURCE=200809L'],
+        implicit_include_directories: false,
+      )
+      test(
+        'rpc_tail_cpp',
+        bash,
+        args: [
+          meson.current_source_dir() / 'interop' / 'run_rpc_interop.sh',
+          tail_server.full_path(),
+          tail_client.full_path(),
+        ],
+        depends: [tail_server, tail_client],
+        timeout: 60,
+      )
     else
       message('interop/rpc: skipped (needs a C++ toolchain, capnp-rpc, and the capnp tools).')
     endif

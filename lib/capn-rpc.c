@@ -1203,6 +1203,11 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp,
 	int eid = -1, rc;
 
 	read_Call(&call, cp);
+	if (call.sendResultsTo_which != Call_sendResultsTo_caller &&
+	    call.sendResultsTo_which != Call_sendResultsTo_yourself) {
+		capn_rpc_send_abort(c, "Unsupported `Call.sendResultsTo`.");
+		return -1;
+	}
 	if (question_id_in_use(c, call.questionId))
 		return abort_live_question(c, NULL);
 	memset(&params, 0, sizeof params);
