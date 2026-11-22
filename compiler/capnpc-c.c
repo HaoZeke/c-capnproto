@@ -570,6 +570,20 @@ static void append_type_token(struct str *o, Type_ptr tp, int depth) {
 	}
 }
 
+static int c_name_taken(struct capn_tree *t, const char *name) {
+	while (t != NULL) {
+		struct node *n = (struct node *) t;
+		if (n->name.str != NULL && strcmp(n->name.str, name) == 0 &&
+		    (n->n.which == Node__struct || n->n.which == Node__enum ||
+		     n->n.which == Node__interface))
+			return 1;
+		if (c_name_taken(t->link[0], name))
+			return 1;
+		t = t->link[1];
+	}
+	return 0;
+}
+
 const char *node_brand_name(struct node *n, Brand_ptr brand) {
 	static struct str buf = STR_INIT;
 	int base;
@@ -580,6 +594,10 @@ const char *node_brand_name(struct node *n, Brand_ptr brand) {
 	base = buf.len;
 	if (!append_brand_binds(&buf, brand) || buf.len == base)
 		return n->name.str;
+	/* A schema struct, such as one under $C.namespace("Box_"), can
+	 * already own the readable name of Box(Text). */
+	if (c_name_taken(g_node_tree, buf.str))
+		str_addf(&buf, "_b%" PRIx64, n->n.id);
 	return buf.str;
 }
 

@@ -177,7 +177,11 @@ EXTRA_DIST += \
 	tests/brand-import.sh \
 	tests/brand-multifile.capnp \
 	tests/brand-reuse.capnp \
-	tests/e.capnp
+	tests/e.capnp \
+	tests/brand-clash.capnp \
+	tests/brand-clash.sh \
+	tests/brand-hold.capnp \
+	tests/brand-separate.capnp
 
 EXTRA_DIST += \
 	compiler/c.capnp \

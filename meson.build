@@ -459,6 +459,18 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
       ],
     )
 
+    test(
+      'brand-clash',
+      find_program('bash'),
+      args: [
+        meson.project_source_root() / 'tests' / 'brand-clash.sh',
+        capnp.full_path(),
+        capnpc_c.full_path(),
+        meson.project_source_root(),
+        libcapnp_c.full_path(),
+      ],
+    )
+
     codec_c_args = common_c_args + ['-D_POSIX_C_SOURCE=200809L']
 
     read_defaults_gen = custom_target(
