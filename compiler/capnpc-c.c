@@ -1133,6 +1133,37 @@ static void set_member(struct str *func, struct field *f, const char *ptr, const
 	}
 }
 
+/* The CAPN_ELEM name for a List(T) element, or NULL for a struct. */
+static const char *list_elem_size(Type_ptr elem) {
+	struct Type t;
+	read_Type(&t, elem);
+	switch (t.which) {
+	case Type__void:
+		return "CAPN_ELEM_VOID";
+	case Type__bool:
+		return "CAPN_ELEM_BIT";
+	case Type_int8:
+	case Type_uint8:
+		return "CAPN_ELEM_BYTE";
+	case Type_int16:
+	case Type_uint16:
+	case Type__enum:
+		return "CAPN_ELEM_2_BYTES";
+	case Type_int32:
+	case Type_uint32:
+	case Type_float32:
+		return "CAPN_ELEM_4_BYTES";
+	case Type_int64:
+	case Type_uint64:
+	case Type_float64:
+		return "CAPN_ELEM_8_BYTES";
+	case Type__struct:
+		return NULL;
+	default:
+		return "CAPN_ELEM_POINTER";
+	}
+}
+
 static void get_member(struct str *func, struct field *f, const char *ptr, const char *tab, const char *var, int resolve) {
 	const char *xor = xor_member(f);
 	const char *pvar = ptr_member(f, var);
@@ -1198,6 +1229,13 @@ static void get_member(struct str *func, struct field *f, const char *ptr, const
 		 * throws on a pointer of the wrong kind. */
 		if (resolve && f->v.t.which == Type__struct)
 			str_addf(func, "%scapn_resolve_struct(&%s);\n", tab, pvar);
+		if (resolve && f->v.t.which == Type__list) {
+			const char *elem = list_elem_size(f->v.t._list.elementType);
+			if (elem)
+				str_addf(func, "%scapn_resolve_list(&%s, %s);\n", tab, pvar, elem);
+			else
+				str_addf(func, "%scapn_resolve_struct_list(&%s);\n", tab, pvar);
+		}
 		/* read_ leaves the pointer word unresolved. A zero word
 		 * is the null that a default replaces. A word that is
 		 * present stays unread until that field is fetched. */

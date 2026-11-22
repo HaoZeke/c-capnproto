@@ -789,6 +789,44 @@ void capn_resolve_struct_list(capn_ptr *p) {
 	}
 }
 
+/* readListPointer in C++ 1.4.0 layout.c++, for a list of `elem`. */
+static int list_mismatch(const capn_ptr *p, int elem)
+{
+	static const unsigned char bits[] = {0, 1, 8, 16, 32, 64, 0};
+	unsigned need;
+
+	if (elem < CAPN_ELEM_VOID || elem > CAPN_ELEM_POINTER)
+		return 0;
+	need = bits[elem];
+	switch (p->type) {
+	case CAPN_NULL:
+		return 0;
+	case CAPN_BIT_LIST:
+		return elem != CAPN_ELEM_BIT;
+	case CAPN_PTR_LIST:
+		return need != 0;
+	case CAPN_LIST:
+		if (p->is_composite_list) {
+			if (elem == CAPN_ELEM_BIT)
+				return 1;
+			if (elem == CAPN_ELEM_POINTER)
+				return p->ptrs == 0;
+			return need != 0 && p->datasz == 0;
+		}
+		if (elem == CAPN_ELEM_POINTER)
+			return 1;
+		return 8u * p->datasz < need;
+	default:
+		return 1;
+	}
+}
+
+void capn_resolve_list(capn_ptr *p, int elem) {
+	capn_resolve(p);
+	if (list_mismatch(p, elem))
+		schema_mismatch(p);
+}
+
 #define CAPN_V_EMPTY 0
 #define CAPN_V_PATH 1
 #define CAPN_V_DONE 2

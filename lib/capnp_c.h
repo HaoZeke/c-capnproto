@@ -281,6 +281,19 @@ CAPN_EXPORT void capn_resolve(capn_ptr *p);
  * "Schema mismatch" error. */
 CAPN_EXPORT void capn_resolve_struct(capn_ptr *p);
 CAPN_EXPORT void capn_resolve_struct_list(capn_ptr *p);
+/* List(T) for any other T, whose schema.capnp ElementSize is `elem`.
+ * C++ reads a list whose elements have at least the data bits and
+ * pointers of T, and a bit list only as List(Bool). */
+enum CAPN_ELEM {
+	CAPN_ELEM_VOID = 0,
+	CAPN_ELEM_BIT = 1,
+	CAPN_ELEM_BYTE = 2,
+	CAPN_ELEM_2_BYTES = 3,
+	CAPN_ELEM_4_BYTES = 4,
+	CAPN_ELEM_8_BYTES = 5,
+	CAPN_ELEM_POINTER = 6
+};
+CAPN_EXPORT void capn_resolve_list(capn_ptr *p, int elem);
 
 /* capn_validate walks the pointer graph from the message root.
  * Returns 0 if landings are in-segment, nesting stays within

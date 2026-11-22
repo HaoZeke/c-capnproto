@@ -28,3 +28,11 @@ struct Bag {
   note @0 :Text;
   blob @1 :Data;
 }
+
+# List getters read the field as the C++ getters do.
+struct Lists {
+  u32 @0 :List(UInt32);
+  flags @1 :List(Bool);
+  names @2 :List(Text);
+  leaves @3 :List(Leaf);
+}

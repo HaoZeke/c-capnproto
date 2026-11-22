@@ -119,6 +119,7 @@ Person_PhoneNumber_list Person_get_phones(Person_ptr p)
 	capn_resolve_struct(&p.p);
 	Person_PhoneNumber_list phones;
 	phones.p = capn_getp(p.p, 2, 1);
+	capn_resolve_struct_list(&phones.p);
 	return phones;
 }
 
@@ -262,6 +263,7 @@ Person_list AddressBook_get_people(AddressBook_ptr p)
 	capn_resolve_struct(&p.p);
 	Person_list people;
 	people.p = capn_getp(p.p, 0, 1);
+	capn_resolve_struct_list(&people.p);
 	return people;
 }
 

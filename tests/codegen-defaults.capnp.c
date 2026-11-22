@@ -91,6 +91,7 @@ capn_ptr_list Rec_get_tags(Rec_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_ptr_list tags;
 	tags.p = capn_getp(p.p, 1, 1);
+	capn_resolve_list(&tags.p, CAPN_ELEM_POINTER);
 	if (!tags.p.type) {
 		tags = capn_val2;
 	}
@@ -346,6 +347,7 @@ capn_ptr_list Event_get_args(Event_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_ptr_list args;
 	args.p = capn_getp(p.p, 0, 1);
+	capn_resolve_list(&args.p, CAPN_ELEM_POINTER);
 	return args;
 }
 

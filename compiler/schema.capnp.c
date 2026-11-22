@@ -199,6 +199,7 @@ Node_Parameter_list Node_get_parameters(Node_ptr p)
 	capn_resolve_struct(&p.p);
 	Node_Parameter_list parameters;
 	parameters.p = capn_getp(p.p, 5, 1);
+	capn_resolve_struct_list(&parameters.p);
 	return parameters;
 }
 
@@ -223,6 +224,7 @@ Node_NestedNode_list Node_get_nestedNodes(Node_ptr p)
 	capn_resolve_struct(&p.p);
 	Node_NestedNode_list nestedNodes;
 	nestedNodes.p = capn_getp(p.p, 1, 1);
+	capn_resolve_struct_list(&nestedNodes.p);
 	return nestedNodes;
 }
 
@@ -239,6 +241,7 @@ Annotation_list Node_get_annotations(Node_ptr p)
 	capn_resolve_struct(&p.p);
 	Annotation_list annotations;
 	annotations.p = capn_getp(p.p, 2, 1);
+	capn_resolve_struct_list(&annotations.p);
 	return annotations;
 }
 
@@ -492,6 +495,7 @@ Node_SourceInfo_Member_list Node_SourceInfo_get_members(Node_SourceInfo_ptr p)
 	capn_resolve_struct(&p.p);
 	Node_SourceInfo_Member_list members;
 	members.p = capn_getp(p.p, 1, 1);
+	capn_resolve_struct_list(&members.p);
 	return members;
 }
 
@@ -717,6 +721,7 @@ Annotation_list Field_get_annotations(Field_ptr p)
 	capn_resolve_struct(&p.p);
 	Annotation_list annotations;
 	annotations.p = capn_getp(p.p, 1, 1);
+	capn_resolve_struct_list(&annotations.p);
 	return annotations;
 }
 
@@ -826,6 +831,7 @@ Annotation_list Enumerant_get_annotations(Enumerant_ptr p)
 	capn_resolve_struct(&p.p);
 	Annotation_list annotations;
 	annotations.p = capn_getp(p.p, 1, 1);
+	capn_resolve_struct_list(&annotations.p);
 	return annotations;
 }
 
@@ -1006,6 +1012,7 @@ Node_Parameter_list Method_get_implicitParameters(Method_ptr p)
 	capn_resolve_struct(&p.p);
 	Node_Parameter_list implicitParameters;
 	implicitParameters.p = capn_getp(p.p, 4, 1);
+	capn_resolve_struct_list(&implicitParameters.p);
 	return implicitParameters;
 }
 
@@ -1072,6 +1079,7 @@ Annotation_list Method_get_annotations(Method_ptr p)
 	capn_resolve_struct(&p.p);
 	Annotation_list annotations;
 	annotations.p = capn_getp(p.p, 1, 1);
+	capn_resolve_struct_list(&annotations.p);
 	return annotations;
 }
 
@@ -1285,6 +1293,7 @@ Brand_Scope_list Brand_get_scopes(Brand_ptr p)
 	capn_resolve_struct(&p.p);
 	Brand_Scope_list scopes;
 	scopes.p = capn_getp(p.p, 0, 1);
+	capn_resolve_struct_list(&scopes.p);
 	return scopes;
 }
 
@@ -1797,6 +1806,7 @@ Node_list CodeGeneratorRequest_get_nodes(CodeGeneratorRequest_ptr p)
 	capn_resolve_struct(&p.p);
 	Node_list nodes;
 	nodes.p = capn_getp(p.p, 0, 1);
+	capn_resolve_struct_list(&nodes.p);
 	return nodes;
 }
 
@@ -1813,6 +1823,7 @@ Node_SourceInfo_list CodeGeneratorRequest_get_sourceInfo(CodeGeneratorRequest_pt
 	capn_resolve_struct(&p.p);
 	Node_SourceInfo_list sourceInfo;
 	sourceInfo.p = capn_getp(p.p, 3, 1);
+	capn_resolve_struct_list(&sourceInfo.p);
 	return sourceInfo;
 }
 
@@ -1829,6 +1840,7 @@ CodeGeneratorRequest_RequestedFile_list CodeGeneratorRequest_get_requestedFiles(
 	capn_resolve_struct(&p.p);
 	CodeGeneratorRequest_RequestedFile_list requestedFiles;
 	requestedFiles.p = capn_getp(p.p, 1, 1);
+	capn_resolve_struct_list(&requestedFiles.p);
 	return requestedFiles;
 }
 
@@ -1933,6 +1945,7 @@ CodeGeneratorRequest_RequestedFile_Import_list CodeGeneratorRequest_RequestedFil
 	capn_resolve_struct(&p.p);
 	CodeGeneratorRequest_RequestedFile_Import_list imports;
 	imports.p = capn_getp(p.p, 1, 1);
+	capn_resolve_struct_list(&imports.p);
 	return imports;
 }
 
@@ -2093,6 +2106,7 @@ CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_list CodeGeneratorR
 	capn_resolve_struct(&p.p);
 	CodeGeneratorRequest_RequestedFile_FileSourceInfo_Identifier_list identifiers;
 	identifiers.p = capn_getp(p.p, 0, 1);
+	capn_resolve_struct_list(&identifiers.p);
 	return identifiers;
 }
 

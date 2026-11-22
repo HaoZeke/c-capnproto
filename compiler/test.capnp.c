@@ -1532,6 +1532,7 @@ capn_ptr TestAllTypes_get_voidList(TestAllTypes_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_ptr voidList;
 	voidList = capn_getp(p.p, 4, 1);
+	capn_resolve_list(&voidList, CAPN_ELEM_VOID);
 	return voidList;
 }
 
@@ -1548,6 +1549,7 @@ capn_list1 TestAllTypes_get_boolList(TestAllTypes_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list1 boolList;
 	boolList.p = capn_getp(p.p, 5, 1);
+	capn_resolve_list(&boolList.p, CAPN_ELEM_BIT);
 	return boolList;
 }
 
@@ -1564,6 +1566,7 @@ capn_list8 TestAllTypes_get_int8List(TestAllTypes_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list8 int8List;
 	int8List.p = capn_getp(p.p, 6, 1);
+	capn_resolve_list(&int8List.p, CAPN_ELEM_BYTE);
 	return int8List;
 }
 
@@ -1580,6 +1583,7 @@ capn_list16 TestAllTypes_get_int16List(TestAllTypes_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list16 int16List;
 	int16List.p = capn_getp(p.p, 7, 1);
+	capn_resolve_list(&int16List.p, CAPN_ELEM_2_BYTES);
 	return int16List;
 }
 
@@ -1596,6 +1600,7 @@ capn_list32 TestAllTypes_get_int32List(TestAllTypes_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list32 int32List;
 	int32List.p = capn_getp(p.p, 8, 1);
+	capn_resolve_list(&int32List.p, CAPN_ELEM_4_BYTES);
 	return int32List;
 }
 
@@ -1612,6 +1617,7 @@ capn_list64 TestAllTypes_get_int64List(TestAllTypes_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list64 int64List;
 	int64List.p = capn_getp(p.p, 9, 1);
+	capn_resolve_list(&int64List.p, CAPN_ELEM_8_BYTES);
 	return int64List;
 }
 
@@ -1628,6 +1634,7 @@ capn_list8 TestAllTypes_get_uInt8List(TestAllTypes_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list8 uInt8List;
 	uInt8List.p = capn_getp(p.p, 10, 1);
+	capn_resolve_list(&uInt8List.p, CAPN_ELEM_BYTE);
 	return uInt8List;
 }
 
@@ -1644,6 +1651,7 @@ capn_list16 TestAllTypes_get_uInt16List(TestAllTypes_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list16 uInt16List;
 	uInt16List.p = capn_getp(p.p, 11, 1);
+	capn_resolve_list(&uInt16List.p, CAPN_ELEM_2_BYTES);
 	return uInt16List;
 }
 
@@ -1660,6 +1668,7 @@ capn_list32 TestAllTypes_get_uInt32List(TestAllTypes_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list32 uInt32List;
 	uInt32List.p = capn_getp(p.p, 12, 1);
+	capn_resolve_list(&uInt32List.p, CAPN_ELEM_4_BYTES);
 	return uInt32List;
 }
 
@@ -1676,6 +1685,7 @@ capn_list64 TestAllTypes_get_uInt64List(TestAllTypes_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list64 uInt64List;
 	uInt64List.p = capn_getp(p.p, 13, 1);
+	capn_resolve_list(&uInt64List.p, CAPN_ELEM_8_BYTES);
 	return uInt64List;
 }
 
@@ -1692,6 +1702,7 @@ capn_list32 TestAllTypes_get_float32List(TestAllTypes_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list32 float32List;
 	float32List.p = capn_getp(p.p, 14, 1);
+	capn_resolve_list(&float32List.p, CAPN_ELEM_4_BYTES);
 	return float32List;
 }
 
@@ -1708,6 +1719,7 @@ capn_list64 TestAllTypes_get_float64List(TestAllTypes_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list64 float64List;
 	float64List.p = capn_getp(p.p, 15, 1);
+	capn_resolve_list(&float64List.p, CAPN_ELEM_8_BYTES);
 	return float64List;
 }
 
@@ -1724,6 +1736,7 @@ capn_ptr_list TestAllTypes_get_textList(TestAllTypes_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_ptr_list textList;
 	textList.p = capn_getp(p.p, 16, 1);
+	capn_resolve_list(&textList.p, CAPN_ELEM_POINTER);
 	return textList;
 }
 
@@ -1740,6 +1753,7 @@ capn_ptr_list TestAllTypes_get_dataList(TestAllTypes_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_ptr_list dataList;
 	dataList.p = capn_getp(p.p, 17, 1);
+	capn_resolve_list(&dataList.p, CAPN_ELEM_POINTER);
 	return dataList;
 }
 
@@ -1756,6 +1770,7 @@ TestAllTypes_list TestAllTypes_get_structList(TestAllTypes_ptr p)
 	capn_resolve_struct(&p.p);
 	TestAllTypes_list structList;
 	structList.p = capn_getp(p.p, 18, 1);
+	capn_resolve_struct_list(&structList.p);
 	return structList;
 }
 
@@ -1772,6 +1787,7 @@ capn_list16 TestAllTypes_get_enumList(TestAllTypes_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list16 enumList;
 	enumList.p = capn_getp(p.p, 19, 1);
+	capn_resolve_list(&enumList.p, CAPN_ELEM_2_BYTES);
 	return enumList;
 }
 
@@ -1788,6 +1804,7 @@ TestInterface_list TestAllTypes_get_interfaceList(TestAllTypes_ptr p)
 	capn_resolve_struct(&p.p);
 	TestInterface_list interfaceList;
 	interfaceList.p = capn_getp(p.p, 20, 1);
+	capn_resolve_list(&interfaceList.p, CAPN_ELEM_POINTER);
 	return interfaceList;
 }
 
@@ -2357,6 +2374,7 @@ capn_ptr TestDefaults_get_voidList(TestDefaults_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_ptr voidList;
 	voidList = capn_getp(p.p, 4, 1);
+	capn_resolve_list(&voidList, CAPN_ELEM_VOID);
 	if (!voidList.type) {
 		voidList = capn_val4;
 	}
@@ -2376,6 +2394,7 @@ capn_list1 TestDefaults_get_boolList(TestDefaults_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list1 boolList;
 	boolList.p = capn_getp(p.p, 5, 1);
+	capn_resolve_list(&boolList.p, CAPN_ELEM_BIT);
 	if (!boolList.p.type) {
 		boolList = capn_val5;
 	}
@@ -2395,6 +2414,7 @@ capn_list8 TestDefaults_get_int8List(TestDefaults_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list8 int8List;
 	int8List.p = capn_getp(p.p, 6, 1);
+	capn_resolve_list(&int8List.p, CAPN_ELEM_BYTE);
 	if (!int8List.p.type) {
 		int8List = capn_val6;
 	}
@@ -2414,6 +2434,7 @@ capn_list16 TestDefaults_get_int16List(TestDefaults_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list16 int16List;
 	int16List.p = capn_getp(p.p, 7, 1);
+	capn_resolve_list(&int16List.p, CAPN_ELEM_2_BYTES);
 	if (!int16List.p.type) {
 		int16List = capn_val7;
 	}
@@ -2433,6 +2454,7 @@ capn_list32 TestDefaults_get_int32List(TestDefaults_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list32 int32List;
 	int32List.p = capn_getp(p.p, 8, 1);
+	capn_resolve_list(&int32List.p, CAPN_ELEM_4_BYTES);
 	if (!int32List.p.type) {
 		int32List = capn_val8;
 	}
@@ -2452,6 +2474,7 @@ capn_list64 TestDefaults_get_int64List(TestDefaults_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list64 int64List;
 	int64List.p = capn_getp(p.p, 9, 1);
+	capn_resolve_list(&int64List.p, CAPN_ELEM_8_BYTES);
 	if (!int64List.p.type) {
 		int64List = capn_val9;
 	}
@@ -2471,6 +2494,7 @@ capn_list8 TestDefaults_get_uInt8List(TestDefaults_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list8 uInt8List;
 	uInt8List.p = capn_getp(p.p, 10, 1);
+	capn_resolve_list(&uInt8List.p, CAPN_ELEM_BYTE);
 	if (!uInt8List.p.type) {
 		uInt8List = capn_val10;
 	}
@@ -2490,6 +2514,7 @@ capn_list16 TestDefaults_get_uInt16List(TestDefaults_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list16 uInt16List;
 	uInt16List.p = capn_getp(p.p, 11, 1);
+	capn_resolve_list(&uInt16List.p, CAPN_ELEM_2_BYTES);
 	if (!uInt16List.p.type) {
 		uInt16List = capn_val11;
 	}
@@ -2509,6 +2534,7 @@ capn_list32 TestDefaults_get_uInt32List(TestDefaults_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list32 uInt32List;
 	uInt32List.p = capn_getp(p.p, 12, 1);
+	capn_resolve_list(&uInt32List.p, CAPN_ELEM_4_BYTES);
 	if (!uInt32List.p.type) {
 		uInt32List = capn_val12;
 	}
@@ -2528,6 +2554,7 @@ capn_list64 TestDefaults_get_uInt64List(TestDefaults_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list64 uInt64List;
 	uInt64List.p = capn_getp(p.p, 13, 1);
+	capn_resolve_list(&uInt64List.p, CAPN_ELEM_8_BYTES);
 	if (!uInt64List.p.type) {
 		uInt64List = capn_val13;
 	}
@@ -2547,6 +2574,7 @@ capn_list32 TestDefaults_get_float32List(TestDefaults_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list32 float32List;
 	float32List.p = capn_getp(p.p, 14, 1);
+	capn_resolve_list(&float32List.p, CAPN_ELEM_4_BYTES);
 	if (!float32List.p.type) {
 		float32List = capn_val14;
 	}
@@ -2566,6 +2594,7 @@ capn_list64 TestDefaults_get_float64List(TestDefaults_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list64 float64List;
 	float64List.p = capn_getp(p.p, 15, 1);
+	capn_resolve_list(&float64List.p, CAPN_ELEM_8_BYTES);
 	if (!float64List.p.type) {
 		float64List = capn_val15;
 	}
@@ -2585,6 +2614,7 @@ capn_ptr_list TestDefaults_get_textList(TestDefaults_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_ptr_list textList;
 	textList.p = capn_getp(p.p, 16, 1);
+	capn_resolve_list(&textList.p, CAPN_ELEM_POINTER);
 	if (!textList.p.type) {
 		textList = capn_val16;
 	}
@@ -2604,6 +2634,7 @@ capn_ptr_list TestDefaults_get_dataList(TestDefaults_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_ptr_list dataList;
 	dataList.p = capn_getp(p.p, 17, 1);
+	capn_resolve_list(&dataList.p, CAPN_ELEM_POINTER);
 	if (!dataList.p.type) {
 		dataList = capn_val17;
 	}
@@ -2623,6 +2654,7 @@ TestAllTypes_list TestDefaults_get_structList(TestDefaults_ptr p)
 	capn_resolve_struct(&p.p);
 	TestAllTypes_list structList;
 	structList.p = capn_getp(p.p, 18, 1);
+	capn_resolve_struct_list(&structList.p);
 	if (!structList.p.type) {
 		structList = capn_val18;
 	}
@@ -2642,6 +2674,7 @@ capn_list16 TestDefaults_get_enumList(TestDefaults_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_list16 enumList;
 	enumList.p = capn_getp(p.p, 19, 1);
+	capn_resolve_list(&enumList.p, CAPN_ELEM_2_BYTES);
 	if (!enumList.p.type) {
 		enumList = capn_val19;
 	}
@@ -2661,6 +2694,7 @@ TestInterface_list TestDefaults_get_interfaceList(TestDefaults_ptr p)
 	capn_resolve_struct(&p.p);
 	TestInterface_list interfaceList;
 	interfaceList.p = capn_getp(p.p, 20, 1);
+	capn_resolve_list(&interfaceList.p, CAPN_ELEM_POINTER);
 	return interfaceList;
 }
 
@@ -4380,6 +4414,7 @@ TestLists_Struct0_list TestLists_get_list0(TestLists_ptr p)
 	capn_resolve_struct(&p.p);
 	TestLists_Struct0_list list0;
 	list0.p = capn_getp(p.p, 0, 1);
+	capn_resolve_struct_list(&list0.p);
 	return list0;
 }
 
@@ -4396,6 +4431,7 @@ TestLists_Struct1_list TestLists_get_list1(TestLists_ptr p)
 	capn_resolve_struct(&p.p);
 	TestLists_Struct1_list list1;
 	list1.p = capn_getp(p.p, 1, 1);
+	capn_resolve_struct_list(&list1.p);
 	return list1;
 }
 
@@ -4412,6 +4448,7 @@ TestLists_Struct8_list TestLists_get_list8(TestLists_ptr p)
 	capn_resolve_struct(&p.p);
 	TestLists_Struct8_list list8;
 	list8.p = capn_getp(p.p, 2, 1);
+	capn_resolve_struct_list(&list8.p);
 	return list8;
 }
 
@@ -4428,6 +4465,7 @@ TestLists_Struct16_list TestLists_get_list16(TestLists_ptr p)
 	capn_resolve_struct(&p.p);
 	TestLists_Struct16_list list16;
 	list16.p = capn_getp(p.p, 3, 1);
+	capn_resolve_struct_list(&list16.p);
 	return list16;
 }
 
@@ -4444,6 +4482,7 @@ TestLists_Struct32_list TestLists_get_list32(TestLists_ptr p)
 	capn_resolve_struct(&p.p);
 	TestLists_Struct32_list list32;
 	list32.p = capn_getp(p.p, 4, 1);
+	capn_resolve_struct_list(&list32.p);
 	return list32;
 }
 
@@ -4460,6 +4499,7 @@ TestLists_Struct64_list TestLists_get_list64(TestLists_ptr p)
 	capn_resolve_struct(&p.p);
 	TestLists_Struct64_list list64;
 	list64.p = capn_getp(p.p, 5, 1);
+	capn_resolve_struct_list(&list64.p);
 	return list64;
 }
 
@@ -4476,6 +4516,7 @@ TestLists_StructP_list TestLists_get_listP(TestLists_ptr p)
 	capn_resolve_struct(&p.p);
 	TestLists_StructP_list listP;
 	listP.p = capn_getp(p.p, 6, 1);
+	capn_resolve_struct_list(&listP.p);
 	return listP;
 }
 
@@ -4492,6 +4533,7 @@ capn_ptr_list TestLists_get_int32ListList(TestLists_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_ptr_list int32ListList;
 	int32ListList.p = capn_getp(p.p, 7, 1);
+	capn_resolve_list(&int32ListList.p, CAPN_ELEM_POINTER);
 	return int32ListList;
 }
 
@@ -4508,6 +4550,7 @@ capn_ptr_list TestLists_get_textListList(TestLists_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_ptr_list textListList;
 	textListList.p = capn_getp(p.p, 8, 1);
+	capn_resolve_list(&textListList.p, CAPN_ELEM_POINTER);
 	return textListList;
 }
 
@@ -4524,6 +4567,7 @@ capn_ptr_list TestLists_get_structListList(TestLists_ptr p)
 	capn_resolve_struct(&p.p);
 	capn_ptr_list structListList;
 	structListList.p = capn_getp(p.p, 9, 1);
+	capn_resolve_list(&structListList.p, CAPN_ELEM_POINTER);
 	return structListList;
 }
 
@@ -6089,6 +6133,7 @@ TestPrintInlineStructs_InlineStruct_list TestPrintInlineStructs_get_structList(T
 	capn_resolve_struct(&p.p);
 	TestPrintInlineStructs_InlineStruct_list structList;
 	structList.p = capn_getp(p.p, 1, 1);
+	capn_resolve_struct_list(&structList.p);
 	return structList;
 }
 
