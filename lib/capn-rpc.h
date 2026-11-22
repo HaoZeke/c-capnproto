@@ -37,6 +37,7 @@ extern "C" {
 #define CAPN_RPC_MAX_JOIN_PARTS 16
 /* Capabilities one params or results payload can carry. */
 #define CAPN_RPC_MAX_PENDING_CAPS 16
+#define CAPN_RPC_MAX_PARAM_IMPORTS 16
 #define CAPN_RPC_MAX_PENDING_CALLS 64
 #define CAPN_RPC_MAX_QUEUED 32
 #define CAPN_RPC_MAX_HELD 16
@@ -101,6 +102,10 @@ struct capn_rpc_answer {
 	 * takeFromOtherQuestion may adopt the payload once. */
 	int redirected;
 	int taken;
+	/* Imports from the params that the results handed back. They stay
+	 * until Finish, so a pipelined call can still name them. */
+	uint32_t held_imports[CAPN_RPC_MAX_PARAM_IMPORTS];
+	int nheld;
 };
 
 /* One pipelined call path sent against a question that had not
@@ -344,6 +349,9 @@ struct capn_rpc_pending_call {
 	/* The peer asked us to keep the results; a later Return names them
 	 * with takeFromOtherQuestion. */
 	int redirect;
+	/* senderHosted ids from the params, released when the call ends. */
+	uint32_t param_imports[CAPN_RPC_MAX_PARAM_IMPORTS];
+	int nparam_imports;
 };
 
 struct capn_rpc_conn {
@@ -378,6 +386,10 @@ struct capn_rpc_conn {
 	 * here instead of `pending_caps`. NULL outside those callbacks. */
 	struct capn_rpc_pending_cap *cap_dest;
 	int *cap_dest_n;
+	/* Param imports the running dispatch looked up with
+	 * capn_rpc_param_cap. The application owns those references. */
+	uint32_t *param_taken;
+	int *param_taken_n;
 	/* The capTable of the call being dispatched, valid during dispatch. */
 	CapDescriptor_list in_caps;
 	struct capn_rpc_pending_call pending_calls[CAPN_RPC_MAX_PENDING_CALLS];
@@ -562,6 +574,9 @@ CAPN_EXPORT capn_ptr capn_rpc_new_answer_cap(struct capn_rpc_conn *c, struct cap
  * for a capability the peer hosts, whose id is what capn_rpc_send_call
  * takes as `imported_cap`, and 1 for one of this vat's own exports
  * passed back. */
+/* A senderHosted import looked up during dispatch is the application's
+ * reference: release it with capn_rpc_send_release when done. The
+ * other senderHosted params are released when the call ends. */
 CAPN_EXPORT int64_t capn_rpc_param_cap(struct capn_rpc_conn *c, capn_ptr cap, int *is_export);
 CAPN_EXPORT int64_t capn_rpc_answer_cap(struct capn_rpc_conn *c, uint32_t question_id, capn_ptr cap,
                         int *is_export);

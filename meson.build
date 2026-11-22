@@ -683,6 +683,44 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
         depends: [tail_server, tail_client],
         timeout: 60,
       )
+
+      reflect_cpp = custom_target(
+        'mirror-capnp-cpp',
+        input: 'interop' / 'mirror.capnp',
+        output: ['mirror.capnp.c++', 'mirror.capnp.h'],
+        command: [
+          capnp, 'compile',
+          '-I', meson.current_source_dir() / 'compiler',
+          '--src-prefix=' + meson.current_source_dir() / 'interop',
+          '-o' + capnpc_cpp.full_path() + ':@OUTDIR@',
+          '@INPUT@',
+        ],
+      )
+      reflect_server = executable(
+        'reflect_server',
+        'interop' / 'reflect_server.c',
+        include_directories: include_directories(['lib', 'compiler', 'interop']),
+        dependencies: [libcapnp_dep],
+        c_args: ['-D_POSIX_C_SOURCE=200809L'],
+        implicit_include_directories: false,
+      )
+      reflect_client = executable(
+        'reflect_client',
+        ['interop' / 'reflect_client.c++', reflect_cpp],
+        dependencies: capnp_rpc_dep,
+        override_options: ['cpp_std=c++17'],
+      )
+      test(
+        'rpc_reflect_cpp',
+        bash,
+        args: [
+          meson.current_source_dir() / 'interop' / 'run_rpc_interop.sh',
+          reflect_server.full_path(),
+          reflect_client.full_path(),
+        ],
+        depends: [reflect_server, reflect_client],
+        timeout: 60,
+      )
     else
       message('interop/rpc: skipped (needs a C++ toolchain, capnp-rpc, and the capnp tools).')
     endif

@@ -1078,7 +1078,8 @@ void send_method(struct capn_rpc_conn *c, uint32_t qid, uint32_t export_id, uint
 	capn_free(&msg);
 }
 
-void send_pipeline_call(struct capn_rpc_conn *c, uint32_t qid, uint32_t promise_qid)
+void send_pipeline_call(struct capn_rpc_conn *c, uint32_t qid, uint32_t promise_qid,
+                        int hosted = -1)
 {
 	struct capn msg;
 	capn_init_malloc(&msg);
@@ -1106,6 +1107,24 @@ void send_pipeline_call(struct capn_rpc_conn *c, uint32_t qid, uint32_t promise_
 	call.questionId = qid;
 	call.target = tp;
 	call.methodId = 1;
+	if (hosted >= 0) {
+		struct CapDescriptor cd;
+		memset(&cd, 0, sizeof cd);
+		cd.which = CapDescriptor_senderHosted;
+		cd.senderHosted = (uint32_t) hosted;
+		CapDescriptor_list table = new_CapDescriptor_list(cs, 1);
+		set_CapDescriptor(&cd, table, 0);
+		capn_ptr body = capn_new_struct(cs, 0, 1);
+		capn_ptr iface = capn_new_interface(cs, 0, 0);
+		iface.cap_idx = 0;
+		capn_setp(body, 0, iface);
+		struct Payload params;
+		memset(&params, 0, sizeof params);
+		params.content = body;
+		params.capTable = table;
+		call.params = new_Payload(cs);
+		write_Payload(&params, call.params);
+	}
 	Call_ptr cp = new_Call(cs);
 	write_Call(&call, cp);
 	struct Message m;
@@ -1518,6 +1537,51 @@ TEST_F(RpcJoin, AcceptMatchesTheNonce)
 	send_provide(&vat, 82, (uint32_t) exp, nonce + 1, 0);
 	EXPECT_EQ(0, capn_rpc_provision_recipient(&vat, nonce + 1, NULL, 0, NULL));
 	EXPECT_EQ(-1, capn_rpc_provision_recipient(&vat, nonce, NULL, 0, NULL));
+	capn_rpc_free(&vat);
+}
+
+static int release_id(const std::vector<uint8_t> &frame, uint32_t *id)
+{
+	struct capn msg;
+	if (capn_init_mem(&msg, frame.data(), frame.size(), 0) != 0)
+		return -1;
+	Message_ptr mp;
+	mp.p = capn_getp(capn_root(&msg), 0, 1);
+	struct Message m;
+	read_Message(&m, mp);
+	int ok = m.which == Message_release;
+	if (ok) {
+		struct Release rel;
+		read_Release(&rel, m.release);
+		*id = rel.id;
+	}
+	capn_free(&msg);
+	return ok ? 0 : -1;
+}
+
+TEST_F(RpcJoin, FinishForAQueuedCallReleasesItsParams)
+{
+	struct capn_rpc_conn vat;
+	Outbox box;
+	uint32_t exp, answer = 0, rel = 0;
+
+	memset(&vat, 0, sizeof vat);
+	memset(&g_pipe, 0, sizeof g_pipe);
+	g_pipe.armed = 1;
+	g_pipe.conn = &vat;
+	capn_rpc_init(&vat, collect, &box);
+	capn_rpc_set_result_size(&vat, 8, 1);
+	capn_rpc_set_bootstrap(&vat, &calls, pipe_dispatch);
+	exp = bootstrap_export(&vat, &box);
+	send_method(&vat, 10, exp, 0);
+	send_pipeline_call(&vat, 11, 10, 5);
+	box.frames.clear();
+	send_finish(&vat, 11);
+	ASSERT_EQ(2u, box.frames.size());
+	EXPECT_EQ(Return_canceled, return_which(box.frames[0], &answer, NULL));
+	EXPECT_EQ(11u, answer);
+	ASSERT_EQ(0, release_id(box.frames[1], &rel));
+	EXPECT_EQ(5u, rel);
 	capn_rpc_free(&vat);
 }
 
