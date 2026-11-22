@@ -163,3 +163,24 @@ struct Big {
   a @0 :UInt64; b @1 :UInt64; c @2 :UInt64; d @3 :UInt64; e @4 :UInt64; f @5 :UInt64; g @6 :UInt64;
   txt @7 :Text; bin @8 :Data; kids @9 :List(Big); name @10 :Text;
 }
+
+# Ordinals out of code order, and union members whose pointer is unset.
+struct Ordered {
+  late @2 :UInt8;
+  early @0 :UInt8;
+  union {
+    none @1 :Void;
+    txt @3 :Text;
+    lst @4 :List(UInt8);
+    sub @5 :Other.Other;
+  }
+  kind @6 :Kind;
+}
+
+struct FirstIsPointer {
+  union {
+    t @0 :Text;
+    n @1 :UInt8;
+  }
+  after @2 :UInt8;
+}

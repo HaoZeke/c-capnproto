@@ -126,7 +126,7 @@ struct capn_dyn_struct {
 	uint16_t union_count;
 	uint32_t union_offset;
 	int nfields;
-	const struct capn_dyn_field *fields; /* in declaration order */
+	const struct capn_dyn_field *fields; /* in ordinal order */
 	/* $Json.discriminator. json_has_disc is 0 when the struct has none.
 	 * json_disc_name is the tag field (NULL when the annotation names
 	 * none). json_disc_value is valueName, or NULL. */

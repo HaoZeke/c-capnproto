@@ -423,8 +423,10 @@ static void emit_struct(struct str *src, struct node *n, int group) {
 	int i, nf = capn_len(n->n._struct.fields);
 	const char *name = n->n.displayName.str + n->n.displayNamePrefixLength;
 
+	/* Schema order, which is ordinal order: C++ prints fields in it. */
 	for (i = 0; i < nf; i++) {
-		struct field *f = &n->fields[i];
+		struct Field sf;
+		struct field *f;
 		struct str lit = STR_INIT;
 		struct str tb = STR_INIT;
 		const char *dtext = "NULL";
@@ -441,6 +443,8 @@ static void emit_struct(struct str *src, struct node *n, int group) {
 		struct Annotation ann;
 		capn_text jt;
 
+		get_Field(&sf, n->n._struct.fields, i);
+		f = &n->fields[sf.codeOrder];
 		if (f->f.which == Field_group) {
 			is_group = 1;
 			strf(&tb, "&capn_dyn_g%" PRIx64, f->f.group.typeId);

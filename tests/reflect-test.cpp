@@ -135,6 +135,10 @@ static const Case kCases[] = {
    " ll = [[1, 2], [], [3]], lll = [[[\"a\"], [\"b\", \"c\"]], []],"
    " ls = [[(before = 1)], [(b = \"x\")]])"},
   {"Nested", &Nested_dyn, "(i = (d = (x = 3)), e = two)"},
+  {"Ordered", &Ordered_dyn, "(late = 2, early = 1, txt = \"x\", kind = gamma)"},
+  {"Ordered", &Ordered_dyn, "(early = 1, sub = (x = 4))"},
+  {"FirstIsPointer", &FirstIsPointer_dyn, "(t = \"q\", after = 1)"},
+  {"FirstIsPointer", &FirstIsPointer_dyn, "(n = 0)"},
   {"Flagged", &Flagged_dyn, "(x = 1, y = \"yy\")"},
   {"Big", &Big_dyn,
    "(a = 1, b = 2, txt = \"hi\", bin = \"01\","
