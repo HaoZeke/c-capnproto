@@ -8,6 +8,20 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-21
+
+### Added
+
+- A `v*` tag publishes a `meson dist` tarball after the test jobs. The
+  tarball job runs `make check` on the extracted tree.
+- `scripts/backfill-releases.sh` opens GitHub Releases for `v0.4.0` and
+  `v0.4.1` from their changelog sections. It does not create tags.
+- A pull request that changes the library must add a `CHANGELOG.md`
+  bullet. A docs-only or CI-only diff is skipped.
+- Sanitizer jobs run ASan and UBSan with gcc and clang.
+- A prerelease tag uploads `c-capnproto-<version>.tar.xz`, and the
+  archive root uses that same name. `<version>` is the tag without `v`.
+
 ### Fixed
 
 - `capnpc-c` accepts an empty string append without passing a null pointer to
@@ -16,6 +30,18 @@ Pre-1.0 minor releases may include breaking wire or API changes.
   code, keeping production builds clean under `warning_level=3` and `werror`.
 - The installed-package smoke build disables the producer's optional test
   dependencies, so downstream CMake consumers do not inherit GTest setup.
+- Meson installs `c-capnproto.pc` from `c-capnproto.pc.in`. `codegen` is
+  `${bindir}/capnpc-c` and `bindir` is set. The description is
+  `Cap'n Proto C bindings`. The `URL` field is removed.
+- Encoding a null pointer no longer applies an offset to a null data address.
+- Packed framing copies the segment header with `memcpy`. The two-byte
+  offset is not a misaligned `uint32_t` store.
+- The Meson shared library SONAME is `libcapnp_c.so.0`. Builds before
+  0.4.2 used an unversioned `libcapnp_c.so`, so those consumers should relink.
+- With `enable_tests` set to `auto`, unit tests are skipped when `gtest`
+  is absent. `-Denable_tests=enabled` fails setup if `gtest` cannot be built.
+- `-Denable_tests=true` and `-Denable_tests=false` still select the
+  feature values. Meson warns that those booleans are deprecated.
 
 ## [0.4.1] - 2026-08-15
 
@@ -141,7 +167,8 @@ First feature release on the HaoZeke fork after the v0.1.0 baseline.
 HaoZeke fork baseline of the unmaintained
 opensourcerouting/c-capnproto tree.
 
-[Unreleased]: https://github.com/HaoZeke/c-capnproto/compare/v0.4.0...main
+[Unreleased]: https://github.com/HaoZeke/c-capnproto/compare/v0.4.2...main
+[0.4.2]: https://github.com/HaoZeke/c-capnproto/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/HaoZeke/c-capnproto/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/HaoZeke/c-capnproto/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HaoZeke/c-capnproto/compare/v0.2.0...v0.3.0

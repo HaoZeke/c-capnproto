@@ -36,6 +36,7 @@ docs/build/
 
 subprojects/googletest-*
 subprojects/packagecache
+subprojects/.wraplock
 
 # AFL I/O; keep the checked-in Person.bin seed
 fuzz/in/*

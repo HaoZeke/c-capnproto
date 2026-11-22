@@ -1,0 +1,34 @@
+## Cocogitto config. The changelog stays in CHANGELOG.md.
+## Add a dated [X.Y.Z] section to CHANGELOG.md, then run:
+##   cog bump --auto -A "Release {{version}}"
+## Push with `git push origin main --follow-tags`; the tag triggers release.yml.
+from_latest_tag = true
+ignore_merge_commits = true
+disable_changelog = true
+branch_whitelist = ["main", "master"]
+tag_prefix = "v"
+
+pre_bump_hooks = [
+  "echo '{{version}}' > VERSION.txt",
+  "sed -i \"0,/version: '[^']*'/s/version: '[^']*'/version: '{{version}}'/\" meson.build",
+  "sed -i \"s/^AC_INIT(c-capnproto, [^,]*,/AC_INIT(c-capnproto, {{version}},/\" configure.ac",
+  "sed -i \"s/^\\(#[[:space:]]*GIT_TAG[[:space:]]*\\)v[^[:space:]]*/\\1v{{version}}/\" CMakeLists.txt",
+  "sed -i \"s/^revision = v.*/revision = v{{version}}/\" README.md",
+  "python3 scripts/release_notes.py {{version}} > /dev/null",
+]
+
+post_bump_hooks = [
+  "test \"$(git cat-file -t 'v{{version}}')\" = tag || git tag -f -a 'v{{version}}' -m 'Release {{version}}' 'v{{version}}^{commit}'",
+  "bash scripts/check-annotated-tag.sh 'v{{version}}'",
+]
+
+[commit_types]
+feat = { changelog_title = "Features" }
+fix = { changelog_title = "Bug Fixes" }
+docs = { changelog_title = "Documentation" }
+refactor = { changelog_title = "Refactoring" }
+perf = { changelog_title = "Performance" }
+test = { changelog_title = "Tests" }
+build = { changelog_title = "Build" }
+ci = { changelog_title = "CI" }
+chore = { changelog_title = "Chores" }

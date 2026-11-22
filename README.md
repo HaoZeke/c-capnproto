@@ -39,6 +39,8 @@ meson compile -C build
 meson install -C build   # optional: put capnpc-c on PATH
 ```
 
+`enable_tests` defaults to `auto`: setup skips the unit tests when `gtest` is absent. `-Denable_tests=enabled` fails if `gtest` cannot be built.
+
 ## Building (CMake, optional)
 
 Meson is the recommended build. CMake is an install-path alternative
@@ -65,6 +67,95 @@ autoreconf -f -i -s
 make
 make check
 ```
+
+## Install and consume
+
+Install into a prefix, then build a program against that prefix. Each
+build installs `capnpc-c`, the public headers, `libcapnp_c`, and
+`c-capnproto.pc`. The library file, the schema path, and the CMake
+package files differ (see [Install layout](#install-layout)).
+
+### System install
+
+Meson:
+
+```sh
+meson setup build --prefix=/usr/local
+meson compile -C build
+meson install -C build
+```
+
+CMake:
+
+```sh
+cmake -S . -B build-cmake -DCMAKE_INSTALL_PREFIX=/usr/local
+cmake --build build-cmake
+cmake --install build-cmake
+```
+
+A program in another CMake project then uses the installed package:
+
+```cmake
+find_package(c_capnproto REQUIRED)
+target_link_libraries(app PRIVATE c_capnproto::capnp_c)
+```
+
+Pass `-DCMAKE_PREFIX_PATH=/usr/local` when that prefix is not on the
+default search path. `find_package` needs the CMake package files, which
+the CMake install provides. A Meson or autotools prefix does not.
+
+Autotools, after `./configure --prefix=/usr/local` and `make`:
+
+```sh
+make install
+```
+
+### pkg-config
+
+`c-capnproto.pc` is generated from `c-capnproto.pc.in`. Meson, CMake, and
+autotools each substitute `@PACKAGE_VERSION@`, `@prefix@`, `@exec_prefix@`,
+`@libdir@`, `@bindir@`, and `@includedir@`.
+
+```sh
+export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+pkg-config --modversion c-capnproto
+pkg-config --variable=codegen c-capnproto
+cc -o app app.c $(pkg-config --cflags --libs c-capnproto)
+```
+
+A multiarch Meson install places the file under `lib/<triplet>/pkgconfig`.
+Add that directory to `PKG_CONFIG_PATH` as well. `codegen` expands to the
+installed `capnpc-c`.
+
+### Meson wrap and subproject
+
+`meson.build` calls `meson.override_dependency('c-capnproto', libcapnp_dep)`.
+An installed `c-capnproto.pc` satisfies `dependency('c-capnproto')`. With no
+install, a wrap file builds this tree as a subproject. Tests stay off in
+that subproject build.
+
+`subprojects/c-capnproto.wrap`:
+
+```ini
+[wrap-git]
+url = https://github.com/HaoZeke/c-capnproto.git
+revision = v0.4.2
+depth = 1
+
+[provide]
+c-capnproto = libcapnp_dep
+```
+
+A checkout already on disk can be named in the fallback:
+
+```meson
+project('myapp', 'c')
+dep = dependency('c-capnproto', fallback: ['c-capnproto', 'libcapnp_dep'])
+executable('app', 'app.c', dependencies: dep)
+```
+
+Put the sources at `subprojects/c-capnproto` (a directory or a git submodule)
+when you use the fallback without a wrap file.
 
 ## Usage
 
@@ -210,7 +301,7 @@ seed; it does not launch unbounded AFL.
 ### Meson (libFuzzer or AFL++)
 
 ```sh
-meson setup build-fuzz -Dfuzz=true -Denable_tests=false
+meson setup build-fuzz -Dfuzz=true -Denable_tests=disabled
 meson compile -C build-fuzz
 # harnesses: build-fuzz/fuzz-mem  build-fuzz/fuzz-fp
 meson test -C build-fuzz   # fuzz-mem-smoke / fuzz-fp-smoke on Person.bin
@@ -297,17 +388,24 @@ This fork also carries C-level fixes from Jonah Beckford (DKML/MSVC),
 Rongsong Shen (packed-header alignment, copy-tree parent), and Angelo
 Haller (AFL harness). See [MAINTAINING.md](MAINTAINING.md).
 Windows CI is x64; 32-bit coverage is the compile-time
-`sizeof(capn_segment)%8` check. Optional `scripts/smoke-m32.sh` when
+`sizeof(capn_segment)%8` check. Optional `sh scripts/smoke-m32.sh` when
 an ILP32 `gcc -m32` exists (N/A on the maintainer builder).
 
 ## Install layout
 
-| Artifact | Path |
-|----------|------|
-| Plugin | `bin/capnpc-c` |
-| Header | `include/capnp_c.h`, `include/capn-rpc.h`, `include/c.capnp.h` |
-| Library | `lib/libcapnp_c.a` / `.so` (runtime + RPC vat) |
-| pkg-config | `lib/pkgconfig/c-capnproto.pc` |
-| Schema helper | `share/c-capnproto/c.capnp` (`import "/c.capnp"` with `-I` this dir) |
+`bin/capnpc-c`, `include/capnp_c.h`, `include/capn-rpc.h`, and
+`include/c.capnp.h` are installed by all three builds. The other files
+are not the same set.
+
+| Piece | Meson | CMake | Autotools |
+|-------|-------|-------|-----------|
+| Library | `lib/<triplet>/libcapnp_c.so`, `lib/<triplet>/libcapnp_c.so.0`, `lib/<triplet>/libcapnp_c.so.0.4.2` | static: `lib/libcapnp_c.a`. shared: `lib/libcapnp_c.so`, `lib/libcapnp_c.so.0`, `lib/libcapnp_c.so.0.4.2` | `lib/libcapnp_c.a`, `lib/libcapnp_c.la`, `lib/libcapnp_c.so`, `lib/libcapnp_c.so.0`, `lib/libcapnp_c.so.0.0.0` |
+| pkg-config | `lib/<triplet>/pkgconfig/c-capnproto.pc` | `lib/pkgconfig/c-capnproto.pc` | `lib/pkgconfig/c-capnproto.pc` |
+| Schema | `share/c-capnproto/c.capnp` | `share/c-capnproto/c.capnp` | `include/capnp/c.capnp` |
+| CMake package | not installed | `lib/cmake/c_capnproto/c_capnprotoConfig.cmake`, `lib/cmake/c_capnproto/c_capnprotoConfigVersion.cmake`, `lib/cmake/c_capnproto/c_capnprotoTargets.cmake`, `lib/cmake/c_capnproto/c_capnprotoTargets-release.cmake` | not installed |
+
+`import "/c.capnp"` needs `-I` pointed at the directory that contains
+`c.capnp`. For Meson and CMake that is `share/c-capnproto`. For autotools
+it is `include/capnp`.
 
 Changelog: [CHANGELOG.md](CHANGELOG.md). Maintaining: [MAINTAINING.md](MAINTAINING.md). Security: [SECURITY.md](SECURITY.md).

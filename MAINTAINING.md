@@ -73,7 +73,7 @@ includes `<stdint.h>` (needs `gnu/stubs-32.h` from a 32-bit libc
 dev package: Debian/Ubuntu `gcc-multilib`, Arch `lib32-glibc`):
 
 ```sh
-scripts/smoke-m32.sh
+sh scripts/smoke-m32.sh
 ```
 
 That recompiles `lib/capn*.c` plus `_Static_assert` companions under

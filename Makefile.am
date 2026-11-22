@@ -56,18 +56,40 @@ noinst_HEADERS += \
 	compiler/str.h \
 	compiler/codecgen.h \
 	compiler/schema.capnp.h \
-	compiler/c++.capnp.h
+	compiler/c++.capnp.h \
+	compiler/rpc.capnp.h \
+	compiler/rpc-threeparty.capnp.h
 
 # Don't try to generate any *.capnp files. Otherwise make wants to compile them
 # from *.capnp.c and fails.
 %.capnp: ;
 
-# googletest
+# googletest is optional. @gtest_dist_subdirs@ is set only when the
+# suite is configured, so automake does not require the directory.
+DIST_SUBDIRS = @gtest_dist_subdirs@
+
+if WITH_GTEST
 GTEST_LDADD = gtest/googletest/lib/libgtest.la
 gtest/googletest/lib/libgtest.la:
 	make -C gtest/googletest lib/libgtest.la
 GTEST_CPPFLAGS = -I${srcdir}/gtest/googletest/include
-DIST_SUBDIRS = gtest/googletest
+
+# gtest distributes fused sources and rebuilds them in the source tree.
+# Create any missing files, then write a marker that is not older than
+# those inputs so the rebuild does not run. A read-only distcheck tree
+# already contains the files, so this only writes the marker.
+BUILT_SOURCES = gtest-fused-prepare
+DISTCLEANFILES = gtest/googletest/fused-gtest
+gtest-fused-prepare:
+	@if test ! -f $(srcdir)/gtest/googletest/fused-src/gtest/gtest-all.cc \
+	    || test ! -f $(srcdir)/gtest/googletest/fused-src/gtest/gtest.h \
+	    || test ! -f $(srcdir)/gtest/googletest/fused-src/gtest/gtest_main.cc; then \
+	  $(MKDIR_P) $(srcdir)/gtest/googletest/fused-src && \
+	  python3 $(srcdir)/gtest/googletest/scripts/fuse_gtest_files.py $(srcdir)/gtest/googletest/fused-src && \
+	  cp -f $(srcdir)/gtest/googletest/src/gtest_main.cc $(srcdir)/gtest/googletest/fused-src/gtest/; \
+	fi
+	@$(MKDIR_P) gtest/googletest
+	@touch -r $(srcdir)/gtest/googletest/fused-src/gtest/gtest-all.cc gtest/googletest/fused-gtest
 
 # Tests
 check_PROGRAMS += \
@@ -135,11 +157,12 @@ capn_test_CXXFLAGS = -std=gnu++11 -pthread
 capn_test_LDADD = libcapnp_c.la $(GTEST_LDADD)
 capn_test_LDFLAGS = -pthread
 TESTS = capn-test
+endif
 
 CAPNP_SCHEMA_FILES := $(shell find . -type f -name \*.capnp)
 
 CAPNP ?= capnp
-.PHONY: capnp-compile fuzz-mem fuzz-fp
+.PHONY: capnp-compile fuzz-mem fuzz-fp gtest-fused-prepare
 capnp-compile:
 	$(CAPNP) compile \
 		--output=./capnpc-c \

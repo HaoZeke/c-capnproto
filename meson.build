@@ -4,7 +4,7 @@
 project(
   'c-capnproto',
   'c',
-  version: '0.4.1',
+  version: '0.4.2',
   # c_shared_args / c_static_args below arrived in 1.3.0.
   meson_version: '>=1.3.0',
   default_options: ['c_std=c99', 'cpp_std=c++14', 'warning_level=1'],
@@ -45,6 +45,8 @@ libcapnp_c = library(
   include_directories: include_directories(['lib', 'compiler']),
   implicit_include_directories: false,
   install: true,
+  version: meson.project_version(),
+  soversion: '0',
 )
 
 # Generated user headers #include "c.capnp.h"; ship it next to capnp_c.h.
@@ -65,13 +67,37 @@ libcapnp_dep = declare_dependency(
 # to this subproject via a .wrap.
 meson.override_dependency('c-capnproto', libcapnp_dep)
 
-pkg = import('pkgconfig')
-pkg.generate(
-  libcapnp_c,
-  name: 'c-capnproto',
-  description: 'Cap\'n Proto pure-C runtime (HaoZeke fork)',
-  filebase: 'c-capnproto',
-  url: 'https://github.com/HaoZeke/c-capnproto',
+# c-capnproto.pc.in is the file autotools and CMake install too.
+# Substitute @PACKAGE_VERSION@ and the path variables for this prefix.
+pc_prefix = get_option('prefix')
+pc_bindir = get_option('bindir')
+pc_libdir = get_option('libdir')
+pc_includedir = get_option('includedir')
+pc_data = configuration_data()
+pc_data.set('prefix', pc_prefix)
+pc_data.set('exec_prefix', '${prefix}')
+if pc_bindir.startswith('/')
+  pc_data.set('bindir', pc_bindir)
+else
+  pc_data.set('bindir', '${exec_prefix}/' + pc_bindir)
+endif
+if pc_libdir.startswith('/')
+  pc_data.set('libdir', pc_libdir)
+else
+  pc_data.set('libdir', '${exec_prefix}/' + pc_libdir)
+endif
+if pc_includedir.startswith('/')
+  pc_data.set('includedir', pc_includedir)
+else
+  pc_data.set('includedir', '${prefix}/' + pc_includedir)
+endif
+pc_data.set('PACKAGE_VERSION', meson.project_version())
+configure_file(
+  input: 'c-capnproto.pc.in',
+  output: 'c-capnproto.pc',
+  configuration: pc_data,
+  install: true,
+  install_dir: get_option('libdir') / 'pkgconfig',
 )
 
 capnpc_src = [
@@ -96,11 +122,15 @@ install_data(
   install_dir: get_option('datadir') / 'c-capnproto',
 )
 
-if get_option('enable_tests') and not meson.is_subproject()
+if not meson.is_subproject() and get_option('enable_tests').allowed()
+  gtest_proj = subproject('gtest', required: get_option('enable_tests'))
+  if not gtest_proj.found()
+    message('gtest is absent; unit tests are skipped')
+  endif
+  if gtest_proj.found()
   # The suites are C++; ask for the compiler here rather than at the top.
   add_languages('cpp', native: false)
   thread_dep = dependency('threads')
-  gtest_proj = subproject('gtest')
   gtest_dep = gtest_proj.get_variable('gtest_dep')
   gmock_dep = gtest_proj.get_variable('gmock_dep')
   gtest_main_dep = gtest_proj.get_variable('gtest_main_dep')
@@ -169,6 +199,28 @@ if get_option('enable_tests') and not meson.is_subproject()
     implicit_include_directories: false,
   )
   test('compiler-str-test', compiler_str_test)
+
+  null_ptr_write_test = executable(
+    'null-ptr-write-test',
+    'tests' / 'null-ptr-write-test.c',
+    include_directories: include_directories(['lib', 'compiler']),
+    dependencies: test_dependencies,
+    c_args: common_c_args,
+    install: false,
+    implicit_include_directories: false,
+  )
+  test('null-ptr-write-test', null_ptr_write_test)
+
+  packed_header_write_test = executable(
+    'packed-header-write-test',
+    'tests' / 'packed-header-write-test.c',
+    include_directories: include_directories(['lib', 'compiler']),
+    dependencies: test_dependencies,
+    c_args: common_c_args,
+    install: false,
+    implicit_include_directories: false,
+  )
+  test('packed-header-write-test', packed_header_write_test)
 
   create_min_sz_test = executable(
     'create-min-sz-test',
@@ -452,6 +504,7 @@ if get_option('enable_tests') and not meson.is_subproject()
       )
       test(t + '-test', t_exe)
     endforeach
+  endif
   endif
 endif
 
