@@ -1327,12 +1327,67 @@ TEST(WireParity, TwoVoidListsShareTheCanonicalBudget) {
 		0,0,0,0, 1,0,0,0,
 		1,0,0,0, 0xf8,0xff,0xff,0x03,
 	};
+	const uint8_t one_too_many[] = {
+		0,0,0,0, 1,0,0,0,
+		1,0,0,0, 0xf8,0xff,0xff,0x07,
+	};
 	ASSERT_EQ(0, load_frame(&c, frame, sizeof frame));
 	EXPECT_EQ(0, capn_is_canonical(&c));
 	capn_free(&c);
 	ASSERT_EQ(0, load_frame(&c, one, sizeof one));
 	EXPECT_EQ(1, capn_is_canonical(&c));
 	capn_free(&c);
+	ASSERT_EQ(0, load_frame(&c, one_too_many, sizeof one_too_many));
+	EXPECT_EQ(0, capn_is_canonical(&c));
+	EXPECT_EQ(0, capn_ok(&c));
+	capn_free(&c);
+}
+
+static std::vector<uint8_t> one_segment(const std::vector<uint64_t> &words) {
+	std::vector<uint8_t> b(8 + words.size() * 8, 0);
+	wr32(b.data() + 4, (uint32_t) words.size());
+	for (size_t i = 0; i < words.size(); i++)
+		for (int j = 0; j < 8; j++)
+			b[8 + i * 8 + j] = (uint8_t) (words[i] >> (8 * j));
+	return b;
+}
+
+static int canonical_state(const std::vector<uint64_t> &words) {
+	std::vector<uint8_t> b = one_segment(words);
+	struct capn c;
+	int r;
+	if (capn_init_mem(&c, b.data(), b.size(), 0) != 0)
+		return -2;
+	r = capn_is_canonical(&c);
+	if (!capn_ok(&c))
+		r = -1;
+	capn_free(&c);
+	return r;
+}
+
+TEST(WireParity, MalformedInputIsNotJustNonCanonical) {
+	/* C++ 1.4.0 `isCanonical` throws when an object cannot be read,
+	 * and returns false for far, other, and misplaced pointers. */
+	std::vector<uint64_t> chain(66, 0);
+	for (int i = 0; i < 64; i++)
+		chain[i] = 0x0001000000000000ull;
+	chain[64] = 0x0000000100000000ull;
+	chain[65] = 1;
+	EXPECT_EQ(-1, canonical_state({0x0000000100000040ull}));
+	EXPECT_EQ(-1, canonical_state(chain));
+	EXPECT_EQ(-1, canonical_state({0x0000000f00000001ull, 0x0000000100000008ull, 5}));
+	EXPECT_EQ(-1, canonical_state({0x0000000f00000001ull, 0x0000000100000005ull, 5}));
+	EXPECT_EQ(0, canonical_state({0x0000000000000002ull, 0}));
+	EXPECT_EQ(0, canonical_state({0x0000000400000003ull}));
+	EXPECT_EQ(0, canonical_state({0x0000000000000007ull}));
+	EXPECT_EQ(0, canonical_state({0x0000000100000004ull, 0, 5}));
+	/* The last pointer of a struct goes through getPointerType(). */
+	EXPECT_EQ(-1, canonical_state({0x0001000000000000ull, 7}));
+	EXPECT_EQ(-1, canonical_state({0x0001000000000000ull, 0x0000000500000002ull}));
+	EXPECT_EQ(-1, canonical_state({0x0001000000000000ull, 0x322}));
+	EXPECT_EQ(-1, canonical_state({0x0001000000000000ull, 6}));
+	EXPECT_EQ(0, canonical_state({0x0001000000000000ull, 3}));
+	EXPECT_EQ(0, canonical_state({0x0001000000000000ull, 2}));
 }
 
 TEST(WireParity, ClampedEmptyListIsCanonical) {

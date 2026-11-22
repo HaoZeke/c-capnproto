@@ -3149,6 +3149,56 @@ static int pad_is_clear(const uint8_t *obj, size_t bits, size_t nbytes)
 	return 1;
 }
 
+/* C++ isCanonical reads each object before it checks its position.
+ * A read that fails throws there, so it is a decode error here. A
+ * misplaced or untruncated object is only non-canonical. */
+static int canon_bad(struct capn_segment *s)
+{
+	if (s && s->capn)
+		s->capn->decode_err = 1;
+	return 0;
+}
+
+/* C++ tests the last pointer with isNull(), which is getPointerType().
+ * That follows a far pointer, charges its pad, and rejects an unknown
+ * kind. Returns 1 when the word is not null, 0 when null, -1 on error. */
+static int canon_last_ptr(struct capn_segment *s, char *d, size_t *budget)
+{
+	uint64_t val = capn_flip64(*(uint64_t *) d);
+	struct capn_segment *t;
+	size_t off, pad;
+
+	if (val == 0)
+		return 0;
+	if ((val & 3) == FAR_PTR) {
+		t = lookup_segment(s->capn, s, U32(val >> 32));
+		if (!t || t->len == 0)
+			return -1;
+		pad = (val & 4) ? 16 : 8;
+		off = (size_t) (U32(val) >> 3) * 8;
+		if (off > t->len || t->len - off < pad)
+			return -1;
+		if (!canon_take(budget, pad / 8u))
+			return -1;
+		d = t->data + off;
+		if (val & 4) {
+			uint64_t far = capn_flip64(*(uint64_t *) d);
+			struct capn_segment *u;
+			u = lookup_segment(t->capn, t, U32(far >> 32));
+			if (!u || u->len == 0 || (far & 3) != FAR_PTR)
+				return -1;
+			d += 8;
+		}
+		val = capn_flip64(*(uint64_t *) d);
+		if ((val & 3) == FAR_PTR)
+			return -1;
+	}
+	if ((val & 3) == OTHER_PTR && U32(val) != OTHER_PTR)
+		return -1;
+	return 1;
+}
+
+/* The caller has bounds-checked and charged the struct. */
 static int canonical_struct(struct capn_segment *s, char *obj, int dw, int pw,
                             char **read_head, char **ptr_head, size_t *budget,
                             int depth, int *data_trunc, int *ptr_trunc)
@@ -3156,24 +3206,20 @@ static int canonical_struct(struct capn_segment *s, char *obj, int dw, int pw,
 	int i;
 	char *p;
 
-	if (dw < 0 || pw < 0)
-		return 0;
-	if ((size_t) (dw + pw) > (size_t) -1 / 8)
-		return 0;
 	if (obj != *read_head)
-		return 0;
-	if (!bounds_ok(s, obj, (size_t) (dw + pw) * 8u))
-		return 0;
-	if (!canon_take(budget, (size_t) dw + (size_t) pw))
 		return 0;
 	if (dw > 0)
 		*data_trunc = capn_flip64(*(uint64_t *) (obj + (dw - 1) * 8)) != 0;
 	else
 		*data_trunc = 1;
-	if (pw > 0)
-		*ptr_trunc = capn_flip64(*(uint64_t *) (obj + dw * 8 + (pw - 1) * 8)) != 0;
-	else
+	if (pw > 0) {
+		int last = canon_last_ptr(s, obj + dw * 8 + (pw - 1) * 8, budget);
+		if (last < 0)
+			return canon_bad(s);
+		*ptr_trunc = last;
+	} else {
 		*ptr_trunc = 1;
+	}
 	*read_head = obj + (size_t) (dw + pw) * 8u;
 	p = obj + (size_t) dw * 8u;
 	for (i = 0; i < pw; i++) {
@@ -3185,7 +3231,8 @@ static int canonical_struct(struct capn_segment *s, char *obj, int dw, int pw,
 
 /* A composite list is canonical when the tag sits at the read head,
  * the word count matches the elements, and at least one element is
- * truncated in each section. Pointer targets follow the whole list. */
+ * truncated in each section. Pointer targets follow the whole list.
+ * depth is the level of the list's elements. */
 static int canonical_composite(struct capn_segment *s, char *tag, int words,
                                char **head, size_t *budget, int depth)
 {
@@ -3193,42 +3240,37 @@ static int canonical_composite(struct capn_segment *s, char *tag, int words,
 	int dw, pw, count, stride, i;
 	int any_data = 0, any_ptr = 0;
 	char *read_head, *ptr_head;
-	size_t bytes;
+	size_t bytes = (size_t) words * 8u;
 
-	if (tag != *head)
-		return 0;
-	if (!bounds_ok(s, tag, 8))
-		return 0;
+	if (!bounds_ok(s, tag, 8) || (bytes && !bounds_ok(s, tag + 8, bytes)))
+		return canon_bad(s);
+	/* The tag word and the claimed body. */
+	if (!canon_take(budget, (size_t) words + 1u))
+		return canon_bad(s);
 	tv = capn_flip64(*(uint64_t *) tag);
 	if ((tv & 3) != STRUCT_PTR)
-		return 0;
+		return canon_bad(s);
 	count = (int) ((U32(tv) >> 2) & 0x1fffffffu);
 	dw = (int) U16(tv >> 32);
 	pw = (int) U16(tv >> 48);
-	if (dw < 0 || pw < 0 || count < 0)
-		return 0;
 	stride = dw + pw;
-	if (count > 0 && stride > 0 &&
-	    (size_t) count > (size_t) -1 / (size_t) stride)
+	if ((uint64_t) count * (uint64_t) stride > (uint64_t) words)
+		return canon_bad(s);
+	/* A stride of zero carries no bytes. Each element still
+	 * spends one word. */
+	if (stride == 0 && !canon_take(budget, (size_t) count))
+		return canon_bad(s);
+	if (tag != *head)
 		return 0;
-	if ((size_t) count * (size_t) stride != (size_t) words)
+	if ((uint64_t) count * (uint64_t) stride != (uint64_t) words)
 		return 0;
 	read_head = tag + 8;
-	/* The tag word, then one word per empty element. A stride of
-	 * zero carries no bytes, and the element count still counts. */
-	if (!canon_take(budget, 1))
-		return 0;
 	if (stride == 0) {
-		if (!canon_take(budget, (size_t) count))
-			return 0;
 		*head = read_head;
 		return 1;
 	}
-	if (depth <= 0)
-		return 0;
-	bytes = (size_t) words * 8u;
-	if (bytes && !bounds_ok(s, read_head, bytes))
-		return 0;
+	if (count > 0 && depth <= 0)
+		return canon_bad(s);
 	ptr_head = read_head + bytes;
 	for (i = 0; i < count; i++) {
 		int dt = 0, pt = 0;
@@ -3257,14 +3299,14 @@ static int canonical_word(struct capn_segment *s, char *ptrword, char **head,
 	size_t bits, nbytes;
 
 	if (!bounds_ok(s, ptrword, 8))
-		return 0;
+		return canon_bad(s);
 	val = capn_flip64(*(uint64_t *) ptrword);
 	if (val == 0)
 		return 1;
 	if ((val & 3) == FAR_PTR || (val & 3) == OTHER_PTR)
 		return 0;
 	if (depth <= 0)
-		return 0;
+		return canon_bad(s);
 	off = signed_off(val);
 	obj = ptrword + 8 + (int64_t) off * 8;
 	/* A zero-size object past the segment is clamped to the end,
@@ -3288,6 +3330,10 @@ static int canonical_word(struct capn_segment *s, char *ptrword, char **head,
 		int dt = 0, pt = 0;
 		dw = (int) U16(val >> 32);
 		pw = (int) U16(val >> 48);
+		if (!bounds_ok(s, obj, (size_t) (dw + pw) * 8u))
+			return canon_bad(s);
+		if (!canon_take(budget, (size_t) dw + (size_t) pw))
+			return canon_bad(s);
 		if (dw == 0 && pw == 0)
 			return obj == ptrword;
 		if (!canonical_struct(s, obj, dw, pw, head, head, budget,
@@ -3297,50 +3343,29 @@ static int canonical_word(struct capn_segment *s, char *ptrword, char **head,
 	}
 	es = (int) ((val >> 32) & 7);
 	len = (int) (val >> 35);
-	if (len < 0)
-		return 0;
 	if (es == COMPOSITE_LIST)
 		return canonical_composite(s, obj, len, head, budget, depth - 1);
 	if (es == VOID_LIST) {
-		/* The landing spot is the read head, and it may be the
-		 * first byte past the segment. The length is not a size.
-		 * Each element still spends one word of the shared budget. */
-		if (obj != *head)
-			return 0;
+		/* The landing spot may be the first byte past the segment.
+		 * The length is not a size. Each element still spends one
+		 * word of the shared budget. */
 		if (obj < s->data || obj > s->data + s->len)
-			return 0;
+			return canon_bad(s);
 		if (!canon_take(budget, (size_t) len))
-			return 0;
-		return 1;
+			return canon_bad(s);
+		return obj == *head;
 	}
-	if (es == BIT_1_LIST)
-		bits = (size_t) len;
-	else if (es == BYTE_1_LIST) {
-		if ((size_t) len > (size_t) -1 / 8u)
-			return 0;
-		bits = (size_t) len * 8u;
-	} else if (es == BYTE_2_LIST) {
-		if ((size_t) len > (size_t) -1 / 16u)
-			return 0;
-		bits = (size_t) len * 16u;
-	} else if (es == BYTE_4_LIST) {
-		if ((size_t) len > (size_t) -1 / 32u)
-			return 0;
-		bits = (size_t) len * 32u;
-	} else if (es == BYTE_8_LIST) {
-		if ((size_t) len > (size_t) -1 / 64u)
-			return 0;
-		bits = (size_t) len * 64u;
-	} else if (es == PTR_LIST) {
+	/* A list this long cannot be in bounds of a 32-bit segment. */
+	if ((size_t) len > ((size_t) -1 - 63u) / 64u)
+		return canon_bad(s);
+	if (es == PTR_LIST) {
 		int i;
-		if ((size_t) len > (size_t) -1 / 8u)
-			return 0;
 		nbytes = (size_t) len * 8u;
-		if (obj != *head)
-			return 0;
 		if (nbytes && !bounds_ok(s, obj, nbytes))
-			return 0;
+			return canon_bad(s);
 		if (!canon_take(budget, (size_t) len))
+			return canon_bad(s);
+		if (obj != *head)
 			return 0;
 		*head = obj + nbytes;
 		for (i = 0; i < len; i++) {
@@ -3349,18 +3374,17 @@ static int canonical_word(struct capn_segment *s, char *ptrword, char **head,
 				return 0;
 		}
 		return 1;
-	} else
-		return 0;
-	if (bits > (size_t) -1 - 63u)
-		return 0;
+	}
+	bits = (size_t) len * (es == BIT_1_LIST ? 1u : es == BYTE_1_LIST ? 8u :
+	                       es == BYTE_2_LIST ? 16u : es == BYTE_4_LIST ? 32u : 64u);
 	nbytes = ((bits + 63u) / 64u) * 8u;
+	if (nbytes && !bounds_ok(s, obj, nbytes))
+		return canon_bad(s);
+	if (!canon_take(budget, nbytes / 8u))
+		return canon_bad(s);
 	if (obj != *head)
 		return 0;
-	if (nbytes && !bounds_ok(s, obj, nbytes))
-		return 0;
 	if (nbytes && !pad_is_clear((const uint8_t *) obj, bits, nbytes))
-		return 0;
-	if (!canon_take(budget, nbytes / 8u))
 		return 0;
 	*head = obj + nbytes;
 	return 1;
