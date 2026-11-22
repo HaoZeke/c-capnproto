@@ -1916,6 +1916,7 @@ static void copy_list_member(capn_ptr* t, capn_ptr *f, int *dep) {
 
 int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 	struct capn_ptr *to, *from;
+	struct capn *src;
 	char *data;
 	int err, dep = 0, cap, rc = -1;
 	capn_ptr far_tgt;
@@ -1923,7 +1924,10 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 	capn_resolve(&p);
 	if (off < 0)
 		return -1;
-	cap = session_nesting(p.seg ? p.seg->capn : NULL);
+	/* C++ copies with the source reader's nesting limit. A builder
+	 * has no limit of its own. */
+	src = tgt.seg ? tgt.seg->capn : NULL;
+	cap = session_nesting(src);
 	if (cap < 1 || cap > INT_MAX - 2 ||
 	    (size_t) cap + 2 > (size_t) -1 / sizeof(*to))
 		return -1;
@@ -2002,7 +2006,7 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 				} else if (tgt.seg->capn == p.seg->capn) {
 					from[0] = tgt;
 					from[0].nesting_valid = 1;
-					from[0].nesting = session_nesting(p.seg->capn);
+					from[0].nesting = session_nesting(src);
 					/* capn_root is the pointer word, not the
 					 * object. The object is the next check. */
 					if (tgt.type == CAPN_PTR_LIST && tgt.len == 1 &&
@@ -2030,7 +2034,7 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 
 		from[0] = tgt;
 		from[0].nesting_valid = 1;
-		from[0].nesting = session_nesting(p.seg ? p.seg->capn : NULL);
+		from[0].nesting = session_nesting(src);
 		/* capn_root is the pointer word, not the object. The
 		 * object is the next check. */
 		if (tgt.type == CAPN_PTR_LIST && tgt.len == 1 && tgt.seg &&

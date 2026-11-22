@@ -1554,6 +1554,31 @@ TEST(WireParity, CopyDepthMatchesTheNestingLimit) {
 	capn_free(&dst);
 }
 
+static int copy_with_limits(const std::vector<uint8_t> &frame, int src_limit,
+                            int dst_limit) {
+	struct capn src, dst;
+	int rc;
+	if (capn_init_mem(&src, frame.data(), frame.size(), 0) != 0)
+		return -2;
+	src.nesting_limit = src_limit;
+	capn_init_malloc(&dst);
+	dst.nesting_limit = dst_limit;
+	rc = capn_set_root(&dst, capn_root(&src));
+	capn_free(&src);
+	capn_free(&dst);
+	return rc;
+}
+
+TEST(WireParity, CopyDepthFollowsTheSourceLimit) {
+	/* C++ 1.4.0 `setRoot` copies with the source reader's nesting
+	 * limit. A builder has no limit of its own. */
+	EXPECT_EQ(0, copy_with_limits(framed_struct_chain(65), 500, 0));
+	EXPECT_EQ(0, copy_with_limits(framed_struct_chain(499), 500, 0));
+	EXPECT_NE(0, copy_with_limits(framed_struct_chain(501), 500, 0));
+	EXPECT_NE(0, copy_with_limits(framed_struct_chain(65), 0, 500));
+	EXPECT_NE(0, copy_with_limits(framed_struct_chain(20), 10, 0));
+}
+
 static int canon_frame(const std::vector<uint8_t> &frame) {
 	struct capn src, dst;
 	int rc;
