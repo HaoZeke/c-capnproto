@@ -2989,6 +2989,57 @@ static int oldest_echo(struct capn_rpc_conn *c, int export_id)
 	return oldest_slot(CAPN_RPC_MAX_ECHOES, echo_match, echo_seq, &o);
 }
 
+static int send_return_canceled(struct capn_rpc_conn *c, uint32_t qid)
+{
+	struct capn msg;
+	struct Message m;
+	struct Return r;
+	Message_ptr mp;
+	Return_ptr rp;
+	struct capn_segment *cs;
+	int rc;
+
+	capn_init_malloc(&msg);
+	cs = capn_root(&msg).seg;
+	memset(&m, 0, sizeof m);
+	memset(&r, 0, sizeof r);
+	rp = new_Return(cs);
+	r.answerId = qid;
+	r.releaseParamCaps = 1;
+	r.which = Return_canceled;
+	write_Return(&r, rp);
+	mp = new_Message(cs);
+	m.which = Message__return;
+	m._return = rp;
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	rc = send_message(c, &msg);
+	capn_free(&msg);
+	return rc;
+}
+
+/* Finish of a call that is still queued. Answer canceled now, and do not
+ * run the call when its target settles. */
+static int cancel_queued(struct capn_rpc_conn *c, uint32_t qid)
+{
+	int i;
+
+	for (i = 0; i < CAPN_RPC_MAX_QUEUED; i++) {
+		uint32_t fq;
+
+		if (!c->queued[i].used || c->queued[i].frame == NULL)
+			continue;
+		if (frame_question_id(c->queued[i].frame, c->queued[i].len, &fq) != 0 ||
+		    fq != qid)
+			continue;
+		free(c->queued[i].frame);
+		memset(&c->queued[i], 0, sizeof c->queued[i]);
+		send_return_canceled(c, qid);
+		return 1;
+	}
+	return 0;
+}
+
 static void flush_questions(struct capn_rpc_conn *c, uint32_t question_id)
 {
 	int i;
@@ -5084,6 +5135,7 @@ int capn_rpc_handle(struct capn_rpc_conn *c, const uint8_t *data, size_t len)
 		/* Finish before the Return cancels it. The message stays until
 		 * the matching return, which then sends nothing. */
 		pending_cancel(c, fin.questionId);
+		cancel_queued(c, fin.questionId);
 		break;
 	}
 	case Message_release:
