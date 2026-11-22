@@ -102,6 +102,21 @@ TEST(Stream, FlatBufferTableMustFit) {
   EXPECT_NE(0, capn_init_mem(&ctx, wrap.data(), wrap.size(), 0));
 }
 
+TEST(Stream, FileWithZeroWordSegmentIsAMessage) {
+  /* C++ 1.4.0 `InputStreamMessageReader` reads a frame whose
+   * segments hold no words. `capn_init_fd` does too. */
+  const uint8_t frame[] = {0, 0, 0, 0, 0, 0, 0, 0};
+  struct capn ctx;
+  FILE *f = tmpfile();
+  ASSERT_NE(nullptr, f);
+  ASSERT_EQ(sizeof frame, fwrite(frame, 1, sizeof frame, f));
+  rewind(f);
+  ASSERT_EQ(0, capn_init_fp(&ctx, f, 0));
+  EXPECT_EQ(1, ctx.segnum);
+  capn_free(&ctx);
+  fclose(f);
+}
+
 TEST(Stream, ReadAllows511EmptySegments) {
   const uint32_t nseg = 511;
   const uint32_t words = nseg / 2u + 1u;

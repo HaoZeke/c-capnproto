@@ -166,6 +166,9 @@ static int read_fd_all(ssize_t (*read_fd)(int fd, void *p, size_t count), int fd
 static int read_fp(void *p, size_t sz, FILE *f,
 		   ssize_t (*read_fd)(int fd, void *p, size_t count), int fd,
 		   struct capn_stream *z, uint8_t* zbuf, int packed) {
+	/* fread of zero bytes returns 0, which is not a short read. */
+	if (sz == 0)
+		return 0;
 #ifndef __KERNEL__
 	if ((f || read_fd) && packed) {
 		z->next_out = (uint8_t*) p;
