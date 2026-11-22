@@ -3048,6 +3048,36 @@ TEST_F(RpcClient, TakeFromOtherQuestionIsOnce)
 }
 
 
+std::vector<uint8_t> return_flags(uint32_t answer_id, int release_params,
+                                  int no_finish)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+	struct Message m;
+	struct Return r;
+	struct Payload pl;
+	memset(&m, 0, sizeof m);
+	memset(&r, 0, sizeof r);
+	memset(&pl, 0, sizeof pl);
+	pl.content = capn_new_struct(cs, 8, 0);
+	Payload_ptr plp = new_Payload(cs);
+	write_Payload(&pl, plp);
+	r.answerId = answer_id;
+	r.releaseParamCaps = release_params;
+	r.noFinishNeeded = no_finish;
+	r.which = Return_results;
+	r.results = plp;
+	Return_ptr rp = new_Return(cs);
+	write_Return(&r, rp);
+	m.which = Message__return;
+	m._return = rp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	return finish_message(&msg);
+}
+
 /* An Unimplemented that echoes `orig`, as a level 0 peer replies. */
 std::vector<uint8_t> unimplemented_of(const std::vector<uint8_t> &orig)
 {
@@ -3095,6 +3125,42 @@ TEST_F(RpcClient, UnimplementedResolveToItselfKeepsThePromise)
 	std::vector<uint8_t> back = unimplemented_of(wire.to_vat.back());
 	EXPECT_EQ(0, capn_rpc_handle(&client, back.data(), back.size()));
 	EXPECT_EQ(before, export_refcount(&client, &promise_obj));
+}
+
+TEST_F(RpcClient, ReturnReleaseParamCapsDropsTheParamsExports)
+{
+	for (int release = 0; release < 2; release++) {
+		g_callback_hits = 0;
+		uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 1, 0, 1,
+		                                fill_with_callback, &client);
+		ASSERT_NE((uint32_t)-1, q);
+		wire.to_vat.clear();
+		EXPECT_EQ(1, export_refcount(&client, &g_callback_hits));
+		std::vector<uint8_t> ret = return_flags(q, release, 0);
+		EXPECT_EQ(0, capn_rpc_handle(&client, ret.data(), ret.size()));
+		EXPECT_EQ(release ? 0 : 1, export_refcount(&client, &g_callback_hits))
+		    << "releaseParamCaps " << release;
+		capn_rpc_send_finish(&client, q);
+		capn_rpc_free(&client);
+		capn_rpc_init(&client, send_to_vat, NULL);
+	}
+}
+
+TEST_F(RpcClient, NoFinishNeededSendsNoFinish)
+{
+	for (int skip = 0; skip < 2; skip++) {
+		uint32_t arg = 2;
+		uint32_t q = capn_rpc_send_call(&client, 0, 0, 0, 8, 1, fill_u32, &arg);
+		ASSERT_NE((uint32_t)-1, q);
+		wire.to_vat.clear();
+		std::vector<uint8_t> ret = return_flags(q, 0, skip);
+		EXPECT_EQ(0, capn_rpc_handle(&client, ret.data(), ret.size()));
+		ASSERT_TRUE(capn_rpc_is_answered(&client, q));
+		EXPECT_EQ(0, capn_rpc_send_finish(&client, q));
+		EXPECT_EQ(skip ? 0 : 1, count_which(wire.to_vat, Message_finish))
+		    << "noFinishNeeded " << skip;
+		EXPECT_FALSE(capn_rpc_is_answered(&client, q));
+	}
 }
 
 } // namespace

@@ -1953,6 +1953,7 @@ static void question_clear(struct capn_rpc_question *q)
 	for (i = 0; i < q->npipes; i++)
 		free(q->pipes[i].path);
 	free(q->pipes);
+	free(q->param_exports);
 	memset(q, 0, sizeof *q);
 }
 
@@ -1992,6 +1993,28 @@ static struct capn_rpc_question *question_find(struct capn_rpc_conn *c,
 		if (c->questions[i].used && c->questions[i].question_id == qid)
 			return &c->questions[i];
 	return NULL;
+}
+
+/* rpc.c++ Question::paramExports: the exports a sent Call named. */
+static void note_param_exports(struct capn_rpc_question *q,
+                               const struct capn_rpc_pending_cap *caps, int n)
+{
+	int i, k = 0;
+
+	free(q->param_exports);
+	q->param_exports = NULL;
+	q->nparam_exports = 0;
+	for (i = 0; i < n; i++)
+		if (!caps[i].is_import && caps[i].kind != CAPN_RPC_CAP_ANSWER)
+			k++;
+	if (k == 0)
+		return;
+	q->param_exports = (uint32_t *) malloc((size_t) k * sizeof *q->param_exports);
+	if (q->param_exports == NULL)
+		return;
+	for (i = 0; i < n; i++)
+		if (!caps[i].is_import && caps[i].kind != CAPN_RPC_CAP_ANSWER)
+			q->param_exports[q->nparam_exports++] = caps[i].id;
 }
 
 uint32_t capn_rpc_send_provide(struct capn_rpc_conn *c, uint32_t imported_cap,
@@ -2552,6 +2575,10 @@ static uint32_t send_call_impl(struct capn_rpc_conn *c, int pipelined,
 			release_unsent_caps(c, c->pending_caps, c->npending);
 			qid = (uint32_t)-1;
 		}
+	} else {
+		q = question_find(c, qid);
+		if (q)
+			note_param_exports(q, local_caps, nlocal);
 	}
 	c->npending = 0;
 	capn_free(&msg);
@@ -4429,8 +4456,13 @@ int capn_rpc_send_finish(struct capn_rpc_conn *c, uint32_t question_id)
 	int rc;
 
 	q = question_find(c, question_id);
-	if (q)
+	if (q) {
+		int skip = q->no_finish;
+
 		question_clear(q);
+		if (skip)
+			return 0;
+	}
 
 	capn_init_malloc(&msg);
 	cs = capn_root(&msg).seg;
@@ -4768,6 +4800,18 @@ static void handle_return(struct capn_rpc_conn *c, Return_ptr rp,
 	q = question_find(c, r.answerId);
 	if (q == NULL || q->answered)
 		return;
+	/* rpc.c++ handleReturn: a level 0 peer asks the caller to drop the
+	 * params' caps, and a Return without caps needs no Finish. */
+	if (r.releaseParamCaps) {
+		int i;
+		for (i = 0; i < q->nparam_exports; i++)
+			release_export_ref(c, q->param_exports[i]);
+	}
+	free(q->param_exports);
+	q->param_exports = NULL;
+	q->nparam_exports = 0;
+	if (r.noFinishNeeded)
+		q->no_finish = 1;
 	/* The peer forwarded a pipelined call back to us and is telling us
 	 * to use that call's results. rpc.c++ handleReturn
 	 * TAKE_FROM_OTHER_QUESTION. */

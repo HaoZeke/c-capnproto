@@ -136,6 +136,12 @@ struct capn_rpc_question {
 	 * the answer. rpc.capnp Call.sendResultsTo.yourself. */
 	int tail_wait;
 	uint32_t tail_from;
+	/* Exports the Call's params named, one reference each, which a
+	 * Return with releaseParamCaps hands back. */
+	uint32_t *param_exports;
+	int nparam_exports;
+	/* The Return said noFinishNeeded, so no Finish is sent. */
+	int no_finish;
 };
 
 /* A capability promised to a third vat, awaiting its Accept.
@@ -584,7 +590,8 @@ CAPN_EXPORT int64_t capn_rpc_param_cap(struct capn_rpc_conn *c, capn_ptr cap, in
 CAPN_EXPORT int64_t capn_rpc_answer_cap(struct capn_rpc_conn *c, uint32_t question_id, capn_ptr cap,
                         int *is_export);
 
-/* Tell the peer we are done with an answer, and drop our copy. */
+/* Tell the peer we are done with an answer, and drop our copy. No
+ * Finish goes out when the Return said noFinishNeeded. */
 CAPN_EXPORT int capn_rpc_send_finish(struct capn_rpc_conn *c, uint32_t question_id);
 
 /* Drop `count` references to an import. */
