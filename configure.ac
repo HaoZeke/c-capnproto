@@ -44,7 +44,19 @@ AC_SUBST(capnpdir)
 #  AC_MSG_ERROR([capnproto base package (0.5.2 or newer) not found])
 #])
 
-AC_CONFIG_SUBDIRS([gtest/googletest])
+AC_ARG_ENABLE([tests],
+  [AS_HELP_STRING([--disable-tests], [do not build the gtest suite])],
+  [],
+  [enable_tests=yes])
+AS_IF([test "x${enable_tests}" != xno && test ! -d "${srcdir}/gtest/googletest"],
+  [AC_MSG_ERROR([--enable-tests requires the gtest/googletest directory. Re-run with --disable-tests to build without the suite.])])
+AM_CONDITIONAL([WITH_GTEST],
+  [test "x${enable_tests}" != xno && test -d "${srcdir}/gtest/googletest"])
+AS_IF([test "x${enable_tests}" != xno && test -d "${srcdir}/gtest/googletest"],
+  [gtest_dist_subdirs=gtest/googletest
+   AC_CONFIG_SUBDIRS([gtest/googletest])],
+  [gtest_dist_subdirs=])
+AC_SUBST([gtest_dist_subdirs])
 
 AC_CONFIG_FILES([
 	Makefile

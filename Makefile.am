@@ -64,18 +64,20 @@ noinst_HEADERS += \
 # from *.capnp.c and fails.
 %.capnp: ;
 
-# googletest
+# googletest is optional. @gtest_dist_subdirs@ is set only when the
+# suite is configured, so automake does not require the directory.
+DIST_SUBDIRS = @gtest_dist_subdirs@
+
+if WITH_GTEST
 GTEST_LDADD = gtest/googletest/lib/libgtest.la
 gtest/googletest/lib/libgtest.la:
 	make -C gtest/googletest lib/libgtest.la
 GTEST_CPPFLAGS = -I${srcdir}/gtest/googletest/include
-DIST_SUBDIRS = gtest/googletest
 
 # gtest distributes fused sources and rebuilds them in the source tree.
 # Create any missing files, then write a marker that is not older than
 # those inputs so the rebuild does not run. A read-only distcheck tree
 # already contains the files, so this only writes the marker.
-.PHONY: gtest-fused-prepare
 BUILT_SOURCES = gtest-fused-prepare
 DISTCLEANFILES = gtest/googletest/fused-gtest
 gtest-fused-prepare:
@@ -155,11 +157,12 @@ capn_test_CXXFLAGS = -std=gnu++11 -pthread
 capn_test_LDADD = libcapnp_c.la $(GTEST_LDADD)
 capn_test_LDFLAGS = -pthread
 TESTS = capn-test
+endif
 
 CAPNP_SCHEMA_FILES := $(shell find . -type f -name \*.capnp)
 
 CAPNP ?= capnp
-.PHONY: capnp-compile fuzz-mem fuzz-fp
+.PHONY: capnp-compile fuzz-mem fuzz-fp gtest-fused-prepare
 capnp-compile:
 	$(CAPNP) compile \
 		--output=./capnpc-c \
