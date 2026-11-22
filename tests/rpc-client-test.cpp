@@ -3048,6 +3048,8 @@ TEST_F(RpcClient, TakeFromOtherQuestionIsOnce)
 }
 
 
+/* rpc.c++ capability release. A Return carries flags a C++ peer sets,
+ * and a Finish says whether the peer drops the results' caps. */
 std::vector<uint8_t> return_flags(uint32_t answer_id, int release_params,
                                   int no_finish)
 {
@@ -3100,7 +3102,49 @@ std::vector<uint8_t> unimplemented_of(const std::vector<uint8_t> &orig)
 	return out;
 }
 
+/* -1 when no Finish is queued, else its releaseResultCaps. */
+int finish_release_flag(const std::deque<std::vector<uint8_t> > &q)
+{
+	for (size_t i = 0; i < q.size(); i++) {
+		struct capn m;
+		if (capn_init_mem(&m, q[i].data(), q[i].size(), 0) != 0)
+			continue;
+		Message_ptr mp;
+		mp.p = capn_getp(capn_root(&m), 0, 1);
+		struct Message msg;
+		read_Message(&msg, mp);
+		int flag = -1;
+		if (msg.which == Message_finish) {
+			struct Finish f;
+			read_Finish(&f, msg.finish);
+			flag = f.releaseResultCaps;
+		}
+		capn_free(&m);
+		if (flag >= 0)
+			return flag;
+	}
+	return -1;
+}
+
 int g_lent_obj;
+
+int lend_dispatch(void *, uint64_t, uint16_t, capn_ptr, capn_ptr results)
+{
+	capn_ptr cap = capn_rpc_new_export_cap(g_vat, results.seg, &g_lent_obj,
+	                                       counter_dispatch);
+	if (cap.type != CAPN_INTERFACE)
+		return -1;
+	return capn_setp(results, 0, cap);
+}
+
+int lend_promise_dispatch(void *, uint64_t, uint16_t, capn_ptr, capn_ptr results)
+{
+	capn_ptr cap = capn_rpc_new_promise_cap(g_vat, results.seg, &g_lent_obj,
+	                                        counter_dispatch);
+	if (cap.type != CAPN_INTERFACE)
+		return -1;
+	return capn_setp(results, 0, cap);
+}
 
 TEST_F(RpcClient, UnimplementedResolveDropsTheResolvedExport)
 {
@@ -3161,6 +3205,94 @@ TEST_F(RpcClient, NoFinishNeededSendsNoFinish)
 		    << "noFinishNeeded " << skip;
 		EXPECT_FALSE(capn_rpc_is_answered(&client, q));
 	}
+}
+
+TEST_F(RpcClient, FinishReleasesTheResultCapsNobodyRead)
+{
+	g_vat = &vat;
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, lend_dispatch);
+	uint32_t qb = capn_rpc_send_bootstrap(&client);
+	settle();
+	capn_rpc_send_finish(&client, qb);
+	settle();
+
+	uint32_t q = capn_rpc_send_call(&client, 0, 0, 0, 0, 1, NULL, NULL);
+	settle();
+	ASSERT_TRUE(capn_rpc_is_answered(&client, q));
+	EXPECT_EQ(1, export_refcount(&vat, &g_lent_obj));
+	capn_rpc_send_finish(&client, q);
+	EXPECT_EQ(1, count_which(wire.to_vat, Message_release));
+	EXPECT_EQ(0, finish_release_flag(wire.to_vat));
+	settle();
+	EXPECT_EQ(0, export_refcount(&vat, &g_lent_obj));
+
+	/* The bootstrap import outlived its Finish. */
+	uint32_t again = capn_rpc_send_call(&client, 0, 0, 0, 0, 1, NULL, NULL);
+	settle();
+	EXPECT_TRUE(capn_rpc_is_answered(&client, again));
+	EXPECT_FALSE(capn_rpc_is_failed(&client, again));
+}
+
+TEST_F(RpcClient, FinishKeepsAResultCapTheApplicationRead)
+{
+	g_vat = &vat;
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, lend_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	uint32_t q = capn_rpc_send_call(&client, 0, 0, 0, 0, 1, NULL, NULL);
+	settle();
+	struct capn m;
+	capn_ptr content;
+	ASSERT_EQ(0, capn_rpc_answer_content(&client, q, &m, &content));
+	int is_export = -1;
+	int64_t id = capn_rpc_answer_cap(&client, q, capn_getp(content, 0, 1), &is_export);
+	capn_free(&m);
+	ASSERT_GE(id, 0);
+	EXPECT_EQ(0, is_export);
+	capn_rpc_send_finish(&client, q);
+	EXPECT_EQ(0, count_which(wire.to_vat, Message_release));
+	settle();
+	EXPECT_EQ(1, export_refcount(&vat, &g_lent_obj));
+	capn_rpc_send_release(&client, static_cast<uint32_t>(id), 1);
+	settle();
+	EXPECT_EQ(0, export_refcount(&vat, &g_lent_obj));
+}
+
+TEST_F(RpcClient, FinishBeforeTheReturnAsksThePeerToReleaseResults)
+{
+	g_vat = &vat;
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, lend_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	uint32_t q = capn_rpc_send_call(&client, 0, 0, 0, 0, 1, NULL, NULL);
+	pump(&vat, wire.to_vat);
+	ASSERT_EQ(1, count_which(wire.to_client, Message__return));
+	EXPECT_EQ(1, export_refcount(&vat, &g_lent_obj));
+	capn_rpc_send_finish(&client, q);
+	EXPECT_EQ(1, finish_release_flag(wire.to_vat));
+	EXPECT_EQ(0, count_which(wire.to_vat, Message_release));
+	settle();
+	EXPECT_EQ(0, export_refcount(&vat, &g_lent_obj));
+}
+
+/* rpc.c++ resultExports lists senderPromise ids too. */
+TEST_F(RpcClient, FinishBeforeTheReturnReleasesAResultPromise)
+{
+	g_vat = &vat;
+	capn_rpc_set_bootstrap(&vat, &doubler_calls, lend_promise_dispatch);
+	capn_rpc_send_bootstrap(&client);
+	settle();
+
+	uint32_t q = capn_rpc_send_call(&client, 0, 0, 0, 0, 1, NULL, NULL);
+	pump(&vat, wire.to_vat);
+	ASSERT_EQ(1, count_which(wire.to_client, Message__return));
+	EXPECT_EQ(1, export_refcount(&vat, &g_lent_obj));
+	capn_rpc_send_finish(&client, q);
+	EXPECT_EQ(1, finish_release_flag(wire.to_vat));
+	settle();
+	EXPECT_EQ(0, export_refcount(&vat, &g_lent_obj));
 }
 
 } // namespace

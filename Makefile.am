@@ -184,7 +184,10 @@ EXTRA_DIST += \
 	tests/brand-separate.capnp \
 	tests/interop-wrapper-check.sh \
 	tests/ptr-const.capnp \
-	tests/ptr-const-test.c
+	tests/ptr-const-test.c \
+	interop/release_client.c \
+	interop/release_c_server.c \
+	interop/release_server.c++
 
 EXTRA_DIST += \
 	compiler/c.capnp \

@@ -562,8 +562,9 @@ static void release_unsent_caps(struct capn_rpc_conn *c,
 	}
 }
 
-/* Release senderHosted exports carried by an answer's Return. Finish
- * with releaseResultCaps (the default) drops those references. */
+/* Release the senderHosted and senderPromise exports carried by an
+ * answer's Return, the resultExports that rpc.c++ handleFinish drops
+ * when Finish sets releaseResultCaps (the default). */
 static void release_answer_result_caps(struct capn_rpc_conn *c,
                                        struct capn_rpc_answer *a)
 {
@@ -594,6 +595,8 @@ static void release_answer_result_caps(struct capn_rpc_conn *c,
 		get_CapDescriptor(&cd, pl.capTable, i);
 		if (cd.which == CapDescriptor_senderHosted)
 			release_export_ref(c, cd.senderHosted);
+		else if (cd.which == CapDescriptor_senderPromise)
+			release_export_ref(c, cd.senderPromise);
 	}
 out:
 	capn_free(&stored);
@@ -1954,6 +1957,7 @@ static void question_clear(struct capn_rpc_question *q)
 		free(q->pipes[i].path);
 	free(q->pipes);
 	free(q->param_exports);
+	free(q->taken);
 	memset(q, 0, sizeof *q);
 }
 
@@ -2015,6 +2019,21 @@ static void note_param_exports(struct capn_rpc_question *q,
 	for (i = 0; i < n; i++)
 		if (!caps[i].is_import && caps[i].kind != CAPN_RPC_CAP_ANSWER)
 			q->param_exports[q->nparam_exports++] = caps[i].id;
+}
+
+static void note_taken(struct capn_rpc_question *q, uint32_t idx)
+{
+	uint32_t *grown;
+	int i;
+
+	for (i = 0; i < q->ntaken; i++)
+		if (q->taken[i] == idx)
+			return;
+	grown = (uint32_t *) realloc(q->taken, ((size_t) q->ntaken + 1) * sizeof *grown);
+	if (grown == NULL)
+		return;
+	grown[q->ntaken++] = idx;
+	q->taken = grown;
 }
 
 uint32_t capn_rpc_send_provide(struct capn_rpc_conn *c, uint32_t imported_cap,
@@ -2177,6 +2196,7 @@ uint32_t capn_rpc_send_bootstrap(struct capn_rpc_conn *c)
 	q = question_claim(c, &qid);
 	if (q == NULL)
 		return (uint32_t)-1;
+	q->bootstrap = 1;
 
 	capn_init_malloc(&msg);
 	cs = capn_root(&msg).seg;
@@ -4444,6 +4464,49 @@ uint32_t capn_rpc_send_pipelined_call(struct capn_rpc_conn *c, uint32_t question
 	return qid;
 }
 
+/* Release each import in the peer's Return that the application did
+ * not read, as rpc.c++ does when an unused response is dropped. */
+static void release_unread_results(struct capn_rpc_conn *c,
+                                   struct capn_rpc_question *q)
+{
+	struct capn msg;
+	struct Message m;
+	struct Return r;
+	struct Payload pl;
+	Message_ptr mp;
+	int i, j, n;
+
+	if (!q->peer_results || q->bootstrap || q->reply == NULL)
+		return;
+	if (capn_init_mem(&msg, q->reply, q->reply_len, 0) != 0)
+		return;
+	mp.p = capn_getp(capn_root(&msg), 0, 1);
+	read_Message(&m, mp);
+	if (m.which != Message__return)
+		goto out;
+	read_Return(&r, m._return);
+	if (r.which != Return_results || r.results.p.type == CAPN_NULL)
+		goto out;
+	read_Payload(&pl, r.results);
+	n = capn_len(pl.capTable);
+	for (i = 0; i < n; i++) {
+		struct CapDescriptor cd;
+
+		for (j = 0; j < q->ntaken; j++)
+			if (q->taken[j] == (uint32_t) i)
+				break;
+		if (j < q->ntaken)
+			continue;
+		get_CapDescriptor(&cd, pl.capTable, i);
+		if (cd.which == CapDescriptor_senderHosted)
+			capn_rpc_send_release(c, cd.senderHosted, 1);
+		else if (cd.which == CapDescriptor_senderPromise)
+			capn_rpc_send_release(c, cd.senderPromise, 1);
+	}
+out:
+	capn_free(&msg);
+}
+
 int capn_rpc_send_finish(struct capn_rpc_conn *c, uint32_t question_id)
 {
 	struct capn msg;
@@ -4453,12 +4516,15 @@ int capn_rpc_send_finish(struct capn_rpc_conn *c, uint32_t question_id)
 	Finish_ptr fp;
 	struct capn_segment *cs;
 	struct capn_rpc_question *q;
+	int awaiting = 0;
 	int rc;
 
 	q = question_find(c, question_id);
 	if (q) {
 		int skip = q->no_finish;
 
+		awaiting = !q->answered && !q->tail_wait;
+		release_unread_results(c, q);
 		question_clear(q);
 		if (skip)
 			return 0;
@@ -4469,6 +4535,9 @@ int capn_rpc_send_finish(struct capn_rpc_conn *c, uint32_t question_id)
 	memset(&m, 0, sizeof m);
 	memset(&f, 0, sizeof f);
 	f.questionId = question_id;
+	/* rpc.c++ ~QuestionRef: a call canceled before its Return asks the
+	 * peer to drop the results' caps. */
+	f.releaseResultCaps = awaiting;
 	fp = new_Finish(cs);
 	write_Finish(&f, fp);
 	m.which = Message_finish;
@@ -4567,6 +4636,9 @@ int64_t capn_rpc_answer_cap_id(struct capn_rpc_conn *c, uint32_t question_id)
 		id = (int64_t) cd.senderPromise;
 	else if (cd.which == CapDescriptor_receiverHosted)
 		id = (int64_t) cd.receiverHosted;
+	if (cd.which == CapDescriptor_senderHosted ||
+	    cd.which == CapDescriptor_senderPromise)
+		note_taken(q, pl.content.cap_idx);
 
 out:
 	capn_free(&msg);
@@ -4583,6 +4655,7 @@ int64_t capn_rpc_answer_cap(struct capn_rpc_conn *c, uint32_t question_id, capn_
 	Message_ptr mp;
 	struct capn_rpc_question *q = question_find(c, question_id);
 	int64_t id = -1;
+	int kind = -1;
 
 	if (q == NULL || !q->answered || q->failed)
 		return -1;
@@ -4594,7 +4667,12 @@ int64_t capn_rpc_answer_cap(struct capn_rpc_conn *c, uint32_t question_id, capn_
 		read_Return(&r, m._return);
 		if (r.which == Return_results) {
 			read_Payload(&pl, r.results);
-			id = cap_lookup(pl.capTable, cap, is_export);
+			id = cap_lookup(pl.capTable, cap, &kind);
+			if (id >= 0 && is_export)
+				*is_export = kind;
+			capn_resolve(&cap);
+			if (id >= 0 && kind == 0)
+				note_taken(q, cap.cap_idx);
 		}
 	}
 	capn_free(&msg);
@@ -4845,6 +4923,7 @@ static void handle_return(struct capn_rpc_conn *c, Return_ptr rp,
 	}
 	q->answered = 1;
 	q->failed = (r.which != Return_results);
+	q->peer_results = (r.which == Return_results);
 	if (r.which == Return_results && r.results.p.type != CAPN_NULL) {
 		struct Payload pl;
 		read_Payload(&pl, r.results);

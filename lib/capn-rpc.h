@@ -142,6 +142,15 @@ struct capn_rpc_question {
 	int nparam_exports;
 	/* The Return said noFinishNeeded, so no Finish is sent. */
 	int no_finish;
+	/* `reply` is the peer's Return(results), and `taken` lists the
+	 * capTable indexes the application read as its own imports.
+	 * Finish releases the others, as rpc.c++ drops unused caps. */
+	int peer_results;
+	uint32_t *taken;
+	int ntaken;
+	/* The bootstrap capability is the application's, as in rpc.c++,
+	 * where the Bootstrap question finishes once it returns. */
+	int bootstrap;
 };
 
 /* A capability promised to a third vat, awaiting its Accept.
@@ -587,11 +596,16 @@ CAPN_EXPORT capn_ptr capn_rpc_new_answer_cap(struct capn_rpc_conn *c, struct cap
  * reference: release it with capn_rpc_send_release when done. The
  * other senderHosted params are released when the call ends. */
 CAPN_EXPORT int64_t capn_rpc_param_cap(struct capn_rpc_conn *c, capn_ptr cap, int *is_export);
+/* Likewise an import read from an answer, with this function or with
+ * capn_rpc_answer_cap_id, is the application's reference. Finish
+ * releases the answer's other imports. */
 CAPN_EXPORT int64_t capn_rpc_answer_cap(struct capn_rpc_conn *c, uint32_t question_id, capn_ptr cap,
                         int *is_export);
 
-/* Tell the peer we are done with an answer, and drop our copy. No
- * Finish goes out when the Return said noFinishNeeded. */
+/* Tell the peer we are done with an answer, and drop our copy. Before
+ * the Return this cancels the call, and the peer drops the results'
+ * caps. After it, each import the application did not read gets a
+ * Release. No Finish goes out when the Return said noFinishNeeded. */
 CAPN_EXPORT int capn_rpc_send_finish(struct capn_rpc_conn *c, uint32_t question_id);
 
 /* Drop `count` references to an import. */

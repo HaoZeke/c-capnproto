@@ -816,6 +816,54 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
         depends: [reflect_server, reflect_client],
         timeout: 60,
       )
+
+      # rpc.c++ keeps a returned cap alive until its caller lets go, so
+      # a live count shows which caps a Finish or Release dropped.
+      release_server = executable(
+        'release_server',
+        ['interop' / 'release_server.c++', adder_cpp],
+        dependencies: capnp_rpc_dep,
+        override_options: ['cpp_std=c++17'],
+        native: peer_native,
+      )
+      release_client = executable(
+        'release_client',
+        ['interop' / 'release_client.c', 'compiler' / 'adder.capnp.c'],
+        include_directories: include_directories(['lib', 'compiler']),
+        dependencies: [libcapnp_dep],
+        c_args: ['-D_POSIX_C_SOURCE=200809L'],
+        implicit_include_directories: false,
+      )
+      test(
+        'rpc_release_cpp',
+        bash,
+        args: [
+          meson.current_source_dir() / 'interop' / 'run_rpc_interop.sh',
+          release_server,
+          release_client,
+        ],
+        depends: [release_server, release_client],
+        timeout: 60,
+      )
+      release_c_server = executable(
+        'release_c_server',
+        ['interop' / 'release_c_server.c', 'compiler' / 'adder.capnp.c'],
+        include_directories: include_directories(['lib', 'compiler']),
+        dependencies: [libcapnp_dep],
+        c_args: ['-D_POSIX_C_SOURCE=200809L'],
+        implicit_include_directories: false,
+      )
+      test(
+        'rpc_release_cpp_finish',
+        bash,
+        args: [
+          meson.current_source_dir() / 'interop' / 'run_rpc_promise.sh',
+          release_c_server,
+          release_server,
+        ],
+        depends: [release_c_server, release_server],
+        timeout: 60,
+      )
     else
       message('interop/rpc: skipped (needs a C++ toolchain, capnp-rpc, and the capnp tools).')
     endif
