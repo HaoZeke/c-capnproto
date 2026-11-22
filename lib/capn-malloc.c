@@ -129,10 +129,10 @@ void capn_reset_copy(struct capn *c) {
 }
 
 #define ZBUF_SZ 4096
-/* Framing header is a stack array of this many segment-size words.
- * The first word of the stream is (segnum - 1). C++
- * InputStreamMessageReader rejects a count of 512 or more, so the
- * wire word must stay below 511. */
+/* The first word of the stream is (segnum - 1). C++
+ * InputStreamMessageReader and PackedMessageReader reject a count of
+ * 512 or more. FlatArrayMessageReader stops only where the table runs
+ * past the buffer, so a larger table is allocated. */
 #define CAPN_MAX_SEGS 511
 
 /* Largest framed message the stream readers will allocate for, matching
@@ -252,8 +252,11 @@ static int init_fp(struct capn *c, FILE *f,
 	struct capn_segment *s = NULL;
 	uint32_t i, segnum;
 	size_t total = 0;
-	uint32_t hdr[CAPN_MAX_SEGS];
+	/* An even count also reads the pad word. */
+	uint32_t hdr_stack[CAPN_MAX_SEGS + 1];
+	uint32_t *hdr = hdr_stack;
 	uint8_t zbuf[ZBUF_SZ];
+	int flat = !packed && !f && !read_fd;
 	char *data = NULL;
 
 	capn_init_malloc(c);
@@ -288,8 +291,23 @@ static int init_fp(struct capn *c, FILE *f,
 		goto err;
 
 	segnum = capn_flip32(segnum);
-	if (segnum > CAPN_MAX_SEGS - 1)
+	if (flat) {
+		/* The count wraps to zero, or the table is longer than
+		 * the buffer: C++ refuses both before reading sizes. The
+		 * table and its pad are count / 2 + 1 words, and the
+		 * first four bytes are already read. */
+		size_t count = (size_t) segnum + 1u;
+		size_t words = z->avail_in / 8u + (z->avail_in % 8u >= 4u);
+		if (segnum == 0xffffffffu || count / 2u + 1u > words)
+			goto err;
+		if (count + 1u > sizeof(hdr_stack) / sizeof(hdr_stack[0])) {
+			hdr = (uint32_t *) malloc((count + 1u) * sizeof(*hdr));
+			if (!hdr)
+				goto err;
+		}
+	} else if (segnum > CAPN_MAX_SEGS - 1) {
 		goto err;
+	}
 	segnum++; /* The wire encoding was zero-based */
 
 	/* Read the header list */
@@ -333,9 +351,9 @@ static int init_fp(struct capn *c, FILE *f,
 			goto err;
 	}
 
-	/* Allocate space for the data and the capn_segment structs.
-	 * total is at most CAPN_MAX_MESSAGE_BYTES and segnum at most
-	 * CAPN_MAX_SEGS, so the sum fits in size_t. */
+	/* Allocate space for the data and the capn_segment structs. */
+	if ((size_t) segnum > ((size_t) -1 - total) / sizeof(*s))
+		goto err;
 	s = (struct capn_segment*) calloc(1, (size_t) total + (sizeof(*s) * segnum));
 	if (!s)
 		goto err;
@@ -360,12 +378,16 @@ static int init_fp(struct capn *c, FILE *f,
 
     /* Set the entire region to be freed on the last segment */
 	s[segnum-1].user = s;
+	if (hdr != hdr_stack)
+		free(hdr);
 
 	/* A segment of zero words is a message the reader can be
 	 * built from. The missing root is reported when it is read. */
 	return 0;
 
 err:
+	if (hdr != hdr_stack)
+		free(hdr);
 	memset(c, 0, sizeof(*c));
 	free(s);
 	return -1;

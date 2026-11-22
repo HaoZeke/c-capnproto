@@ -40,13 +40,66 @@ TEST(Stream, PackedZerosFromAnUnalignedAddress) {
 }
 
 TEST(Stream, ReadRejectsTooManySegments) {
-  /* Wire word 0 is (segnum - 1). 511 => 512 segments, above the cap. */
+  /* Wire word 0 is (segnum - 1). 511 => 512 segments, whose sizes
+   * run past this one-word buffer. */
   AlignedData<1> data = {{
     0xff, 0x01, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00,
   }};
   struct capn ctx;
   EXPECT_NE(0, capn_init_mem(&ctx, data.bytes, sizeof(data.bytes), 0));
+}
+
+static std::vector<uint8_t> empty_segments(uint32_t nseg) {
+  std::vector<uint8_t> buf((nseg / 2u + 1u) * 8, 0);
+  uint32_t cm1 = nseg - 1;
+  buf[0] = (uint8_t) cm1;
+  buf[1] = (uint8_t) (cm1 >> 8);
+  buf[2] = (uint8_t) (cm1 >> 16);
+  buf[3] = (uint8_t) (cm1 >> 24);
+  return buf;
+}
+
+static const uint8_t *fd_buf;
+static size_t fd_len;
+
+static ssize_t read_buf(int fd, void *p, size_t n) {
+  (void) fd;
+  if (n > fd_len)
+    n = fd_len;
+  memcpy(p, fd_buf, n);
+  fd_buf += n;
+  fd_len -= n;
+  return (ssize_t) n;
+}
+
+TEST(Stream, FlatBufferHasNoSegmentLimit) {
+  /* C++ 1.4.0 `FlatArrayMessageReader` has no segment limit. Its
+   * stream and packed readers stop at 511 segments. */
+  struct capn ctx;
+  for (uint32_t nseg : {512u, 1024u, 1025u, 1026u, 70000u}) {
+    std::vector<uint8_t> buf = empty_segments(nseg);
+    ASSERT_EQ(0, capn_init_mem(&ctx, buf.data(), buf.size(), 0)) << nseg;
+    EXPECT_EQ((int) nseg, ctx.segnum);
+    capn_free(&ctx);
+    fd_buf = buf.data();
+    fd_len = buf.size();
+    EXPECT_NE(0, capn_init_fd(&ctx, read_buf, 0, 0)) << nseg;
+  }
+}
+
+TEST(Stream, FlatBufferTableMustFit) {
+  /* C++ refuses a table that runs past the buffer, and a count that
+   * wraps to zero. */
+  struct capn ctx;
+  for (uint32_t nseg : {1025u, 1026u, 70000u}) {
+    std::vector<uint8_t> buf = empty_segments(nseg);
+    buf.resize(buf.size() - 8);
+    EXPECT_NE(0, capn_init_mem(&ctx, buf.data(), buf.size(), 0)) << nseg;
+  }
+  std::vector<uint8_t> wrap(64, 0);
+  memset(wrap.data(), 0xff, 4);
+  EXPECT_NE(0, capn_init_mem(&ctx, wrap.data(), wrap.size(), 0));
 }
 
 TEST(Stream, ReadAllows511EmptySegments) {
