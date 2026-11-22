@@ -518,10 +518,13 @@ static void text_struct(struct sb *b, const struct capn_dyn_struct *s, capn_ptr 
 
 static void text_enum(struct sb *b, const struct capn_dyn_enum *e, uint64_t v)
 {
-	if (e != NULL && v < (uint64_t) e->n && e->names[v] != NULL)
+	if (e != NULL && v < (uint64_t) e->n && e->names[v] != NULL) {
 		sb_str(b, e->names[v]);
-	else
+	} else {
+		sb_str(b, "(");
 		sb_int(b, CAPN_DYN_UINT16, v);
+		sb_str(b, ")");
+	}
 }
 
 static void text_value(struct sb *b, const struct capn_dyn_type *t,

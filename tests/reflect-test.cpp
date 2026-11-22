@@ -110,6 +110,25 @@ class Reflect : public ::testing::Test {
     free(json);
     capn_free(&m);
   }
+
+  /* Like check(), for a message built here rather than by the tool. */
+  void check_built(const Case &c, struct capn *m, const char *what) {
+    uint8_t buf[4096];
+    ssize_t sz = capn_write_mem(m, buf, sizeof buf, 0);
+    ASSERT_GT(sz, 0);
+    std::string bin((const char *) buf, (size_t) sz);
+    capn_ptr root = capn_getp(capn_root(m), 0, 1);
+
+    char *text = capn_dyn_to_text(c.desc, root);
+    ASSERT_NE(nullptr, text);
+    EXPECT_EQ(want_text(c, bin), text) << what;
+    free(text);
+
+    char *json = capn_dyn_to_json(c.desc, root, CAPN_DYN_COMPACT);
+    ASSERT_NE(nullptr, json);
+    EXPECT_EQ(want_json(c, bin), json) << what;
+    free(json);
+  }
 };
 
 }  // namespace
@@ -214,6 +233,19 @@ TEST_F(Reflect, FarPointerMessagesPrintLikeTheTool) {
   ASSERT_NE(nullptr, text);
   EXPECT_EQ(want_text(cs_case, bin), text);
   free(text);
+  capn_free(&c);
+}
+
+TEST_F(Reflect, UnknownEnumsPrintLikeTheTool) {
+  struct capn c;
+  capn_init_malloc(&c);
+  Ordered_ptr root = new_Ordered(capn_root(&c).seg);
+  struct Ordered o;
+  memset(&o, 0, sizeof o);
+  o.kind = (enum Kind) 12;
+  write_Ordered(&o, root);
+  ASSERT_EQ(0, capn_set_root(&c, root.p));
+  check_built({"Ordered", &Ordered_dyn, ""}, &c, "kind 12");
   capn_free(&c);
 }
 
