@@ -1877,6 +1877,29 @@ TEST(WireParity, PackedWriteOfManySegments) {
 	fclose(f);
 }
 
+TEST(WireParity, EmptyBufferWritesNoMessage) {
+	/* C++ `writeMessage` of a reader with no segments throws
+	 * "Tried to serialize uninitialized message". */
+	struct capn c;
+	uint8_t buf[32];
+	int fds[2];
+	FILE *fp;
+
+	ASSERT_EQ(0, capn_init_mem(&c, NULL, 0, 0));
+	EXPECT_EQ((int64_t) -1, capn_write_mem(&c, buf, sizeof buf, 1));
+	EXPECT_EQ((int64_t) -1, capn_write_mem(&c, buf, sizeof buf, 0));
+	EXPECT_EQ((int64_t) -1, capn_size(&c));
+	ASSERT_EQ(0, pipe(fds));
+	EXPECT_EQ(-1, capn_write_fd(&c, write, fds[1], 1));
+	close(fds[0]);
+	close(fds[1]);
+	fp = tmpfile();
+	ASSERT_NE(nullptr, fp);
+	EXPECT_EQ(-1, capn_write_fp(&c, fp, 0));
+	fclose(fp);
+	capn_free(&c);
+}
+
 TEST(WireParity, EmptyBufferIsAnEmptyMessage) {
 	struct capn c;
 	capn_ptr root;

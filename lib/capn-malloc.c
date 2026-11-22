@@ -458,6 +458,14 @@ static int header_render(struct capn *c, struct capn_segment *seg, uint8_t *head
 	return 0;
 }
 
+/* The zero-length buffer reader keeps one segment with no data, so
+ * its root read fails. C++ has no segment to write for it. */
+static int no_segments(const struct capn *c)
+{
+	return c->segnum == 0 || (c->segnum == 1 && c->seglist &&
+		c->seglist->data == NULL && c->seglist->cap == 0);
+}
+
 /* A builder whose first segment has room but no root yet is padded
  * to one word, which is what writing used to do by reading the root.
  * A wire segment is left alone, including one with no words. */
@@ -697,7 +705,7 @@ capn_write_mem(struct capn *c, uint8_t *p, size_t sz, int packed)
 	uint8_t *header;
 	int ret;
 
-	if (c->segnum == 0)
+	if (no_segments(c))
 		return -1;
 
 	if (packed)
@@ -827,7 +835,7 @@ int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, siz
 	struct capn_stream z;
 	unsigned char *p;
 
-	if (c->segnum == 0)
+	if (no_segments(c))
 		return -1;
 
 	/* A zero-word segment is a real segment. C++ writeMessage
@@ -929,7 +937,7 @@ int capn_write_fp(struct capn *c, FILE *f, int packed)
 	struct capn_stream z;
 	unsigned char *p;
 
-	if (c->segnum == 0 || f == NULL)
+	if (no_segments(c) || f == NULL)
 		return -1;
 
 	pad_builder_root(c);
@@ -1012,7 +1020,7 @@ int64_t capn_size(struct capn *c)
 	struct capn_segment *seg;
 	uint32_t i;
 
-	if (c->segnum == 0)
+	if (no_segments(c))
 		return -1;
 
 	pad_builder_root(c);
