@@ -40,6 +40,8 @@ main(int argc, char **argv)
 
 	Person_ptr rroot;
 	struct Person rp;
+	/* read_Person leaves the inactive union arms unwritten. */
+	memset(&rp, 0, sizeof rp);
 	rroot.p = capn_getp(capn_root(&rc), 0 /* off */, 1 /* resolve */);
 	read_Person(&rp, rroot);
 
@@ -53,7 +55,7 @@ main(int argc, char **argv)
 
 	if (rp.employment_which != Person_employment_school)
 		++rv;
-	if (!str_is(school, rp.employment.school.str))
+	else if (!str_is(school, rp.employment.school.str))
 		++rv;
 
 	if (capn_len(rp.phones) != 2)
