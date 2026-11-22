@@ -37,7 +37,6 @@ extern "C" {
 #define CAPN_RPC_MAX_JOIN_PARTS 16
 /* Capabilities one params or results payload can carry. */
 #define CAPN_RPC_MAX_PENDING_CAPS 16
-#define CAPN_RPC_MAX_PARAM_IMPORTS 16
 #define CAPN_RPC_MAX_PENDING_CALLS 64
 #define CAPN_RPC_MAX_QUEUED 32
 #define CAPN_RPC_MAX_HELD 16
@@ -103,8 +102,9 @@ struct capn_rpc_answer {
 	int redirected;
 	int taken;
 	/* Imports from the params that the results handed back. They stay
-	 * until Finish, so a pipelined call can still name them. */
-	uint32_t held_imports[CAPN_RPC_MAX_PARAM_IMPORTS];
+	 * until Finish, so a pipelined call can still name them. Owned
+	 * by the answer. */
+	uint32_t *held_imports;
 	int nheld;
 };
 
@@ -349,8 +349,9 @@ struct capn_rpc_pending_call {
 	/* The peer asked us to keep the results; a later Return names them
 	 * with takeFromOtherQuestion. */
 	int redirect;
-	/* senderHosted ids from the params, released when the call ends. */
-	uint32_t param_imports[CAPN_RPC_MAX_PARAM_IMPORTS];
+	/* senderHosted ids from the params, released when the call ends.
+	 * Owned by the pending call. */
+	uint32_t *param_imports;
 	int nparam_imports;
 };
 
@@ -388,7 +389,7 @@ struct capn_rpc_conn {
 	int *cap_dest_n;
 	/* Param imports the running dispatch looked up with
 	 * capn_rpc_param_cap. The application owns those references. */
-	uint32_t *param_taken;
+	uint32_t **param_taken;
 	int *param_taken_n;
 	/* The capTable of the call being dispatched, valid during dispatch. */
 	CapDescriptor_list in_caps;

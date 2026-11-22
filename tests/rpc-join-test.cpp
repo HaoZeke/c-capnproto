@@ -1585,4 +1585,78 @@ TEST_F(RpcJoin, FinishForAQueuedCallReleasesItsParams)
 	capn_rpc_free(&vat);
 }
 
+static void send_owned(struct capn_rpc_conn *c, struct capn *msg)
+{
+	int64_t need = capn_size(msg);
+	ASSERT_GT(need, (int64_t) 0);
+	std::vector<uint8_t> buf((size_t) need);
+	ASSERT_EQ(need, capn_write_mem(msg, buf.data(), buf.size(), 0));
+	ASSERT_EQ(0, capn_rpc_handle(c, buf.data(), buf.size()));
+}
+
+static int quiet_dispatch(void *, uint64_t, uint16_t, capn_ptr, capn_ptr)
+{
+	return 0;
+}
+
+TEST_F(RpcJoin, ReleasesEveryParameterCapability)
+{
+	struct capn msg;
+	struct capn_segment *cs;
+	int exp, i, n = 0;
+	const int count = 20;
+
+	exp = capn_rpc_export(&conn, NULL, quiet_dispatch);
+	ASSERT_GE(exp, 0);
+	capn_init_malloc(&msg);
+	cs = capn_root(&msg).seg;
+	CapDescriptor_list table = new_CapDescriptor_list(cs, count);
+	for (i = 0; i < count; i++) {
+		struct CapDescriptor cd;
+		memset(&cd, 0, sizeof cd);
+		cd.which = CapDescriptor_senderHosted;
+		cd.senderHosted = (uint32_t) (1000 + i);
+		set_CapDescriptor(&cd, table, i);
+	}
+	capn_ptr body = capn_new_struct(cs, 0, 1);
+	capn_ptr iface = capn_new_interface(cs, 0, 0);
+	iface.cap_idx = 0;
+	capn_setp(body, 0, iface);
+	struct Payload params;
+	memset(&params, 0, sizeof params);
+	params.content = body;
+	params.capTable = table;
+	Payload_ptr plp = new_Payload(cs);
+	write_Payload(&params, plp);
+	struct MessageTarget tgt;
+	memset(&tgt, 0, sizeof tgt);
+	tgt.which = MessageTarget_importedCap;
+	tgt.importedCap = (uint32_t) exp;
+	MessageTarget_ptr tp = new_MessageTarget(cs);
+	write_MessageTarget(&tgt, tp);
+	struct Call call;
+	memset(&call, 0, sizeof call);
+	call.questionId = 90;
+	call.target = tp;
+	call.params = plp;
+	Call_ptr cp = new_Call(cs);
+	write_Call(&call, cp);
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_call;
+	m.call = cp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	out.frames.clear();
+	send_owned(&conn, &msg);
+	capn_free(&msg);
+	for (i = 0; i < count; i++) {
+		for (const auto &f : out.frames)
+			if (is_release_of(f, (uint32_t) (1000 + i)))
+				n++;
+	}
+	EXPECT_EQ(count, n);
+}
+
 } // namespace

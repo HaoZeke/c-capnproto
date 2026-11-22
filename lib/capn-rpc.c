@@ -167,8 +167,10 @@ void capn_rpc_free(struct capn_rpc_conn *c)
 	int i;
 
 	detach_provisions(c);
-	for (i = 0; i < c->answers_cap; i++)
+	for (i = 0; i < c->answers_cap; i++) {
+		free(c->answers[i].held_imports);
 		free(c->answers[i].frame);
+	}
 	for (i = 0; i < c->questions_cap; i++)
 		question_clear(&c->questions[i]);
 	release_unsent_caps(c, c->pending_caps, c->npending);
@@ -180,6 +182,7 @@ void capn_rpc_free(struct capn_rpc_conn *c)
 			capn_free(c->pending_calls[i].msg);
 			free(c->pending_calls[i].msg);
 		}
+		free(c->pending_calls[i].param_imports);
 	}
 	for (i = 0; i < CAPN_RPC_MAX_QUEUED; i++)
 		free(c->queued[i].frame);
@@ -526,8 +529,9 @@ static void answer_drop(struct capn_rpc_conn *c, uint32_t qid)
 	struct capn_rpc_answer *a = answer_find(c, qid);
 	if (a) {
 		int i;
-		for (i = 0; i < a->nheld && i < CAPN_RPC_MAX_PARAM_IMPORTS; i++)
+		for (i = 0; i < a->nheld; i++)
 			capn_rpc_send_release(c, a->held_imports[i], 1);
+		free(a->held_imports);
 		free(a->frame);
 		memset(a, 0, sizeof *a);
 	}
@@ -927,23 +931,43 @@ int capn_rpc_write_third_party_cap(struct capn_rpc_conn *c, CapDescriptor_ptr cd
 	return 0;
 }
 
-static int collect_param_imports(CapDescriptor_list table, uint32_t *ids, int cap)
+/* Every senderHosted id in the table. The caller frees the list. A
+ * table with none of those ids returns NULL and sets *n_out to 0. */
+static uint32_t *collect_param_imports(CapDescriptor_list table, int *n_out)
 {
 	int n = 0, i, len;
+	uint32_t *ids;
 
-	if (table.p.type == CAPN_NULL || cap <= 0)
-		return 0;
+	*n_out = 0;
+	if (table.p.type == CAPN_NULL)
+		return NULL;
 	len = capn_len(table);
+	if (len <= 0)
+		return NULL;
+	ids = (uint32_t *) calloc((size_t) len, sizeof *ids);
+	if (ids == NULL)
+		return NULL;
 	for (i = 0; i < len; i++) {
 		struct CapDescriptor cd;
 
 		get_CapDescriptor(&cd, table, i);
 		if (cd.which != CapDescriptor_senderHosted)
 			continue;
-		if (n < cap)
-			ids[n++] = cd.senderHosted;
+		ids[n++] = cd.senderHosted;
 	}
-	return n;
+	*n_out = n;
+	return ids;
+}
+
+static int id_list_add(uint32_t **ids, int *n, uint32_t id)
+{
+	uint32_t *grown = (uint32_t *) realloc(*ids, ((size_t) *n + 1) * sizeof *grown);
+
+	if (grown == NULL)
+		return -1;
+	grown[(*n)++] = id;
+	*ids = grown;
+	return 0;
 }
 
 /* Drop the ids the dispatch took. */
@@ -951,6 +975,8 @@ static int drop_taken(uint32_t *ids, int n, const uint32_t *taken, int ntaken)
 {
 	int i, j, out = 0;
 
+	if (ids == NULL)
+		return 0;
 	for (i = 0; i < n; i++) {
 		for (j = 0; j < ntaken; j++) {
 			if (taken[j] == ids[i])
@@ -966,9 +992,7 @@ static void release_import_list(struct capn_rpc_conn *c, const uint32_t *ids, in
 {
 	int i;
 
-	if (n > CAPN_RPC_MAX_PARAM_IMPORTS)
-		n = CAPN_RPC_MAX_PARAM_IMPORTS;
-	for (i = 0; i < n; i++)
+	for (i = 0; ids != NULL && i < n; i++)
 		capn_rpc_send_release(c, ids[i], 1);
 }
 
@@ -993,7 +1017,7 @@ static int finish_call(struct capn_rpc_conn *c, uint32_t qid, struct capn *msg,
                        int ncaps, int redirect,
                        const uint32_t *imports, int nimports)
 {
-	uint32_t kept[CAPN_RPC_MAX_PARAM_IMPORTS];
+	uint32_t *kept = NULL;
 	int nkept = 0, k;
 	struct Message m;
 	struct Return r;
@@ -1028,22 +1052,21 @@ static int finish_call(struct capn_rpc_conn *c, uint32_t qid, struct capn *msg,
 	/* rpc.c++ drops the params on the pipeline branch, which runs
 	 * before the branch that sends the Return. Imports the results
 	 * hand back stay on the answer until Finish. */
-	if (nimports > CAPN_RPC_MAX_PARAM_IMPORTS)
-		nimports = CAPN_RPC_MAX_PARAM_IMPORTS;
-	for (k = 0; k < nimports; k++) {
-		if (import_kept(caps, ncaps, imports[k]))
-			kept[nkept++] = imports[k];
-		else
+	for (k = 0; imports != NULL && k < nimports; k++) {
+		if (!import_kept(caps, ncaps, imports[k]) ||
+		    id_list_add(&kept, &nkept, imports[k]) != 0)
 			capn_rpc_send_release(c, imports[k], 1);
 	}
 	rc = send_answer(c, qid, msg, redirect ? 0 : 1);
 	{
 		struct capn_rpc_answer *a = answer_find(c, qid);
 		if (rc == 0 && a != NULL) {
-			memcpy(a->held_imports, kept, (size_t) nkept * sizeof kept[0]);
+			a->held_imports = kept;
 			a->nheld = nkept;
-		} else
+		} else {
 			release_import_list(c, kept, nkept);
+			free(kept);
+		}
 	}
 	/* A failed send that did not keep the answer never handed the
 	 * capabilities to the peer. */
@@ -1097,6 +1120,7 @@ static void pending_release(struct capn_rpc_conn *c,
 	free_cap_paths(pc->caps, pc->ncaps);
 	capn_free(pc->msg);
 	free(pc->msg);
+	free(pc->param_imports);
 	memset(pc, 0, sizeof *pc);
 }
 
@@ -1216,14 +1240,14 @@ int capn_rpc_return(struct capn_rpc_conn *c, uint32_t question_id,
 	if (pc == NULL)
 		return -1;
 	if (pc->cancelled) {
-		uint32_t imports[CAPN_RPC_MAX_PARAM_IMPORTS];
+		uint32_t *imports = pc->param_imports;
 		int nimports = pc->nparam_imports;
 
-		if (nimports > CAPN_RPC_MAX_PARAM_IMPORTS)
-			nimports = CAPN_RPC_MAX_PARAM_IMPORTS;
-		memcpy(imports, pc->param_imports, (size_t) nimports * sizeof imports[0]);
+		pc->param_imports = NULL;
+		pc->nparam_imports = 0;
 		pending_release(c, pc);
 		release_import_list(c, imports, nimports);
+		free(imports);
 		return -1;
 	}
 	if (pc->local_question) {
@@ -1231,6 +1255,7 @@ int capn_rpc_return(struct capn_rpc_conn *c, uint32_t question_id,
 		rstruct = pc->results;
 		ncaps = pc->ncaps;
 		rc = answer_local_question(c, question_id, msg, rstruct, pc->caps, ncaps);
+		free(pc->param_imports);
 		memset(pc, 0, sizeof *pc);
 		return rc;
 	}
@@ -1242,6 +1267,7 @@ int capn_rpc_return(struct capn_rpc_conn *c, uint32_t question_id,
 	 * is still in use for the duration of the send. */
 	rc = finish_call(c, question_id, msg, rstruct, pc->caps, ncaps, redirect,
 	                 pc->param_imports, pc->nparam_imports);
+	free(pc->param_imports);
 	memset(pc, 0, sizeof *pc);
 	return rc;
 }
@@ -1250,7 +1276,7 @@ int capn_rpc_return_exception(struct capn_rpc_conn *c, uint32_t question_id,
                               uint32_t generation, const char *reason)
 {
 	struct capn_rpc_pending_call *pc = pending_find_gen(c, question_id, generation);
-	uint32_t imports[CAPN_RPC_MAX_PARAM_IMPORTS];
+	uint32_t *imports;
 	int nimports;
 	int cancelled;
 	int rc;
@@ -1260,10 +1286,10 @@ int capn_rpc_return_exception(struct capn_rpc_conn *c, uint32_t question_id,
 		return -1;
 	local = pc->local_question;
 	cancelled = pc->cancelled;
+	imports = pc->param_imports;
 	nimports = pc->nparam_imports;
-	if (nimports > CAPN_RPC_MAX_PARAM_IMPORTS)
-		nimports = CAPN_RPC_MAX_PARAM_IMPORTS;
-	memcpy(imports, pc->param_imports, (size_t) nimports * sizeof imports[0]);
+	pc->param_imports = NULL;
+	pc->nparam_imports = 0;
 	release_unsent_caps(c, pc->caps, pc->ncaps);
 	free_cap_paths(pc->caps, pc->ncaps);
 	pc->ncaps = 0;
@@ -1273,6 +1299,7 @@ int capn_rpc_return_exception(struct capn_rpc_conn *c, uint32_t question_id,
 	if (cancelled) {
 		memset(pc, 0, sizeof *pc);
 		release_import_list(c, imports, nimports);
+		free(imports);
 		return -1;
 	}
 	if (local) {
@@ -1281,6 +1308,7 @@ int capn_rpc_return_exception(struct capn_rpc_conn *c, uint32_t question_id,
 			fail_existing(q);
 		memset(pc, 0, sizeof *pc);
 		release_import_list(c, imports, nimports);
+		free(imports);
 		return 0;
 	}
 	reject_questions(c, question_id, reason ? reason : "call failed");
@@ -1291,6 +1319,7 @@ int capn_rpc_return_exception(struct capn_rpc_conn *c, uint32_t question_id,
 	memset(pc, 0, sizeof *pc);
 	/* The call context drops the params after the Return is sent. */
 	release_import_list(c, imports, nimports);
+	free(imports);
 	return rc;
 }
 
@@ -1301,12 +1330,13 @@ static int param_exception_taken(struct capn_rpc_conn *c, const struct Call *cal
                                  const uint32_t *taken, int ntaken,
                                  const char *reason)
 {
-	uint32_t ids[CAPN_RPC_MAX_PARAM_IMPORTS];
-	int n = collect_param_imports(params->capTable, ids, CAPN_RPC_MAX_PARAM_IMPORTS);
+	int n = 0;
+	uint32_t *ids = collect_param_imports(params->capTable, &n);
 	int rc = call_exception(c, call, reason);
 
 	n = drop_taken(ids, n, taken, ntaken);
 	release_import_list(c, ids, n);
+	free(ids);
 	return rc;
 }
 
@@ -1427,9 +1457,9 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp,
 		uint32_t saved_g = c->current_generation;
 		struct capn_rpc_pending_cap *saved_dest = c->cap_dest;
 		int *saved_dest_n = c->cap_dest_n;
-		uint32_t *saved_taken = c->param_taken;
+		uint32_t **saved_taken = c->param_taken;
 		int *saved_taken_n = c->param_taken_n;
-		uint32_t taken[CAPN_RPC_MAX_PARAM_IMPORTS];
+		uint32_t *taken = NULL;
 		int ntaken = 0;
 		uint32_t gen;
 		int redirect;
@@ -1445,7 +1475,7 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp,
 		c->current_generation = gen;
 		c->cap_dest = local_caps;
 		c->cap_dest_n = &nlocal;
-		c->param_taken = taken;
+		c->param_taken = &taken;
 		c->param_taken_n = &ntaken;
 
 		/* Sized by capn_rpc_set_result_size: one data word and one pointer is
@@ -1462,6 +1492,7 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp,
 			free_cap_paths(local_caps, nlocal);
 			capn_free(msg);
 			free(msg);
+			free(taken);
 			return param_exception(c, &call, &params, "results too large");
 		}
 		rc = c->exports[eid].dispatch(c->exports[eid].server, call.interfaceId,
@@ -1495,36 +1526,43 @@ static int handle_call(struct capn_rpc_conn *c, Call_ptr cp,
 				if (nlocal > 0)
 					memcpy(pc->caps, local_caps,
 					       (size_t) nlocal * sizeof local_caps[0]);
+				pc->param_imports = collect_param_imports(
+					params.capTable, &pc->nparam_imports);
 				pc->nparam_imports = drop_taken(pc->param_imports,
-					collect_param_imports(params.capTable,
-					                      pc->param_imports,
-					                      CAPN_RPC_MAX_PARAM_IMPORTS),
-					taken, ntaken);
+					pc->nparam_imports, taken, ntaken);
+				free(taken);
 				return 0;
 			}
 			release_unsent_caps(c, local_caps, nlocal);
 			free_cap_paths(local_caps, nlocal);
 			capn_free(msg);
 			free(msg);
-			return param_exception_taken(c, &call, &params, taken, ntaken,
-			                             "too many pending calls");
+			rc = param_exception_taken(c, &call, &params, taken, ntaken,
+			                           "too many pending calls");
+			free(taken);
+			return rc;
 		}
 		if (rc != 0) {
 			release_unsent_caps(c, local_caps, nlocal);
 			free_cap_paths(local_caps, nlocal);
 			capn_free(msg);
 			free(msg);
-			return param_exception_taken(c, &call, &params, taken, ntaken,
-			                             "call failed");
+			rc = param_exception_taken(c, &call, &params, taken, ntaken,
+			                           "call failed");
+			free(taken);
+			return rc;
 		}
 		{
-			uint32_t imports[CAPN_RPC_MAX_PARAM_IMPORTS];
-			int nimports = drop_taken(imports,
-				collect_param_imports(params.capTable, imports,
-				                      CAPN_RPC_MAX_PARAM_IMPORTS),
-				taken, ntaken);
-			return finish_call(c, call.questionId, msg, rstruct, local_caps,
-			                   nlocal, redirect, imports, nimports);
+			int nimports = 0;
+			uint32_t *imports = collect_param_imports(params.capTable,
+			                                          &nimports);
+
+			nimports = drop_taken(imports, nimports, taken, ntaken);
+			free(taken);
+			rc = finish_call(c, call.questionId, msg, rstruct, local_caps,
+			                 nlocal, redirect, imports, nimports);
+			free(imports);
+			return rc;
 		}
 	}
 }
@@ -2380,13 +2418,10 @@ int64_t capn_rpc_param_cap(struct capn_rpc_conn *c, capn_ptr cap, int *is_export
 	if (id >= 0 && !exp && c->param_taken && c->param_taken_n) {
 		int i, n = *c->param_taken_n;
 		for (i = 0; i < n; i++) {
-			if (c->param_taken[i] == (uint32_t) id)
+			if ((*c->param_taken)[i] == (uint32_t) id)
 				return id;
 		}
-		if (n < CAPN_RPC_MAX_PARAM_IMPORTS) {
-			c->param_taken[n] = (uint32_t) id;
-			*c->param_taken_n = n + 1;
-		}
+		id_list_add(c->param_taken, c->param_taken_n, (uint32_t) id);
 	}
 	return id;
 }
@@ -2659,29 +2694,29 @@ static int frame_question_id(const uint8_t *data, size_t len, uint32_t *qid)
 }
 
 /* senderHosted ids in the params of a queued Call frame. */
-static int frame_param_imports(const uint8_t *data, size_t len, uint32_t *ids)
+static uint32_t *frame_param_imports(const uint8_t *data, size_t len, int *n)
 {
 	struct capn msg;
 	struct Message m;
 	struct Call call;
 	struct Payload params;
 	Message_ptr mp;
-	int n = 0;
+	uint32_t *ids = NULL;
 
+	*n = 0;
 	if (capn_init_mem(&msg, data, len, 0) != 0)
-		return 0;
+		return NULL;
 	mp.p = capn_getp(capn_root(&msg), 0, 1);
 	read_Message(&m, mp);
 	if (m.which == Message_call) {
 		read_Call(&call, m.call);
 		if (call.params.p.type != CAPN_NULL) {
 			read_Payload(&params, call.params);
-			n = collect_param_imports(params.capTable, ids,
-			                          CAPN_RPC_MAX_PARAM_IMPORTS);
+			ids = collect_param_imports(params.capTable, n);
 		}
 	}
 	capn_free(&msg);
-	return n;
+	return ids;
 }
 
 /* Scalar view of one CapDescriptor, so the message it was read from
@@ -3227,14 +3262,15 @@ static int cancel_queued(struct capn_rpc_conn *c, uint32_t qid)
 		    fq != qid)
 			continue;
 		{
-			uint32_t ids[CAPN_RPC_MAX_PARAM_IMPORTS];
-			int n = frame_param_imports(c->queued[i].frame,
-			                            c->queued[i].len, ids);
+			int n = 0;
+			uint32_t *ids = frame_param_imports(c->queued[i].frame,
+			                                    c->queued[i].len, &n);
 
 			free(c->queued[i].frame);
 			memset(&c->queued[i], 0, sizeof c->queued[i]);
 			send_return_canceled(c, qid);
 			release_import_list(c, ids, n);
+			free(ids);
 		}
 		return 1;
 	}
