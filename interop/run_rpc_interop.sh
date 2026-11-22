@@ -32,8 +32,12 @@ wait_for_listen() {
 }
 
 # `EXE_WRAPPER`, or the `MESON_EXE_WRAPPER` meson sets on a cross
-# build, runs a peer whose ELF machine is s390x.
+# build, runs a peer whose ELF machine is s390x. `e_machine` sits at
+# byte 18; EM_S390 is 22, big-endian on s390x.
 EXE_WRAPPER=${EXE_WRAPPER:-${MESON_EXE_WRAPPER:-}}
+is_s390() {
+	[ "$(od -An -j18 -N2 -tx1 -- "$1" 2>/dev/null | tr -d ' \n')" = 0016 ]
+}
 # The wrapper can be several words, e.g. `env VAR=... qemu-s390x`.
 run_wrapped() {
 	set -f
@@ -43,7 +47,7 @@ run_wrapped() {
 	"$@"
 }
 wrapped() {
-	if [ -n "${EXE_WRAPPER:-}" ] && file -b -- "$1" 2>/dev/null | grep -q 'S/390'; then
+	if [ -n "${EXE_WRAPPER:-}" ] && is_s390 "$1"; then
 		run_wrapped "$@"
 	else
 		"$@"
@@ -51,7 +55,7 @@ wrapped() {
 }
 
 start_peer() {
-	if [ -n "${EXE_WRAPPER:-}" ] && file -b -- "$1" 2>/dev/null | grep -q 'S/390'; then
+	if [ -n "${EXE_WRAPPER:-}" ] && is_s390 "$1"; then
 		(
 			set -f
 			# shellcheck disable=SC2086

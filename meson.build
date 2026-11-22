@@ -433,6 +433,18 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
       meson.project_source_root(),
     ],
   )
+  wrapper_bash = find_program('bash', native: true, required: false)
+  wrapper_python = find_program('python3', native: true, required: false)
+  if wrapper_bash.found() and wrapper_python.found()
+    test(
+      'interop-wrapper-check',
+      wrapper_bash,
+      args: [
+        meson.project_source_root() / 'tests' / 'interop-wrapper-check.sh',
+        meson.project_source_root(),
+      ],
+    )
+  endif
 
   frame_le_test = executable(
     'frame-le-test',
