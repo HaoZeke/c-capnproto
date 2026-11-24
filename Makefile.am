@@ -234,6 +234,7 @@ EXTRA_DIST += \
 	tests/compiler-str-test.c \
 	tests/check-dyn-export.sh \
 	tests/check-dyn-export-comment.sh \
+	tests/check-schema-export.sh \
 	tests/data-codec.capnp \
 	tests/data-codec.h \
 	tests/data-codec-test.cpp \

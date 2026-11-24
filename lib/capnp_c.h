@@ -77,6 +77,13 @@ typedef SSIZE_T ssize_t;
 #define CAPN_EXPORT
 #endif
 
+/* rpc.capnp and rpc-threeparty.capnp put this on each generated function
+ * and struct tag. The library sources that define those functions set it
+ * to export them; everywhere else it is empty. */
+#ifndef CAPN_SCHEMA_EXPORT
+#define CAPN_SCHEMA_EXPORT
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

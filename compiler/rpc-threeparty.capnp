@@ -18,6 +18,10 @@
 # The nonce ties the three messages together. ProvisionId is only that
 # nonce. The recipient host and port travel on Provide, not on Accept.
 
+# The accessors are built into libcapnp_c, which must export them.
+using C = import "/c.capnp";
+$C.extendedattribute("CAPN_SCHEMA_EXPORT");
+
 struct VatId {
   # Where a vat can be reached. A network with a directory would carry an
   # opaque id instead; an address is what this one has.

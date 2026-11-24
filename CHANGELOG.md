@@ -15,6 +15,9 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 - Each generic instantiation types its own groups. A brand no longer
   retypes the unbound struct's group fields, and a union in a group gets
   enum names from the instantiation.
+- A Windows DLL exports the `rpc.capnp` and `rpc-threeparty.capnp`
+  accessors. Their generated code carries `CAPN_SCHEMA_EXPORT`, which is
+  empty outside the library.
 - `$C.rpcstubs` handlers receive the results pointer. `CAPN_RPC_PENDING`
   is `-2` and preserves results written through it; a plain return of
   `1` is an exception.
