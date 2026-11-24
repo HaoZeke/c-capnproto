@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 #include <stdio.h>
 #include <string.h>
+#include <vector>
 #ifndef _MSC_VER
 #include <unistd.h>
 #endif
@@ -21,14 +22,168 @@ union AlignedData {
   uint64_t words[wordCount];
 };
 
+TEST(Stream, PackedZerosFromAnUnalignedAddress) {
+  uint8_t raw[1 + 24];
+  uint8_t packed[8];
+  struct capn_stream s;
+  memset(raw, 0xab, sizeof raw);
+  memset(raw + 1, 0, 24);
+  memset(&s, 0, sizeof s);
+  s.next_in = raw + 1;
+  s.avail_in = 24;
+  s.next_out = packed;
+  s.avail_out = sizeof packed;
+  ASSERT_EQ(0, capn_deflate(&s));
+  EXPECT_EQ(0u, s.avail_in);
+  EXPECT_EQ(0x00, packed[0]);
+  EXPECT_EQ(0x02, packed[1]);
+}
+
 TEST(Stream, ReadRejectsTooManySegments) {
-  /* Wire word 0 is (segnum - 1). 1024 => 1025 segments, above CAPN_MAX_SEGS. */
+  /* Wire word 0 is (segnum - 1). 511 => 512 segments, whose sizes
+   * run past this one-word buffer. */
   AlignedData<1> data = {{
-    0x00, 0x04, 0x00, 0x00,
+    0xff, 0x01, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00,
   }};
   struct capn ctx;
   EXPECT_NE(0, capn_init_mem(&ctx, data.bytes, sizeof(data.bytes), 0));
+}
+
+static std::vector<uint8_t> empty_segments(uint32_t nseg) {
+  std::vector<uint8_t> buf((nseg / 2u + 1u) * 8, 0);
+  uint32_t cm1 = nseg - 1;
+  buf[0] = (uint8_t) cm1;
+  buf[1] = (uint8_t) (cm1 >> 8);
+  buf[2] = (uint8_t) (cm1 >> 16);
+  buf[3] = (uint8_t) (cm1 >> 24);
+  return buf;
+}
+
+static const uint8_t *fd_buf;
+static size_t fd_len;
+
+static ssize_t read_buf(int fd, void *p, size_t n) {
+  (void) fd;
+  if (n > fd_len)
+    n = fd_len;
+  memcpy(p, fd_buf, n);
+  fd_buf += n;
+  fd_len -= n;
+  return (ssize_t) n;
+}
+
+TEST(Stream, FlatBufferHasNoSegmentLimit) {
+  /* C++ 1.4.0 `FlatArrayMessageReader` has no segment limit. Its
+   * stream and packed readers stop at 511 segments. */
+  struct capn ctx;
+  for (uint32_t nseg : {512u, 1024u, 1025u, 1026u, 70000u}) {
+    std::vector<uint8_t> buf = empty_segments(nseg);
+    ASSERT_EQ(0, capn_init_mem(&ctx, buf.data(), buf.size(), 0)) << nseg;
+    EXPECT_EQ((int) nseg, ctx.segnum);
+    capn_free(&ctx);
+    fd_buf = buf.data();
+    fd_len = buf.size();
+    EXPECT_NE(0, capn_init_fd(&ctx, read_buf, 0, 0)) << nseg;
+  }
+}
+
+TEST(Stream, FlatBufferTableMustFit) {
+  /* C++ refuses a table that runs past the buffer, and a count that
+   * wraps to zero. */
+  struct capn ctx;
+  for (uint32_t nseg : {1025u, 1026u, 70000u}) {
+    std::vector<uint8_t> buf = empty_segments(nseg);
+    buf.resize(buf.size() - 8);
+    EXPECT_NE(0, capn_init_mem(&ctx, buf.data(), buf.size(), 0)) << nseg;
+  }
+  std::vector<uint8_t> wrap(64, 0);
+  memset(wrap.data(), 0xff, 4);
+  EXPECT_NE(0, capn_init_mem(&ctx, wrap.data(), wrap.size(), 0));
+}
+
+TEST(Stream, EmptyUnpackedStreamIsPrematureEof) {
+  /* kj::InputStream::read requires the framing word. Zero bytes is
+   * "Premature EOF". A flat buffer of zero bytes is an empty message. */
+  struct capn ctx;
+  FILE *f = tmpfile();
+  ASSERT_NE(nullptr, f);
+  EXPECT_NE(0, capn_init_fp(&ctx, f, 0));
+  EXPECT_EQ(0, capn_ok(&ctx));
+  EXPECT_EQ(0, capn_is_canonical(&ctx));
+  EXPECT_EQ(0, capn_ok(&ctx));
+  fclose(f);
+
+  static const uint8_t none = 0;
+  fd_buf = &none;
+  fd_len = 0;
+  EXPECT_NE(0, capn_init_fd(&ctx, read_buf, 0, 0));
+  EXPECT_EQ(0, capn_ok(&ctx));
+  EXPECT_EQ(0, capn_is_canonical(&ctx));
+  EXPECT_EQ(0, capn_ok(&ctx));
+
+  ASSERT_EQ(0, capn_init_mem(&ctx, NULL, 0, 0));
+  EXPECT_EQ(1, capn_ok(&ctx));
+  EXPECT_EQ(0, capn_is_canonical(&ctx));
+  EXPECT_EQ(1, capn_ok(&ctx));
+  capn_free(&ctx);
+}
+
+TEST(Stream, FileWithZeroWordSegmentIsAMessage) {
+  /* C++ 1.4.0 `InputStreamMessageReader` reads a frame whose
+   * segments hold no words. `capn_init_fd` does too. */
+  const uint8_t frame[] = {0, 0, 0, 0, 0, 0, 0, 0};
+  struct capn ctx;
+  FILE *f = tmpfile();
+  ASSERT_NE(nullptr, f);
+  ASSERT_EQ(sizeof frame, fwrite(frame, 1, sizeof frame, f));
+  rewind(f);
+  ASSERT_EQ(0, capn_init_fp(&ctx, f, 0));
+  EXPECT_EQ(1, ctx.segnum);
+  capn_free(&ctx);
+  fclose(f);
+}
+
+TEST(Stream, ReadAllows511EmptySegments) {
+  const uint32_t nseg = 511;
+  const uint32_t words = nseg / 2u + 1u;
+  std::vector<uint8_t> buf(words * 8, 0);
+  /* The count word is little endian on the wire. */
+  uint32_t cm1 = nseg - 1;
+  buf[0] = (uint8_t) cm1;
+  buf[1] = (uint8_t) (cm1 >> 8);
+  buf[2] = (uint8_t) (cm1 >> 16);
+  buf[3] = (uint8_t) (cm1 >> 24);
+  struct capn ctx;
+  ASSERT_EQ(0, capn_init_mem(&ctx, buf.data(), buf.size(), 0));
+  EXPECT_EQ((int) nseg, ctx.segnum);
+  capn_free(&ctx);
+}
+
+TEST(Stream, ReadRejectsASegmentLongerThanTheBuffer) {
+  /* One segment claiming 0x1fffffff words with eight bytes behind it. */
+  AlignedData<2> data = {{
+    0, 0, 0, 0,
+    0xff, 0xff, 0xff, 0x1f,
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+  }};
+  struct capn ctx;
+  EXPECT_NE(0, capn_init_mem(&ctx, data.bytes, sizeof(data.bytes), 0));
+}
+
+TEST(Stream, ReadRejectsAMessageOverTheSizeLimitEvenWhenPresent) {
+  const size_t limit_words = 8u * 1024u * 1024u;
+  std::vector<uint8_t> buf(8 + (limit_words + 1) * 8, 0);
+  uint32_t claimed = (uint32_t) (limit_words + 1);
+  memcpy(&buf[4], &claimed, 4);
+  struct capn ctx;
+  EXPECT_NE(0, capn_init_mem(&ctx, buf.data(), buf.size(), 0));
+
+  claimed = (uint32_t) limit_words;
+  memcpy(&buf[4], &claimed, 4);
+  ASSERT_EQ(0, capn_init_mem(&ctx, buf.data(), buf.size() - 8, 0));
+  capn_free(&ctx);
 }
 
 TEST(Stream, ReadEmptyStream_Even) {

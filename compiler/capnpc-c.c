@@ -10,6 +10,7 @@
 #include "schema.capnp.h"
 #include "str.h"
 #include "codecgen.h"
+#include "reflectgen.h"
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -37,10 +38,17 @@ static struct str SRC = STR_INIT, HDR = STR_INIT;
 static struct capn g_valcapn;
 static struct capn_segment g_valseg;
 static int g_valc;
-static int g_val0used, g_nullused;
+static int g_val0used, g_nullused, g_textnullused;
+
+/* capnp/stream.capnp */
+#define CAPNP_STREAM_FILE_ID 0x86c366a91393f3f8ULL
+
+#define ANNOTATION_RPCSTUBS	0xe5f6071829304a5bUL
 
 static int g_fieldgetset = 0;
 static int g_codecgen = 0;
+static int g_reflect = 0;
+static int g_rpcstubs = 0;
 static capnp_ctx_t g_ctx;
 
 static void bind_codec_ctx(void) {
@@ -174,6 +182,48 @@ static void free_string_list(struct string_list * list)
 }
 
 
+static int file_has_annotation(struct node *file, uint64_t id) {
+	int i;
+	for (i = 0; file && i < capn_len(file->n.annotations); i++) {
+		struct Annotation a;
+		get_Annotation(&a, file->n.annotations, i);
+		if (a.id == id)
+			return 1;
+	}
+	return 0;
+}
+
+/* Mark every method's parameter and result struct so rpc stubs are
+ * generated for it. A parameter list is a detached struct (scopeId 0)
+ * with no name of its own: give it <Interface>_<method>_params or
+ * _results and list it with the file's nodes. A named struct already
+ * belongs to the file (scopeId != 0, or resolve_names has named it)
+ * and only needs the flag. */
+static void name_method_structs(struct node *n, struct node *file) {
+	int i, k, count = capn_len(n->n._interface.methods);
+	for (i = 0; i < count; i++) {
+		struct Method m;
+		get_Method(&m, n->n._interface.methods, i);
+		for (k = 0; k < 2; k++) {
+			struct node *sn = find_node_mayfail(k ? m.resultStructType : m.paramStructType);
+			if (sn == NULL || sn->n.which != Node__struct || sn->n._struct.isGroup)
+				continue;
+			/* `-> stream` names capnp/stream.capnp:StreamResult. That
+			 * file has no generated header, and the handler takes no
+			 * results struct. */
+			if (sn->n.scopeId == CAPNP_STREAM_FILE_ID)
+				continue;
+			sn->rpc_struct = 1;
+			if (sn->name.len != 0 || sn->n.scopeId != 0)
+				continue;
+			str_addf(&sn->name, "%s_%.*s_%s", n->name.str, m.name.len, m.name.str,
+					k ? "results" : "params");
+			sn->next_file_node = file->file_nodes;
+			file->file_nodes = sn;
+		}
+	}
+}
+
 /* resolve_names recursively follows the nestedNodes tree in order to
  * set node->name.
  * It also builds up the list of nodes within a file (file_nodes and
@@ -188,7 +238,7 @@ static void resolve_names(struct str *b, struct node *n, capn_text name, struct 
 	for (i = capn_len(n->n.nestedNodes)-1; i >= 0; i--) {
 		struct Node_NestedNode nest;
 		get_Node_NestedNode(&nest, n->n.nestedNodes, i);
-		struct node *nn = find_node(nest.id);
+		struct node *nn = find_node_mayfail(nest.id);
 		if (nn != NULL) {
 			resolve_names(b, nn, nest.name, file, namespace);
 		}
@@ -206,6 +256,9 @@ static void resolve_names(struct str *b, struct node *n, capn_text name, struct 
 		n->next_file_node = file->file_nodes;
 		file->file_nodes = n;
 	}
+
+	if (n->n.which == Node__interface && file_has_annotation(file, ANNOTATION_RPCSTUBS))
+		name_method_structs(n, file);
 
 	str_setlen(b, sz);
 }
@@ -243,10 +296,363 @@ static void define_enum(struct node *n) {
 	}
 }
 
+/* Bindings in scope while a branded struct is being emitted. */
+struct brand_subst {
+	uint64_t scope;
+	uint16_t index;
+	Type_ptr type;
+};
+
+#define BRAND_SUBST_MAX 32
+static struct brand_subst g_subst[BRAND_SUBST_MAX];
+static int g_nsubst;
+
+struct brand_done {
+	char *name;
+	struct brand_done *next;
+};
+static struct brand_done *g_brand_done;
+
+/* Several generated files can name the same brand, and one program can
+ * include all of their headers and link all of their sources. The first
+ * header a translation unit sees defines the brand and maps each function
+ * name to the copy in its own source file. */
+static uint64_t g_brand_file_id;
+static struct str *g_brand_hdr, *g_brand_src;
+
+static void brand_name_macros(struct str *out, const struct str *src) {
+	const char *p = src->str, *end = src->str + src->len;
+
+	while (p < end) {
+		const char *eol = memchr(p, '\n', (size_t) (end - p));
+		const char *paren, *id;
+		if (eol == NULL)
+			eol = end;
+		if ((isalpha((unsigned char) *p) || *p == '_') &&
+		    strncmp(p, "static", 6) != 0 &&
+		    (paren = memchr(p, '(', (size_t) (eol - p))) != NULL) {
+			id = paren;
+			while (id > p && (isalnum((unsigned char) id[-1]) || id[-1] == '_'))
+				id--;
+			if (id < paren)
+				str_addf(out, "#define %.*s %.*s_%" PRIx64 "\n",
+				         (int) (paren - id), id,
+				         (int) (paren - id), id, g_brand_file_id);
+		}
+		p = eol + 1;
+	}
+}
+
+static void brand_done_clear(void) {
+	while (g_brand_done) {
+		struct brand_done *n = g_brand_done->next;
+		free(g_brand_done->name);
+		free(g_brand_done);
+		g_brand_done = n;
+	}
+	g_nsubst = 0;
+}
+
+static int brand_emitted(const char *name) {
+	struct brand_done *d;
+	for (d = g_brand_done; d != NULL; d = d->next) {
+		if (!strcmp(d->name, name))
+			return 1;
+	}
+	return 0;
+}
+
+static void brand_mark(const char *name) {
+	struct brand_done *d = calloc(1, sizeof *d);
+	if (d == NULL) {
+		fprintf(stderr, "out of memory marking a brand\n");
+		exit(2);
+	}
+	d->name = strdup(name);
+	if (d->name == NULL) {
+		free(d);
+		fprintf(stderr, "out of memory marking a brand\n");
+		exit(2);
+	}
+	d->next = g_brand_done;
+	g_brand_done = d;
+}
+
+static int scope_param_count(uint64_t scope_id)
+{
+	struct node *n = find_node_mayfail(scope_id);
+	if (n == NULL)
+		return 0;
+	return capn_len(n->n.parameters);
+}
+
+/* A binding already pushed by the brand outside this one. */
+static int subst_at(uint64_t scope, uint16_t index, int limit, Type_ptr *out)
+{
+	int i;
+	for (i = limit - 1; i >= 0; i--) {
+		if (g_subst[i].scope == scope && g_subst[i].index == index) {
+			*out = g_subst[i].type;
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static int push_brand(Brand_ptr brand) {
+	struct Brand b;
+	int i, j, saved = g_nsubst;
+	memset(&b, 0, sizeof b);
+	read_Brand(&b, brand);
+	for (i = 0; i < capn_len(b.scopes); i++) {
+		struct Brand_Scope sc;
+		int p, pc;
+		memset(&sc, 0, sizeof sc);
+		get_Brand_Scope(&sc, b.scopes, i);
+		/* inherit is the pass-through: each parameter of this scope
+		 * is bound to whatever the enclosing brand already bound it
+		 * to. schema.capnp Brand.Scope.inherit. */
+		if (sc.which == Brand_Scope_inherit) {
+			pc = scope_param_count(sc.scopeId);
+			for (p = 0; p < pc; p++) {
+				Type_ptr tp;
+				if (!subst_at(sc.scopeId, (uint16_t) p, saved, &tp))
+					continue;
+				if (g_nsubst >= BRAND_SUBST_MAX) {
+					fprintf(stderr, "too many brand bindings\n");
+					exit(2);
+				}
+				g_subst[g_nsubst].scope = sc.scopeId;
+				g_subst[g_nsubst].index = (uint16_t) p;
+				g_subst[g_nsubst].type = tp;
+				g_nsubst++;
+			}
+			continue;
+		}
+		if (sc.which != Brand_Scope_bind)
+			continue;
+		for (j = 0; j < capn_len(sc.bind); j++) {
+			struct Brand_Binding bd;
+			memset(&bd, 0, sizeof bd);
+			get_Brand_Binding(&bd, sc.bind, j);
+			if (bd.which != Brand_Binding_type)
+				continue;
+			if (g_nsubst >= BRAND_SUBST_MAX) {
+				fprintf(stderr, "too many brand bindings\n");
+				exit(2);
+			}
+			g_subst[g_nsubst].scope = sc.scopeId;
+			g_subst[g_nsubst].index = (uint16_t) j;
+			g_subst[g_nsubst].type = bd.type;
+			g_nsubst++;
+		}
+	}
+	return saved;
+}
+
+static void append_type_token(struct str *o, Type_ptr tp, int depth);
+
+/* Append _Binding tokens. Returns 1 when at least one binding is a type. */
+static int append_brand_binds(struct str *o, Brand_ptr brand) {
+	struct Brand b;
+	int i, j, any = 0;
+	if (brand.p.type == CAPN_NULL)
+		return 0;
+	memset(&b, 0, sizeof b);
+	read_Brand(&b, brand);
+	for (i = 0; i < capn_len(b.scopes); i++) {
+		struct Brand_Scope sc;
+		memset(&sc, 0, sizeof sc);
+		get_Brand_Scope(&sc, b.scopes, i);
+		if (sc.which == Brand_Scope_inherit) {
+			int p, pc = scope_param_count(sc.scopeId);
+			int concrete = 0;
+			for (p = 0; p < pc; p++) {
+				Type_ptr tp;
+				if (subst_at(sc.scopeId, (uint16_t) p, g_nsubst, &tp))
+					concrete = 1;
+			}
+			/* No enclosing binding: the parameters stay themselves,
+			 * which is the unbound generic, not a new name. */
+			if (!concrete)
+				continue;
+			for (p = 0; p < pc; p++) {
+				Type_ptr tp;
+				str_add(o, "_", 1);
+				if (subst_at(sc.scopeId, (uint16_t) p, g_nsubst, &tp))
+					append_type_token(o, tp, 0);
+				else
+					str_add(o, "AnyPointer", -1);
+				any = 1;
+			}
+			continue;
+		}
+		if (sc.which != Brand_Scope_bind)
+			continue;
+		for (j = 0; j < capn_len(sc.bind); j++) {
+			struct Brand_Binding bd;
+			memset(&bd, 0, sizeof bd);
+			get_Brand_Binding(&bd, sc.bind, j);
+			str_add(o, "_", 1);
+			if (bd.which == Brand_Binding_type) {
+				append_type_token(o, bd.type, 0);
+				any = 1;
+			} else {
+				str_add(o, "AnyPointer", -1);
+			}
+		}
+	}
+	return any;
+}
+
+static void append_type_token(struct str *o, Type_ptr tp, int depth) {
+	struct Type t;
+	static const char *prim[] = {
+		"Void", "Bool", "Int8", "Int16", "Int32", "Int64",
+		"UInt8", "UInt16", "UInt32", "UInt64", "Float32", "Float64",
+		"Text", "Data"
+	};
+	int i;
+	if (depth > 8) {
+		str_add(o, "Type", -1);
+		return;
+	}
+	memset(&t, 0, sizeof t);
+	read_Type(&t, tp);
+	if (t.which == Type_anyPointer &&
+	    t.anyPointer.which == Type_anyPointer_parameter) {
+		for (i = g_nsubst - 1; i >= 0; i--) {
+			if (g_subst[i].scope == t.anyPointer.parameter.scopeId &&
+			    g_subst[i].index == t.anyPointer.parameter.parameterIndex) {
+				append_type_token(o, g_subst[i].type, depth + 1);
+				return;
+			}
+		}
+		str_add(o, "Param", -1);
+		return;
+	}
+	if (t.which >= Type__void && t.which <= Type_data) {
+		str_add(o, prim[t.which], -1);
+		return;
+	}
+	switch (t.which) {
+	case Type__list:
+		str_add(o, "List_", -1);
+		append_type_token(o, t._list.elementType, depth + 1);
+		break;
+	case Type__enum:
+		str_add(o, find_node(t._enum.typeId)->name.str, -1);
+		break;
+	case Type__struct:
+	case Type__interface: {
+		struct node *sn = find_node(t.which == Type__struct ? t._struct.typeId : t._interface.typeId);
+		Brand_ptr br = t.which == Type__struct ? t._struct.brand : t._interface.brand;
+		str_add(o, (sn->name.str && sn->name.len) ? sn->name.str : "Anon", -1);
+		append_brand_binds(o, br);
+		break;
+	}
+	case Type_anyPointer:
+		if (t.anyPointer.which == Type_anyPointer_unconstrained &&
+		    t.anyPointer.unconstrained.which == Type_anyPointer_unconstrained__struct)
+			str_add(o, "AnyStruct", -1);
+		else if (t.anyPointer.which == Type_anyPointer_unconstrained &&
+		         t.anyPointer.unconstrained.which == Type_anyPointer_unconstrained__list)
+			str_add(o, "AnyList", -1);
+		else if (t.anyPointer.which == Type_anyPointer_unconstrained &&
+		         t.anyPointer.unconstrained.which == Type_anyPointer_unconstrained_capability)
+			str_add(o, "Capability", -1);
+		else
+			str_add(o, "AnyPointer", -1);
+		break;
+	default:
+		str_add(o, "Type", -1);
+		break;
+	}
+}
+
+static int c_name_taken(struct capn_tree *t, const char *name) {
+	while (t != NULL) {
+		struct node *n = (struct node *) t;
+		if (n->name.str != NULL && strcmp(n->name.str, name) == 0 &&
+		    (n->n.which == Node__struct || n->n.which == Node__enum ||
+		     n->n.which == Node__interface))
+			return 1;
+		if (c_name_taken(t->link[0], name))
+			return 1;
+		t = t->link[1];
+	}
+	return 0;
+}
+
+const char *node_brand_name(struct node *n, Brand_ptr brand) {
+	static struct str buf = STR_INIT;
+	int base;
+	if (n == NULL || n->name.str == NULL || n->name.len == 0)
+		return "";
+	str_reset(&buf);
+	str_add(&buf, n->name.str, -1);
+	base = buf.len;
+	if (!append_brand_binds(&buf, brand) || buf.len == base)
+		return n->name.str;
+	/* A schema struct, such as one under $C.namespace("Box_"), can
+	 * already own the readable name of Box(Text). */
+	if (c_name_taken(g_node_tree, buf.str))
+		str_addf(&buf, "_b%" PRIx64, n->n.id);
+	return buf.str;
+}
+
+static void emit_branded(struct node *n, Brand_ptr brand, const char *name);
+
+static void apply_subst(struct value *v) {
+	int depth;
+	for (depth = 0; depth < 8; depth++) {
+		Type_ptr repl;
+		int i, found = 0;
+		if (v->t.which != Type_anyPointer ||
+		    v->t.anyPointer.which != Type_anyPointer_parameter)
+			return;
+		for (i = g_nsubst - 1; i >= 0; i--) {
+			if (g_subst[i].scope == v->t.anyPointer.parameter.scopeId &&
+			    g_subst[i].index == v->t.anyPointer.parameter.parameterIndex) {
+				repl = g_subst[i].type;
+				found = 1;
+				break;
+			}
+		}
+		if (!found)
+			return;
+		read_Type(&v->t, repl);
+	}
+}
+
+/* Use a branded name when the type carries bindings, and emit that
+ * instantiation before the field that names it. The returned pointer
+ * is sn->name.str or v->tname_buf. */
+static const char *branded_struct_name(struct value *v, struct node *sn, Brand_ptr brand) {
+	const char *nm = node_brand_name(sn, brand);
+	struct str owned = STR_INIT;
+	if (sn->name.str == NULL || nm == sn->name.str)
+		return sn->name.str ? sn->name.str : "";
+	str_add(&owned, nm, -1);
+	emit_branded(sn, brand, owned.str);
+	strf(&v->tname_buf, "%s", owned.str);
+	str_release(&owned);
+	return v->tname_buf.str;
+}
+
+static const char *with_suffix(struct value *v, const char *base, const char *suffix) {
+	struct str tmp = STR_INIT;
+	str_add(&tmp, base, -1);
+	v->tname = strf(&v->tname_buf, "%s%s", tmp.str, suffix);
+	str_release(&tmp);
+	return v->tname;
+}
+
 static void decode_value(struct value* v, Type_ptr type, Value_ptr value, const char *symbol) {
 	struct Type list_type;
 	memset(v, 0, sizeof(*v));
 	read_Type(&v->t, type);
+	apply_subst(v);
 	read_Value(&v->v, value);
 
 	switch (v->t.which) {
@@ -295,12 +701,16 @@ static void decode_value(struct value* v, Type_ptr type, Value_ptr value, const 
 	case Type__enum:
 		v->tname = strf(&v->tname_buf, "enum %s", find_node(v->t._enum.typeId)->name.str);
 		break;
-	case Type__struct:
-		v->tname = strf(&v->tname_buf, "%s_ptr", find_node(v->t._struct.typeId)->name.str);
+	case Type__struct: {
+		struct node *sn = find_node(v->t._struct.typeId);
+		with_suffix(v, branded_struct_name(v, sn, v->t._struct.brand), "_ptr");
 		break;
-	case Type__interface:
-		v->tname = strf(&v->tname_buf, "%s_ptr", find_node(v->t._interface.typeId)->name.str);
+	}
+	case Type__interface: {
+		struct node *sn = find_node(v->t._interface.typeId);
+		with_suffix(v, branded_struct_name(v, sn, v->t._interface.brand), "_ptr");
 		break;
+	}
 	case Type_anyPointer:
 		v->tname = "capn_ptr";
 		break;
@@ -339,12 +749,16 @@ static void decode_value(struct value* v, Type_ptr type, Value_ptr value, const 
 		case Type__list:
 			v->tname = "capn_ptr_list";
 			break;
-		case Type__struct:
-			v->tname = strf(&v->tname_buf, "%s_list", find_node(list_type._struct.typeId)->name.str);
+		case Type__struct: {
+			struct node *sn = find_node(list_type._struct.typeId);
+			with_suffix(v, branded_struct_name(v, sn, list_type._struct.brand), "_list");
 			break;
-		case Type__interface:
-			v->tname = strf(&v->tname_buf, "%s_list", find_node(list_type._interface.typeId)->name.str);
+		}
+		case Type__interface: {
+			struct node *sn = find_node(list_type._interface.typeId);
+			with_suffix(v, branded_struct_name(v, sn, list_type._interface.brand), "_list");
 			break;
+		}
 		}
 	}
 
@@ -438,7 +852,7 @@ static void decode_value(struct value* v, Type_ptr type, Value_ptr value, const 
 				str_addf(&SRC, "{");
 
 			if (use_buf) {
-				str_addf(&SRC, "%d,%d,%d,%d,%d,%d,%d,(char*)&capn_buf[%d],(struct capn_segment*)&capn_seg",
+				str_addf(&SRC, "%d,%d,%d,%d,%d,%d,%d,(char*)&capn_buf[%d],(struct capn_segment*)&capn_seg,0,0,0",
 						p.type,
 						p.has_ptr_tag,
 						p.is_list_member,
@@ -448,7 +862,7 @@ static void decode_value(struct value* v, Type_ptr type, Value_ptr value, const 
 						p.len,
 						off);
 			} else {
-				str_addf(&SRC, "CAPN_NULL");
+				str_addf(&SRC, "CAPN_NULL,0,0,0,0,0,0,0,0,0,0,0");
 			}
 
 			if (strcmp(v->tname, "capn_ptr"))
@@ -676,13 +1090,14 @@ static void set_member(struct str *func, struct field *f, const char *ptr, const
 		str_addf(func, "capn_write64(%s, %d, capn_from_f64(%s)%s);\n", ptr, 8*f->f.slot.offset, var, xor);
 		break;
 	case Type_text:
+		g_textnullused = 1;
 		if (f->v.ptrval.type) {
-			g_val0used = 1;
-			str_addf(func, "capn_set_text(%s, %d, (%s.str != capn_val%d.str) ? %s : capn_val0);\n",
+			str_addf(func, "capn_set_text(%s, %d, (%s.str != capn_val%d.str) ? %s : capn_text_null);\n",
 					ptr, f->f.slot.offset, var, (int)f->v.intval, var);
 		} else {
-			str_addf(func, "capn_set_text(%s, %d, %s);\n",
-					ptr, f->f.slot.offset, var);
+			g_val0used = 1;
+			str_addf(func, "capn_set_text(%s, %d, (%s.str != capn_val0.str) ? %s : capn_text_null);\n",
+					ptr, f->f.slot.offset, var, var);
 		}
 		break;
 	case Type_data:
@@ -715,6 +1130,37 @@ static void set_member(struct str *func, struct field *f, const char *ptr, const
 		break;
 	default:
 		break;
+	}
+}
+
+/* The CAPN_ELEM name for a List(T) element, or NULL for a struct. */
+static const char *list_elem_size(Type_ptr elem) {
+	struct Type t;
+	read_Type(&t, elem);
+	switch (t.which) {
+	case Type__void:
+		return "CAPN_ELEM_VOID";
+	case Type__bool:
+		return "CAPN_ELEM_BIT";
+	case Type_int8:
+	case Type_uint8:
+		return "CAPN_ELEM_BYTE";
+	case Type_int16:
+	case Type_uint16:
+	case Type__enum:
+		return "CAPN_ELEM_2_BYTES";
+	case Type_int32:
+	case Type_uint32:
+	case Type_float32:
+		return "CAPN_ELEM_4_BYTES";
+	case Type_int64:
+	case Type_uint64:
+	case Type_float64:
+		return "CAPN_ELEM_8_BYTES";
+	case Type__struct:
+		return NULL;
+	default:
+		return "CAPN_ELEM_POINTER";
 	}
 }
 
@@ -779,6 +1225,26 @@ static void get_member(struct str *func, struct field *f, const char *ptr, const
 	case Type_anyPointer:
 	case Type__list:
 		str_addf(func, "%s = capn_getp(%s, %d, %d);\n", pvar, ptr, f->f.slot.offset, resolve);
+		/* A getter reads the field as C++ getFoo() does, which
+		 * throws on a pointer of the wrong kind. */
+		if (resolve && f->v.t.which == Type__struct)
+			str_addf(func, "%scapn_resolve_struct(&%s);\n", tab, pvar);
+		if (resolve && f->v.t.which == Type__interface)
+			str_addf(func, "%scapn_resolve_interface(&%s);\n", tab, pvar);
+		if (resolve && f->v.t.which == Type__list) {
+			const char *elem = list_elem_size(f->v.t._list.elementType);
+			if (elem)
+				str_addf(func, "%scapn_resolve_list(&%s, %s);\n", tab, pvar, elem);
+			else
+				str_addf(func, "%scapn_resolve_struct_list(&%s);\n", tab, pvar);
+		}
+		/* read_ leaves the pointer word unresolved. A zero word
+		 * is the null that a default replaces. A word that is
+		 * present stays unread until that field is fetched. */
+		if (!resolve)
+			str_addf(func,
+				"if (%s.type == CAPN_FAR_POINTER && %s.data != NULL && *(const uint64_t*)%s.data == 0) %s.type = CAPN_NULL;\n",
+				pvar, pvar, pvar, pvar);
 		break;
 	default:
 		return;
@@ -839,6 +1305,12 @@ static const char *field_name(struct field *f) {
 		"_Thread_local",
 		/* capn reserved for parameter names */
 		"p",
+		/* the discriminant member of a struct with a union */
+		"which",
+		/* object-like macros from libc and the compiler that would
+		 * expand inside a member declaration */
+		"errno", "stdin", "stdout", "stderr", "unix", "linux", "i386",
+		"noreturn", "complex", "imaginary",
 	};
 
 	size_t i;
@@ -939,6 +1411,7 @@ static void do_union(struct strings *s, struct node *n, struct field *first_fiel
 	struct field *f;
 	static struct str tag = STR_INIT;
 	struct str enums = STR_INIT;
+	int union_start, union_body;
 
 	str_reset(&tag);
 
@@ -990,7 +1463,9 @@ static void do_union(struct strings *s, struct node *n, struct field *first_fiel
 	union_cases(s, n, first_field, (1 << Type_data));
 	union_cases(s, n, first_field, (1 << Type__struct) | (1 << Type__interface) | (1 << Type_anyPointer) | (1 << Type__list));
 
+	union_start = s->decl.len;
 	str_addf(&s->decl, "%scapnp_nowarn union {\n", s->dtab.str);
+	union_body = s->decl.len;
 	str_add(&s->dtab, "\t", -1);
 
 	/* when we have defaults or groups we have to emit each case separately */
@@ -1048,7 +1523,11 @@ static void do_union(struct strings *s, struct node *n, struct field *first_fiel
 
 	str_setlen(&s->dtab, s->dtab.len - 1);
 
-	if (union_name) {
+	/* A union whose members are all Void has nothing to store, and an
+	 * empty union is not valid ISO C. */
+	if (s->decl.len == union_body) {
+		str_setlen(&s->decl, union_start);
+	} else if (union_name) {
 		str_addf(&s->decl, "%s} %s;\n", s->dtab.str, union_name);
 	} else {
 		str_addf(&s->decl, "%s};\n", s->dtab.str);
@@ -1135,12 +1614,11 @@ static void define_getter_functions(struct node* node, struct field* field,
                  field->v.tname, node->name.str,
                  field_name(field), node->name.str);
         struct str getter_body = STR_INIT;
-        get_member(&getter_body, field, "p.p", "", field_name(field), 1);
+        get_member(&getter_body, field, "p.p", s->ftab.str, field_name(field), 1);
 		str_addf(&s->pub_get, "{\n");
-        str_addf(&s->pub_get, "%scapn_resolve(&p.p);\n", s->ftab.str);
+        str_addf(&s->pub_get, "%scapn_resolve_struct(&p.p);\n", s->ftab.str);
         str_addf(&s->pub_get, "%s%s %s;\n", s->ftab.str, field->v.tname, field_name(field));
-        str_addf(&s->pub_get, "%s%s", s->ftab.str,
-                 getter_body.str);
+        str_addf(&s->pub_get, "%s", getter_body.str);
         str_release(&getter_body);
         str_addf(&s->pub_get, "%sreturn %s;\n}\n", s->ftab.str,
                  field_name(field));
@@ -1195,7 +1673,7 @@ static void define_has_function(struct node* node, struct field* field,
 	         extattr, extattr_space,
 	         node->name.str, field_name(field), node->name.str);
 	str_addf(&s->pub_get, "{\n");
-	str_addf(&s->pub_get, "%scapn_resolve(&p.p);\n", s->ftab.str);
+	str_addf(&s->pub_get, "%scapn_resolve_struct(&p.p);\n", s->ftab.str);
 	str_addf(&s->pub_get, "%scapn_ptr %s;\n", s->ftab.str, field_name(field));
 	str_addf(&s->pub_get, "%s%s = capn_getp(p.p, %d, 1);\n",
 	         s->ftab.str, field_name(field), field->f.slot.offset);
@@ -1297,24 +1775,46 @@ static void define_group(struct strings *s, struct node *n, const char *group_na
 	}
 }
 
+static void strings_init(struct strings *s) {
+	memset(s, 0, sizeof *s);
+	s->ftab = (struct str)STR_INIT;
+	s->dtab = (struct str)STR_INIT;
+	s->get = (struct str)STR_INIT;
+	s->set = (struct str)STR_INIT;
+	s->encoder = (struct str)STR_INIT;
+	s->decoder = (struct str)STR_INIT;
+	s->freeup = (struct str)STR_INIT;
+	s->enums = (struct str)STR_INIT;
+	s->decl = (struct str)STR_INIT;
+	s->var = (struct str)STR_INIT;
+	s->pub_get = (struct str)STR_INIT;
+	s->pub_get_header = (struct str)STR_INIT;
+	s->pub_set = (struct str)STR_INIT;
+	s->pub_set_header = (struct str)STR_INIT;
+}
+
+static void strings_release(struct strings *s) {
+	str_release(&s->ftab);
+	str_release(&s->dtab);
+	str_release(&s->get);
+	str_release(&s->set);
+	str_release(&s->encoder);
+	str_release(&s->decoder);
+	str_release(&s->freeup);
+	str_release(&s->enums);
+	str_release(&s->decl);
+	str_release(&s->var);
+	str_release(&s->pub_get);
+	str_release(&s->pub_get_header);
+	str_release(&s->pub_set);
+	str_release(&s->pub_set_header);
+}
+
 static void define_struct(struct node *n, const char *extattr, const char *extattr_space) {
-	static struct strings s;
+	struct strings s;
 	int i;
 
-	str_reset(&s.dtab);
-	str_reset(&s.ftab);
-	str_reset(&s.get);
-	str_reset(&s.set);
-	str_reset(&s.encoder);
-	str_reset(&s.decoder);
-	str_reset(&s.freeup);
-	str_reset(&s.enums);
-	str_reset(&s.decl);
-	str_reset(&s.var);
-	str_reset(&s.pub_get);
-	str_reset(&s.pub_set);
-	str_reset(&s.pub_get_header);
-	str_reset(&s.pub_set_header);
+	strings_init(&s);
 
 	str_add(&s.dtab, "\t", -1);
 	str_add(&s.ftab, "\t", -1);
@@ -1385,7 +1885,7 @@ static void define_struct(struct node *n, const char *extattr, const char *extat
 	str_addf(&SRC, "}\n");
 
 	str_addf(&SRC, "%s%svoid read_%s(struct %s *s capnp_unused, %s_ptr p) {\n", extattr, extattr_space, n->name.str, n->name.str, n->name.str);
-	str_addf(&SRC, "\tcapn_resolve(&p.p);\n\tcapnp_use(s);\n");
+	str_addf(&SRC, "\tcapn_resolve_struct(&p.p);\n\tcapnp_use(s);\n");
 	str_add(&SRC, s.get.str, s.get.len);
 	str_addf(&SRC, "}\n");
 
@@ -1396,6 +1896,7 @@ static void define_struct(struct node *n, const char *extattr, const char *extat
 
 	str_addf(&SRC, "%s%svoid get_%s(struct %s *s, %s_list l, int i) {\n", extattr, extattr_space, n->name.str, n->name.str, n->name.str);
 	str_addf(&SRC, "\t%s_ptr p;\n", n->name.str);
+	str_addf(&SRC, "\tcapn_resolve_struct_list(&l.p);\n");
 	str_addf(&SRC, "\tp.p = capn_getp(l.p, i, 0);\n");
 	str_addf(&SRC, "\tread_%s(s, p);\n", n->name.str);
 	str_addf(&SRC, "}\n");
@@ -1415,7 +1916,7 @@ static void define_struct(struct node *n, const char *extattr, const char *extat
 		else
 			str_add(&buf, mapname, -1);
 
-		str_addf(&SRC, "\nvoid encode_%s(struct capn_segment *cs,struct %s *d, %s *s) {\n",
+		str_addf(&SRC, "\nvoid encode_%s(struct capn_segment *cs capnp_unused,struct %s *d, %s *s) {\n",
 			 n->name.str, n->name.str, buf.str);
 		str_addf(&SRC, "%s\n", s.encoder.str ? s.encoder.str : "");
 		str_addf(&SRC, "}\n");
@@ -1439,6 +1940,111 @@ static void define_struct(struct node *n, const char *extattr, const char *extat
 
 	str_add(&HDR, s.pub_get_header.str, s.pub_get_header.len);
 	str_add(&HDR, s.pub_set_header.str, s.pub_set_header.len);
+	strings_release(&s);
+}
+
+static void emit_branded_body(struct node *n, Brand_ptr brand, const char *name);
+
+static void emit_branded(struct node *n, Brand_ptr brand, const char *name) {
+	struct str up_hdr, up_src, hdr, src;
+	int outer;
+
+	if (n == NULL || name == NULL || name[0] == 0)
+		return;
+	if (brand_emitted(name))
+		return;
+	brand_mark(name);
+	if (n->n.which != Node__interface &&
+	    (n->n.which != Node__struct || n->n._struct.isGroup))
+		return;
+
+	/* A brand nested in this one is written out first, outside this
+	 * guard, so its names are never mapped to this brand's file. */
+	outer = g_brand_hdr == NULL;
+	up_hdr = HDR;
+	up_src = SRC;
+	if (outer) {
+		g_brand_hdr = &up_hdr;
+		g_brand_src = &up_src;
+	}
+	HDR = (struct str) STR_INIT;
+	SRC = (struct str) STR_INIT;
+	emit_branded_body(n, brand, name);
+	hdr = HDR;
+	src = SRC;
+	HDR = up_hdr;
+	SRC = up_src;
+	if (outer)
+		g_brand_hdr = g_brand_src = NULL;
+
+	{
+		struct str *oh = outer ? &HDR : g_brand_hdr;
+		struct str *os = outer ? &SRC : g_brand_src;
+		str_addf(oh, "\n#ifndef CAPNP_C_BRAND_%s\n", name);
+		str_addf(oh, "#define CAPNP_C_BRAND_%s 0x%" PRIx64 "\n",
+		         name, g_brand_file_id);
+		brand_name_macros(oh, &src);
+		str_add(oh, hdr.str, hdr.len);
+		str_addf(oh, "#endif\n");
+		if (src.len > 0) {
+			str_addf(os, "\n#if CAPNP_C_BRAND_%s == 0x%" PRIx64 "\n",
+			         name, g_brand_file_id);
+			str_add(os, src.str, src.len);
+			str_addf(os, "#endif\n");
+		}
+	}
+	str_release(&hdr);
+	str_release(&src);
+}
+
+static void emit_branded_body(struct node *n, Brand_ptr brand, const char *name) {
+	int saved, flen, j;
+	struct node inst;
+	struct str nm = STR_INIT;
+
+	if (n->n.which == Node__interface) {
+		str_addf(&HDR, "typedef struct {capn_ptr p;} %s_ptr;\n", name);
+		str_addf(&HDR, "typedef struct {capn_ptr p;} %s_list;\n", name);
+		return;
+	}
+
+	str_addf(&HDR, "struct %s;\n", name);
+	str_addf(&HDR, "typedef struct {capn_ptr p;} %s_ptr;\n", name);
+	str_addf(&HDR, "typedef struct {capn_ptr p;} %s_list;\n", name);
+
+	saved = push_brand(brand);
+	inst = *n;
+	str_add(&nm, name, -1);
+	inst.name = nm;
+	flen = capn_len(n->n._struct.fields);
+	inst.fields = calloc(flen > 0 ? (size_t) flen : 1, sizeof(inst.fields[0]));
+	if (inst.fields == NULL) {
+		str_release(&nm);
+		g_nsubst = saved;
+		return;
+	}
+	for (j = 0; j < flen; j++)
+		decode_field(inst.fields, n->n._struct.fields, j);
+	define_struct(&inst, "", "");
+	str_addf(&HDR, "%s_ptr new_%s(struct capn_segment*);\n", name, name);
+	str_addf(&HDR, "%s_list new_%s_list(struct capn_segment*, int len);\n", name, name);
+	str_addf(&HDR, "void read_%s(struct %s*, %s_ptr);\n", name, name, name);
+	str_addf(&HDR, "void write_%s(const struct %s*, %s_ptr);\n", name, name, name);
+	str_addf(&HDR, "void get_%s(struct %s*, %s_list, int i);\n", name, name, name);
+	str_addf(&HDR, "void set_%s(const struct %s*, %s_list, int i);\n", name, name, name);
+	if (g_codecgen) {
+		mk_struct_list_encoder(&g_ctx, &inst);
+		mk_struct_ptr_encoder(&g_ctx, &inst);
+		mk_struct_list_decoder(&g_ctx, &inst);
+		mk_struct_ptr_decoder(&g_ctx, &inst);
+		mk_struct_list_free(&g_ctx, &inst);
+		mk_struct_ptr_free(&g_ctx, &inst);
+	}
+	for (j = 0; j < flen; j++)
+		str_release(&inst.fields[j].v.tname_buf);
+	free(inst.fields);
+	str_release(&nm);
+	g_nsubst = saved;
 }
 
 #if 0
@@ -1650,6 +2256,240 @@ static void define_interface_methods(struct node *n)
 	}
 }
 
+/* Emit `interface_id == X` for `iface` and every interface it extends.
+ * capnpc-c++ dispatchCall switches on each transitive superclass id and
+ * runs that interface's own methods. The handlers here live on the
+ * server object behind the direct superclass pointer, so that
+ * superclass's dispatch receives the ancestor id. */
+static void emit_ancestor_id_tests(struct node *iface, int *first, int depth)
+{
+	int i;
+
+	if (iface == NULL || iface->n.which != Node__interface || depth > 64)
+		return;
+	if (!*first)
+		str_addf(&SRC, " || ");
+	*first = 0;
+	str_addf(&SRC, "interface_id == %s_INTERFACE_ID", iface->name.str);
+	for (i = 0; i < capn_len(iface->n._interface.superclasses); i++) {
+		struct Superclass superclass;
+		struct node *older;
+
+		get_Superclass(&superclass, iface->n._interface.superclasses, i);
+		older = find_node_mayfail(superclass.id);
+		emit_ancestor_id_tests(older, first, depth + 1);
+	}
+}
+
+/* Largest result a method of `iface` or any interface it extends will
+ * write. A subclass connection sizes its results from the subclass
+ * macros, and an inherited method writes into that same struct. */
+static void consider_result_bounds(struct node *iface, int *maxd, int *maxp, int depth)
+{
+	int i;
+
+	if (iface == NULL || iface->n.which != Node__interface || depth > 64)
+		return;
+	for (i = 0; i < capn_len(iface->n._interface.methods); i++) {
+		struct Method m;
+		struct node *rn;
+
+		get_Method(&m, iface->n._interface.methods, i);
+		rn = find_node_mayfail(m.resultStructType);
+		if (rn == NULL || !rn->rpc_struct)
+			continue;
+		if ((int) rn->n._struct.dataWordCount * 8 > *maxd)
+			*maxd = (int) rn->n._struct.dataWordCount * 8;
+		if ((int) rn->n._struct.pointerCount > *maxp)
+			*maxp = (int) rn->n._struct.pointerCount;
+	}
+	for (i = 0; i < capn_len(iface->n._interface.superclasses); i++) {
+		struct Superclass superclass;
+		struct node *parent;
+
+		get_Superclass(&superclass, iface->n._interface.superclasses, i);
+		parent = find_node_mayfail(superclass.id);
+		consider_result_bounds(parent, maxd, maxp, depth + 1);
+	}
+}
+
+static int interface_has_superclass(struct node *n)
+{
+	int i;
+
+	for (i = 0; i < capn_len(n->n._interface.superclasses); i++) {
+		struct Superclass superclass;
+		struct node *parent;
+
+		get_Superclass(&superclass, n->n._interface.superclasses, i);
+		parent = find_node_mayfail(superclass.id);
+		if (parent && parent->n.which == Node__interface)
+			return 1;
+	}
+	return 0;
+}
+
+/* Typed RPC stubs ($C.rpcstubs): for each method a client call helper, a
+ * reader for its results, and a slot in a server vtable that
+ * <Interface>_dispatch routes to. */
+static void define_rpcstubs(struct node *n)
+{
+	int i, count = capn_len(n->n._interface.methods);
+	const char *I = n->name.str;
+	int maxd = 0, maxp = 0;
+
+	/* An interface that only inherits still needs a dispatcher and result
+	 * sizes. A further subclass forwards a grandparent id to it, and a
+	 * connection sized from this interface serves those inherited methods. */
+	if (count == 0 && !interface_has_superclass(n))
+		return;
+	consider_result_bounds(n, &maxd, &maxp, 0);
+
+	/* A `-> stream` method answers with the library's StreamResult, which
+	 * has no struct here: its handler takes no results and its stub has no
+	 * result reader. */
+	str_addf(&HDR, "\n/* RPC stubs for %s. */\n", I);
+	str_addf(&HDR, "struct %s_server {\n\tvoid *self;\n", I);
+	for (i = 0; i < capn_len(n->n._interface.superclasses); i++) {
+		struct Superclass superclass;
+		struct node *parent;
+
+		get_Superclass(&superclass, n->n._interface.superclasses, i);
+		parent = find_node_mayfail(superclass.id);
+		if (parent && parent->n.which == Node__interface)
+			str_addf(&HDR, "\tconst struct %s_server *super_%s;\n",
+				 parent->name.str, parent->name.str);
+	}
+	for (i = 0; i < count; i++) {
+		struct Method m;
+		struct node *pn, *rn;
+		get_Method(&m, n->n._interface.methods, i);
+		pn = find_node_mayfail(m.paramStructType);
+		rn = find_node_mayfail(m.resultStructType);
+		if (!pn || !pn->rpc_struct)
+			continue;
+		if (rn && rn->rpc_struct) {
+			str_addf(&HDR, "\tint (*on_%.*s)(void *self, const struct %s *in, struct %s *out, %s_ptr results);\n",
+					m.name.len, m.name.str, pn->name.str, rn->name.str, rn->name.str);
+		} else {
+			str_addf(&HDR, "\tint (*on_%.*s)(void *self, const struct %s *in, capn_ptr results);\n",
+					m.name.len, m.name.str, pn->name.str);
+		}
+	}
+	str_addf(&HDR, "};\n");
+	str_addf(&HDR, "/* Pass these to capn_rpc_set_result_size so results fit. */\n"
+			"#define %s_RESULT_DATASZ %d\n#define %s_RESULT_PTRS %d\n", I, maxd, I, maxp);
+	str_addf(&HDR, "int %s_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn_ptr params, capn_ptr results);\n", I);
+
+	str_addf(&SRC, "\nint %s_dispatch(void *server, uint64_t interface_id, uint16_t method_id, capn_ptr params, capn_ptr results) {\n", I);
+	str_addf(&SRC, "\tconst struct %s_server *srv = (const struct %s_server *) server;\n", I, I);
+	str_addf(&SRC, "\tcapnp_use(srv);\n\tcapnp_use(results);\n");
+	str_addf(&SRC, "\tif (interface_id != %s_INTERFACE_ID) {\n", I);
+	for (i = 0; i < capn_len(n->n._interface.superclasses); i++) {
+		struct Superclass superclass;
+		struct node *parent;
+		int first = 1;
+
+		get_Superclass(&superclass, n->n._interface.superclasses, i);
+		parent = find_node_mayfail(superclass.id);
+		if (!parent || parent->n.which != Node__interface)
+			continue;
+		str_addf(&SRC, "\t\tif (srv->super_%s != NULL && (", parent->name.str);
+		emit_ancestor_id_tests(parent, &first, 0);
+		str_addf(&SRC,
+			 "))\n\t\t\treturn %s_dispatch((void *) srv->super_%s, interface_id, method_id, params, results);\n",
+			 parent->name.str, parent->name.str);
+	}
+	str_addf(&SRC, "\t\treturn -1;\n\t}\n\tswitch (method_id) {\n");
+
+	for (i = 0; i < count; i++) {
+		struct Method m;
+		struct node *pn, *rn;
+		int has_results;
+		get_Method(&m, n->n._interface.methods, i);
+		pn = find_node_mayfail(m.paramStructType);
+		rn = find_node_mayfail(m.resultStructType);
+		if (!pn || !pn->rpc_struct)
+			continue;
+		has_results = rn && rn->rpc_struct;
+
+		str_addf(&HDR, "uint32_t %s_call_%.*s(struct capn_rpc_conn *c, uint32_t cap, const struct %s *in);\n",
+				I, m.name.len, m.name.str, pn->name.str);
+		if (has_results) {
+			str_addf(&HDR, "int %s_results_%.*s(struct capn_rpc_conn *c, uint32_t question, struct %s *out, struct capn *msg);\n",
+					I, m.name.len, m.name.str, rn->name.str);
+			str_addf(&HDR, "int %s_return_%.*s(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct %s *out);\n",
+					I, m.name.len, m.name.str, rn->name.str);
+		} else {
+			str_addf(&HDR, "int %s_return_%.*s(struct capn_rpc_conn *c, uint32_t question, uint32_t generation);\n",
+					I, m.name.len, m.name.str);
+		}
+
+		str_addf(&SRC, "\tcase %d: {\n\t\tstruct %s in;\n\t\t%s_ptr pp;\n\t\tint rc;\n", i, pn->name.str, pn->name.str);
+		if (has_results)
+			str_addf(&SRC, "\t\tstruct %s out;\n\t\t%s_ptr rp;\n", rn->name.str, rn->name.str);
+		str_addf(&SRC, "\t\tif (srv->on_%.*s == NULL)\n\t\t\treturn -1;\n", m.name.len, m.name.str);
+		str_addf(&SRC, "\t\tmemset(&in, 0, sizeof in);\n");
+		if (has_results)
+			str_addf(&SRC, "\t\tmemset(&out, 0, sizeof out);\n");
+		str_addf(&SRC, "\t\tpp.p = params;\n\t\tread_%s(&in, pp);\n", pn->name.str);
+		if (has_results) {
+			str_addf(&SRC, "\t\trp.p = results;\n");
+			str_addf(&SRC, "\t\trc = srv->on_%.*s(srv->self, &in, &out, rp);\n",
+					m.name.len, m.name.str);
+			str_addf(&SRC, "\t\tif (rc == CAPN_RPC_PENDING)\n\t\t\treturn CAPN_RPC_PENDING;\n");
+			str_addf(&SRC, "\t\tif (rc != 0)\n\t\t\treturn rc;\n");
+			str_addf(&SRC, "\t\twrite_%s(&out, rp);\n\t\treturn 0;\n\t}\n", rn->name.str);
+		} else {
+			str_addf(&SRC, "\t\trc = srv->on_%.*s(srv->self, &in, results);\n",
+					m.name.len, m.name.str);
+			str_addf(&SRC, "\t\tif (rc == CAPN_RPC_PENDING)\n\t\t\treturn CAPN_RPC_PENDING;\n");
+			str_addf(&SRC, "\t\tif (rc != 0)\n\t\t\treturn rc;\n\t\treturn 0;\n\t}\n");
+		}
+	}
+	str_addf(&SRC, "\tdefault:\n\t\treturn -1;\n\t}\n}\n");
+
+	for (i = 0; i < count; i++) {
+		struct Method m;
+		struct node *pn, *rn;
+		get_Method(&m, n->n._interface.methods, i);
+		pn = find_node_mayfail(m.paramStructType);
+		rn = find_node_mayfail(m.resultStructType);
+		if (!pn || !pn->rpc_struct)
+			continue;
+		str_addf(&SRC, "\nstatic void %s_%.*s_fill(void *ctx, capn_ptr params) {\n\t%s_ptr pp;\n\tpp.p = params;\n\twrite_%s((const struct %s *) ctx, pp);\n}\n",
+				I, m.name.len, m.name.str, pn->name.str, pn->name.str, pn->name.str);
+		str_addf(&SRC, "uint32_t %s_call_%.*s(struct capn_rpc_conn *c, uint32_t cap, const struct %s *in) {\n",
+				I, m.name.len, m.name.str, pn->name.str);
+		/* params_datasz is the data section only. struct_bytes_count
+		 * also counts the pointer section and would shift it. */
+		str_addf(&SRC, "\treturn capn_rpc_send_call(c, cap, %s_INTERFACE_ID, %d, (int) (%s_word_count * 8), (int) %s_pointer_count, %s_%.*s_fill, (void *) in);\n}\n",
+				I, i, pn->name.str, pn->name.str, I, m.name.len, m.name.str);
+		if (rn && rn->rpc_struct) {
+			str_addf(&SRC, "int %s_results_%.*s(struct capn_rpc_conn *c, uint32_t question, struct %s *out, struct capn *msg) {\n",
+					I, m.name.len, m.name.str, rn->name.str);
+			str_addf(&SRC, "\tcapn_ptr content;\n\t%s_ptr rp;\n\tif (capn_rpc_answer_content(c, question, msg, &content) != 0)\n\t\treturn -1;\n",
+					rn->name.str);
+			str_addf(&SRC, "\trp.p = content;\n\tread_%s(out, rp);\n\treturn 0;\n}\n", rn->name.str);
+			/* The handler can return CAPN_RPC_PENDING and fill the
+			 * results later. The struct was allocated at dispatch. */
+			str_addf(&SRC, "int %s_return_%.*s(struct capn_rpc_conn *c, uint32_t question, uint32_t generation, const struct %s *out) {\n",
+					I, m.name.len, m.name.str, rn->name.str);
+			str_addf(&SRC, "\tcapn_ptr results;\n\t%s_ptr rp;\n\tif (out == NULL)\n\t\treturn -1;\n",
+					rn->name.str);
+			str_addf(&SRC, "\tresults = capn_rpc_pending_results(c, question, generation);\n"
+					"\tif (results.type == CAPN_NULL)\n\t\treturn -1;\n"
+					"\trp.p = results;\n\twrite_%s(out, rp);\n"
+					"\treturn capn_rpc_return(c, question, generation);\n}\n",
+					rn->name.str);
+		} else {
+			str_addf(&SRC, "int %s_return_%.*s(struct capn_rpc_conn *c, uint32_t question, uint32_t generation) {\n"
+					"\treturn capn_rpc_return(c, question, generation);\n}\n",
+					I, m.name.len, m.name.str);
+		}
+	}
+}
+
 static void define_interface(struct node *n, const char *extattr, const char *extattr_space) {
 	/* Capability pointer: no struct body. List(Interface) is a pointer list. */
 	str_addf(&SRC, "\n%s%s%s_ptr new_%s(struct capn_segment *s) {\n",
@@ -1667,6 +2507,8 @@ static void define_interface(struct node *n, const char *extattr, const char *ex
 	str_addf(&SRC, "}\n");
 
 	define_interface_methods(n);
+	if (g_rpcstubs)
+		define_rpcstubs(n);
 }
 
 static void declare_interface_news(struct node *file_node,
@@ -1876,6 +2718,7 @@ int main() {
 		char *p;
 		const char *nameinfix = NULL;
 		FILE *srcf, *hdrf;
+		const char *unused;
 		struct id_bst * donotinclude_ids = NULL;
 		struct string_list * extraheader_strings = NULL;
 		const char *extattr = NULL;
@@ -1885,7 +2728,10 @@ int main() {
 		g_valseg.len = 0;
 		g_val0used = 0;
 		g_nullused = 0;
+		g_textnullused = 0;
 		g_codecgen = 0;
+		g_reflect = 0;
+		g_rpcstubs = 0;
 		capn_init_malloc(&g_valcapn);
 		capn_append_segment(&g_valcapn, &g_valseg);
 
@@ -1919,6 +2765,12 @@ int main() {
 				break;
 			case ANNOTATION_CODECGEN:	/* $C::codecgen */
 				g_codecgen = 1;
+				break;
+			case ANNOTATION_REFLECT:	/* $C::reflect */
+				g_reflect = 1;
+				break;
+			case ANNOTATION_RPCSTUBS:	/* $C::rpcstubs */
+				g_rpcstubs = 1;
 				break;
 			case 0x8c99797357b357e9UL:	/* $C::donotinclude */
 				if (v.which != Value_uint64)
@@ -1960,11 +2812,17 @@ int main() {
 
 		str_reset(&HDR);
 		str_reset(&SRC);
+		brand_done_clear();
+		g_brand_file_id = file_node->n.id;
 
 		str_addf(&HDR, "#ifndef CAPN_%X%X\n", (uint32_t) (file_node->n.id >> 32), (uint32_t) file_node->n.id);
 		str_addf(&HDR, "#define CAPN_%X%X\n", (uint32_t) (file_node->n.id >> 32), (uint32_t) file_node->n.id);
 		str_addf(&HDR, "/* AUTO GENERATED - DO NOT EDIT */\n");
 		str_addf(&HDR, "#include <capnp_c.h>\n");
+		if (g_reflect)
+			str_addf(&HDR, "#include <capn-dyn.h>\n");
+		if (g_rpcstubs)
+			str_addf(&HDR, "#include <capn-rpc.h>\n");
 		/* Do [extraheader] in declaration order. */
 		{
 			struct string_list ** current = &extraheader_strings;
@@ -2013,13 +2871,18 @@ int main() {
 				continue;
 			}
 
+			// capnp adds this import itself for `-> stream` methods, and
+			// no generated header for it ships with the runtime.
+			if (im.id == CAPNP_STREAM_FILE_ID) {
+				continue;
+			}
+
 			// Ignore leading slashes when generating C file #include's.
 			// This signifies an absolute import in a library directory.
 			const char *base_path = im.name.str[0] == '/' ? &im.name.str[1] : im.name.str;
 			str_addf(&HDR, "#include \"%s%s.h\"\n", base_path, nameinfix);
 		}
 
-		free_id_bst(used_import_ids);
 		free_id_bst(donotinclude_ids);
 		free_string_list(extraheader_strings);
 
@@ -2071,6 +2934,10 @@ int main() {
 
 		if (g_codecgen)
 			declare_codec(&g_ctx, file_node);
+		if (g_reflect) {
+			declare_reflect(&g_ctx, file_node);
+			define_reflect(&g_ctx, file_node);
+		}
 
 		str_addf(&HDR, "\n#ifdef __cplusplus\n}\n#endif\n#endif\n");
 
@@ -2105,16 +2972,27 @@ int main() {
 		if (g_codecgen) {
 			fprintf(srcf, "#include <stdlib.h>\n"
 					"#include <string.h>\n");
+		} else if (g_rpcstubs) {
+			fprintf(srcf, "#include <string.h>\n");
 		}
 
+		/* A brand defined by another header skips its code here, and
+		 * that code can be the only user of these. */
+		unused = g_brand_done != NULL ? " capnp_unused" : "";
 		if (g_val0used)
-			fprintf(srcf, "static const capn_text capn_val0 = {0,\"\",0};\n");
+			/* A named object, not a string literal: the compiler may merge
+			 * equal literals across translation units, and the writer
+			 * tells this placeholder from a caller's own "" by address. */
+			fprintf(srcf, "static const char capn_val0_str[1] = {0};\n"
+					"static const capn_text capn_val0%s = {0,capn_val0_str,0};\n", unused);
 		if (g_nullused)
-			fprintf(srcf, "static const capn_ptr capn_null = {CAPN_NULL};\n");
+			fprintf(srcf, "static const capn_ptr capn_null%s = {CAPN_NULL,0,0,0,0,0,0,0,0,0,0,0};\n", unused);
+		if (g_textnullused)
+			fprintf(srcf, "static const capn_text capn_text_null%s = {0,0,0};\n", unused);
 
 		if (g_valseg.len > 8) {
 			size_t k;
-			fprintf(srcf, "static const uint8_t capn_buf[%zu] = {", g_valseg.len-8);
+			fprintf(srcf, "static const uint8_t capn_buf[%zu]%s = {", g_valseg.len-8, unused);
 			for (k = 8; k < g_valseg.len; k++) {
 				if (k > 8)
 					fprintf(srcf, ",");
@@ -2124,8 +3002,8 @@ int main() {
 			}
 			fprintf(srcf, "\n};\n");
 
-			fprintf(srcf, "static const struct capn_segment capn_seg = {{0},0,0,0,(char*)&capn_buf[0],%zu,%zu,0};\n",
-					g_valseg.len-8, g_valseg.len-8);
+			fprintf(srcf, "static const struct capn_segment capn_seg%s = {{0},0,0,0,(char*)&capn_buf[0],%zu,%zu,0};\n",
+					unused, g_valseg.len-8, g_valseg.len-8);
 		}
 
 		fwrite(SRC.str, 1, SRC.len, srcf);
@@ -2134,5 +3012,7 @@ int main() {
 		capn_free(&g_valcapn);
 	}
 
+	/* One set serves every requested file, so it outlives the loop. */
+	free_id_bst(used_import_ids);
 	return 0;
 }

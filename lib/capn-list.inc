@@ -15,7 +15,8 @@
 UINT_T CAT(capn_get,SZ) (LIST_T l, int off) {
 	char *d;
 	capn_ptr p = l.p;
-	if (off >= p.len) {
+	capn_resolve(&p);
+	if (off < 0 || off >= p.len) {
 		return 0;
 	}
 
@@ -44,14 +45,31 @@ int CAT(capn_getv,SZ) (LIST_T l, int off, UINT_T *to, int sz) {
 	capn_ptr p;
 	capn_resolve(&l.p);
 	p = l.p;
-	if (off + sz > p.len) {
+	if (off < 0 || sz < 0 || off > p.len) {
+		return -1;
+	}
+	if (sz > p.len - off) {
 		sz = p.len - off;
+	}
+	{
+		size_t stride = p.type == CAPN_PTR_LIST ? 8u
+			: (size_t) p.datasz + 8u * (size_t) p.ptrs;
+		if (p.type == CAPN_LIST || p.type == CAPN_PTR_LIST) {
+			if (clamp_span(&p, off, sz, stride, &sz))
+				return -1;
+		}
 	}
 
 	switch (p.type) {
 	case CAPN_LIST:
 		if (p.datasz == SZ/8 && !p.ptrs && (SZ == 8 || CAPN_LITTLE)) {
-			memcpy(to, p.data + off, sz * (SZ/8));
+			size_t start, bytes;
+			if (sz == 0)
+				return 0;
+			if (!mul_size((size_t) off, (size_t) (SZ/8), &start) ||
+			    !mul_size((size_t) sz, (size_t) (SZ/8), &bytes))
+				return -1;
+			memcpy(to, p.data + start, bytes);
 			return sz;
 		} else if (p.datasz < SZ/8) {
 			return -1;
@@ -82,7 +100,8 @@ int CAT(capn_getv,SZ) (LIST_T l, int off, UINT_T *to, int sz) {
 int CAT(capn_set,SZ) (LIST_T l, int off, UINT_T v) {
 	char *d;
 	capn_ptr p = l.p;
-	if (off >= p.len) {
+	capn_resolve(&p);
+	if (off < 0 || off >= p.len) {
 		return -1;
 	}
 
@@ -110,14 +129,32 @@ int CAT(capn_set,SZ) (LIST_T l, int off, UINT_T v) {
 int CAT(capn_setv,SZ) (LIST_T l, int off, const UINT_T *from, int sz) {
 	int i;
 	capn_ptr p = l.p;
-	if (off + sz > p.len) {
+	capn_resolve(&p);
+	if (off < 0 || sz < 0 || off > p.len) {
+		return -1;
+	}
+	if (sz > p.len - off) {
 		sz = p.len - off;
+	}
+	{
+		size_t stride = p.type == CAPN_PTR_LIST ? 8u
+			: (size_t) p.datasz + 8u * (size_t) p.ptrs;
+		if (p.type == CAPN_LIST || p.type == CAPN_PTR_LIST) {
+			if (clamp_span(&p, off, sz, stride, &sz))
+				return -1;
+		}
 	}
 
 	switch (p.type) {
 	case CAPN_LIST:
 		if (p.datasz == SZ/8 && !p.ptrs && (SZ == 8 || CAPN_LITTLE)) {
-			memcpy(p.data + off, from, sz * (SZ/8));
+			size_t start, bytes;
+			if (sz == 0)
+				return 0;
+			if (!mul_size((size_t) off, (size_t) (SZ/8), &start) ||
+			    !mul_size((size_t) sz, (size_t) (SZ/8), &bytes))
+				return -1;
+			memcpy(p.data + start, from, bytes);
 			return sz;
 		} else if (p.datasz < SZ/8) {
 			return -1;
@@ -147,10 +184,24 @@ int CAT(capn_setv,SZ) (LIST_T l, int off, const UINT_T *from, int sz) {
 
 LIST_T CAT(capn_new_list,SZ) (struct capn_segment *seg, int sz) {
 	LIST_T l = {{CAPN_LIST}};
+	size_t nbytes;
+
+	if (sz < 0 || (int64_t) sz > MAX_LIST_ELEMS ||
+	    (size_t) sz > (size_t) -1 / (size_t) (SZ / 8)) {
+		memset(&l, 0, sizeof(l));
+		return l;
+	}
+	nbytes = (size_t) sz * (size_t) (SZ / 8);
+	if (nbytes > (size_t) MAX_ALLOC_BYTES) {
+		memset(&l, 0, sizeof(l));
+		return l;
+	}
 	l.p.seg = seg;
 	l.p.len = sz;
 	l.p.datasz = SZ/8;
-	new_object(&l.p, sz*(SZ/8));
+	new_object(&l.p, nbytes);
+	if (nbytes != 0 && l.p.data == NULL)
+		memset(&l, 0, sizeof(l));
 	return l;
 }
 

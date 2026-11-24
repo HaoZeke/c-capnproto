@@ -10,6 +10,13 @@ $C.fieldgetset;
 interface Echo {
 }
 
+# `-> stream` makes capnp add an import of /capnp/stream.capnp, which has
+# no C header; the generated header must still compile.
+interface Sink {
+  write @0 (chunk :Data) -> stream;
+  done @1 () -> ();
+}
+
 struct Holder {
   cap @0 :Echo;
   caps @1 :List(Echo);

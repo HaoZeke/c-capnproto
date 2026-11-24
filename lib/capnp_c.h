@@ -57,10 +57,11 @@ typedef SSIZE_T ssize_t;
 #define ALIGNED_(x) __attribute__ ((aligned(x)))
 #endif
 
-/* Shared-library export. MSVC only writes an import library (capnp_c.lib)
- * when at least one symbol is __declspec(dllexport). Static builds
- * (CAPNP_C_STATIC) and non-Windows leave this empty. Define
- * CAPNP_C_BUILDING when compiling the library objects.
+/* Shared-library export. MSVC needs __declspec(dllexport) to write an
+ * import library (capnp_c.lib); GCC and Clang use default visibility so
+ * hidden-visibility builds still export the public API. Static builds
+ * (CAPNP_C_STATIC) leave this empty. Define CAPNP_C_BUILDING when
+ * compiling the library objects.
  */
 #if defined(CAPNP_C_STATIC)
 #define CAPN_EXPORT
@@ -70,6 +71,8 @@ typedef SSIZE_T ssize_t;
 #else
 #define CAPN_EXPORT __declspec(dllimport)
 #endif
+#elif defined(__GNUC__) || defined(__clang__)
+#define CAPN_EXPORT __attribute__((visibility("default")))
 #else
 #define CAPN_EXPORT
 #endif
@@ -108,6 +111,16 @@ extern "C" {
  * lookup, create, create_local, and user can be set by the user. Other values
  * should be zero initialized.
  */
+
+/* Identity of an object a duplicating copy is still walking. */
+struct capn_dup_key {
+	char *data;
+	int type;
+	int len;
+	int datasz;
+	int ptrs;
+};
+
 struct capn {
 	/* user settable */
 	struct capn_segment *(*lookup)(void* /*user*/, uint32_t /*id */);
@@ -129,6 +142,14 @@ struct capn {
 	 * broken (non-null) pointer. Not set for a wire-null pointer word.
 	 * Query with capn_ok; clear with capn_clear_err. */
 	int decode_err;
+	/* When set, a deep copy duplicates a shared object and copies an
+	 * overlapping pointer. A cycle still fails. Zero keeps the
+	 * alias-or-refuse copy. */
+	int dup_copy;
+	struct capn_dup_key *dup_busy;
+	int *dup_at;
+	int dup_nbusy;
+	int dup_cap;
 };
 
 /* Default decode traversal budget (bytes). 0 in traversal_limit means this. */
@@ -191,8 +212,8 @@ enum CAPN_TYPE {
 	CAPN_PTR_LIST = 3,
 	CAPN_BIT_LIST = 4,
 	CAPN_FAR_POINTER = 5,
-	/* Capability pointer (encoding.html: A=3, B=0). len is the
-	 * capability table index. There is no object body. */
+	/* Capability pointer (encoding.html: A=3, B=0). The table index
+	 * is cap_idx. len is 0: it is not a list. There is no object body. */
 	CAPN_INTERFACE = 6,
 };
 
@@ -203,6 +224,7 @@ struct capn_ptr {
 	unsigned int is_composite_list : 1;
 	unsigned int datasz : 19;
 	unsigned int ptrs : 16;
+	/* List element count. 0 for structs, null, and capabilities. */
 	int len;
 	char *data;
 	struct capn_segment *seg;
@@ -210,6 +232,8 @@ struct capn_ptr {
 	 * initializers in generated constants keep working. 0/0 = unset. */
 	int nesting;
 	unsigned int nesting_valid;
+	/* Capability table index when type is CAPN_INTERFACE. Not a length. */
+	uint32_t cap_idx;
 };
 
 struct capn_text {
@@ -251,11 +275,35 @@ CAPN_EXPORT void capn_append_segment(struct capn*, struct capn_segment*);
 
 CAPN_EXPORT capn_ptr capn_root(struct capn *c);
 CAPN_EXPORT void capn_resolve(capn_ptr *p);
+/* Generated readers resolve with these. C++ reads a struct only from a
+ * struct pointer, and List(Struct) from any list but a bit list. Any
+ * other pointer becomes CAPN_NULL and sets decode_err, the C++
+ * "Schema mismatch" error. */
+CAPN_EXPORT void capn_resolve_struct(capn_ptr *p);
+/* C++ readCapabilityPointer accepts null and a capability pointer.
+ * Any other kind is a schema mismatch. */
+CAPN_EXPORT void capn_resolve_interface(capn_ptr *p);
+CAPN_EXPORT void capn_resolve_struct_list(capn_ptr *p);
+/* List(T) for any other T, whose schema.capnp ElementSize is `elem`.
+ * C++ reads a list whose elements have at least the data bits and
+ * pointers of T, and a bit list only as List(Bool). */
+enum CAPN_ELEM {
+	CAPN_ELEM_VOID = 0,
+	CAPN_ELEM_BIT = 1,
+	CAPN_ELEM_BYTE = 2,
+	CAPN_ELEM_2_BYTES = 3,
+	CAPN_ELEM_4_BYTES = 4,
+	CAPN_ELEM_8_BYTES = 5,
+	CAPN_ELEM_POINTER = 6
+};
+CAPN_EXPORT void capn_resolve_list(capn_ptr *p, int elem);
 
 /* capn_validate walks the pointer graph from the message root.
  * Returns 0 if landings are in-segment, nesting stays within
  * nesting_limit (0 means CAPN_NESTING_DEFAULT), the traversal budget
  * is not exceeded, and the graph has no cycles. Returns -1 otherwise.
+ * A far pointer into a segment with no words is an error, the same
+ * way following that pointer sets decode_err.
  * Does not consume traversal_used. A failed hop may set decode_err
  * (same as getp). Generated accessors still trust a capn_ptr that has
  * already been decoded and do not check capn_ok.
@@ -275,21 +323,38 @@ CAPN_EXPORT void capn_clear_err(struct capn *c);
 /* capn_canonicalize walks src and writes a single-segment canonical
  * form into dst (encoding.html): no far pointers, no holes, preorder,
  * trailing zero data/pointer words truncated, empty struct B=-1.
- * Shared objects are duplicated. dst must be a fresh
- * capn_init_malloc session (segnum == 0). Unframed bytes are
- * dst->seglist->data[0 .. len). capn_write_mem wraps them as a
- * 1-segment stream. Returns 0 on success, -1 on a bad pointer
- * graph, cycle, budget overflow, or a dst that is not writable.
+ * Shared objects are duplicated. A capability anywhere in the
+ * graph is refused. dst must be a fresh capn_init_malloc session
+ * (segnum == 0). Unframed bytes are dst->seglist->data[0 .. len).
+ * capn_write_mem wraps them as a 1-segment stream. Returns 0 on
+ * success, -1 on a capability, a bad pointer graph, a cycle, a
+ * budget overflow, or a dst that is not writable.
  */
 CAPN_EXPORT int capn_canonicalize(struct capn *src, struct capn *dst);
-
+/* 1 when the message is already in canonical form. 0 otherwise. */
+CAPN_EXPORT int capn_is_canonical(struct capn *c);
 /* capn_set_root sets the message root to p (capn_setp(capn_root(c), 0, p)).
  * new_* / write_* only fill a struct in a segment; the message is empty
  * until the root pointer is set. Empty messages are valid. */
 CAPN_EXPORT int capn_set_root(struct capn *c, capn_ptr p);
 
-#define capn_len(list) ((list).p.type == CAPN_FAR_POINTER ? (capn_resolve(&(list).p), (list).p.len) : (list).p.len)
-#define capn_ptr_len(p) ((p).type == CAPN_FAR_POINTER ? (capn_resolve(&(p)), (p).len) : (p).len)
+/* Element count of a list pointer. Far pointers are resolved first.
+ * Structs, capabilities, and nulls are not lists: the result is 0,
+ * so a capability table index cannot drive a list loop. */
+CAPN_INLINE int capn_checked_len(capn_ptr *p) {
+	if (p->type == CAPN_FAR_POINTER)
+		capn_resolve(p);
+	switch (p->type) {
+	case CAPN_LIST:
+	case CAPN_PTR_LIST:
+	case CAPN_BIT_LIST:
+		return p->len;
+	default:
+		return 0;
+	}
+}
+#define capn_len(list) capn_checked_len(&(list).p)
+#define capn_ptr_len(p) capn_checked_len(&(p))
 
 /* capn_getp|setp functions get/set ptrs in list/structs
  * off is the list index or pointer index in a struct
@@ -310,7 +375,13 @@ CAPN_EXPORT int capn_set_root(struct capn *c, capn_ptr p);
 CAPN_EXPORT capn_ptr capn_getp(capn_ptr p, int off, int resolve);
 CAPN_EXPORT int capn_setp(capn_ptr p, int off, capn_ptr tgt);
 
+/* A wire-null pointer returns def and leaves decode_err alone. A
+ * pointer that is present but is not a nonempty byte list ending in
+ * NUL also returns def and sets decode_err. An interior NUL is kept. */
 CAPN_EXPORT capn_text capn_get_text(capn_ptr p, int off, capn_text def);
+/* A byte list, including an empty one, is returned as-is. A wire-null
+ * pointer returns an empty capn_data and leaves decode_err alone. Any
+ * other pointer returns empty capn_data and sets decode_err. */
 CAPN_EXPORT capn_data capn_get_data(capn_ptr p, int off);
 CAPN_EXPORT int capn_set_text(capn_ptr p, int off, capn_text tgt);
 /* capn_set_data writes tgt.p (generated Data setters call this).
@@ -384,8 +455,9 @@ CAPN_EXPORT int capn_setv64(capn_list64 p, int off, const uint64_t *data, int sz
  *     data == NULL (all-zero word).
  *   - capn_new_interface(seg, datasz, ptrs) is a capability pointer
  *     (A=3, B=0). datasz/ptrs are unused (ABI match with capn_new_struct);
- *     there is no object body. The table index is capn_ptr.len (0 on create).
- *     A null interface is CAPN_NULL, not index 0.
+ *     there is no object body. The table index is capn_ptr.cap_idx
+ *     (0 on create). len stays 0. A null interface is CAPN_NULL, not
+ *     index 0.
  * Text is List(UInt8) with a trailing NUL included in the wire element count.
  */
 CAPN_EXPORT capn_ptr capn_new_string(struct capn_segment *seg, const char *str, ssize_t sz);
@@ -439,6 +511,11 @@ CAPN_INLINE int capn_write64(capn_ptr p, int off, uint64_t val);
 CAPN_EXPORT void capn_init_malloc(struct capn *c);
 CAPN_EXPORT int capn_init_fp(struct capn *c, FILE *f, int packed);
 CAPN_EXPORT int capn_init_mem(struct capn *c, const uint8_t *p, size_t sz, int packed);
+/* max_bytes 0 is the 64 MiB default. Any other value is the framing cap
+ * and the session traversal budget, in bytes. C++ applies one
+ * traversalLimitInWords to both. */
+CAPN_EXPORT int capn_init_fp_max(struct capn *c, FILE *f, int packed, size_t max_bytes);
+CAPN_EXPORT int capn_init_mem_max(struct capn *c, const uint8_t *p, size_t sz, int packed, size_t max_bytes);
 /* capn_init_fd is the read-side pair of capn_write_fd: the caller supplies
  * a read callback (same shape as POSIX read). packed is the stream codec.
  * Returns 0 on success, -1 on a NULL callback or a framing/I/O error.
@@ -462,6 +539,15 @@ CAPN_EXPORT int64_t capn_size(struct capn *c);
 CAPN_EXPORT int capn_write_fp(struct capn *c, FILE *f, int packed);
 CAPN_EXPORT int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, size_t count), int fd, int packed);
 CAPN_EXPORT int64_t capn_write_mem(struct capn *c, uint8_t *p, size_t sz, int packed);
+
+/* Flat form is one segment and no segment table, the bytes
+ * `capnp convert binary:flat` writes. The object is copied first,
+ * so a dirty list tail is cleared. flat-packed is that segment
+ * in the packed codec, with no segment table. A broken pointer, a
+ * capability root, or a spent traversal budget returns -1. A list
+ * root is copied. A null root is the empty-struct pointer. */
+CAPN_EXPORT int64_t capn_write_flat(struct capn *c, uint8_t *p, size_t sz);
+CAPN_EXPORT int64_t capn_write_flat_packed(struct capn *c, uint8_t *p, size_t sz);
 
 CAPN_EXPORT void capn_free(struct capn *c);
 CAPN_EXPORT void capn_reset_copy(struct capn *c);
@@ -535,7 +621,11 @@ CAPN_INLINE int capn_write1(capn_ptr p, int off, int val) {
 }
 
 CAPN_INLINE uint8_t capn_read8(capn_ptr p, int off) {
-	return off+1 <= p.datasz ? capn_flip8(*(uint8_t*) (p.data+off)) : 0;
+	/* A list pointer stores the element width in datasz and may sit at
+	 * the end of the segment. C++ getStruct on a non-struct reads the
+	 * default, so only a struct is loaded. */
+	return (p.type == CAPN_STRUCT && off+1 <= p.datasz) ?
+		capn_flip8(*(uint8_t*) (p.data+off)) : 0;
 }
 CAPN_INLINE int capn_write8(capn_ptr p, int off, uint8_t val) {
 	if (off+1 <= p.datasz) {
@@ -547,7 +637,8 @@ CAPN_INLINE int capn_write8(capn_ptr p, int off, uint8_t val) {
 }
 
 CAPN_INLINE uint16_t capn_read16(capn_ptr p, int off) {
-	return off+2 <= p.datasz ? capn_flip16(*(uint16_t*) (p.data+off)) : 0;
+	return (p.type == CAPN_STRUCT && off+2 <= p.datasz) ?
+		capn_flip16(*(uint16_t*) (p.data+off)) : 0;
 }
 CAPN_INLINE int capn_write16(capn_ptr p, int off, uint16_t val) {
 	if (off+2 <= p.datasz) {
@@ -559,7 +650,8 @@ CAPN_INLINE int capn_write16(capn_ptr p, int off, uint16_t val) {
 }
 
 CAPN_INLINE uint32_t capn_read32(capn_ptr p, int off) {
-	return off+4 <= p.datasz ? capn_flip32(*(uint32_t*) (p.data+off)) : 0;
+	return (p.type == CAPN_STRUCT && off+4 <= p.datasz) ?
+		capn_flip32(*(uint32_t*) (p.data+off)) : 0;
 }
 CAPN_INLINE int capn_write32(capn_ptr p, int off, uint32_t val) {
 	if (off+4 <= p.datasz) {
@@ -571,7 +663,8 @@ CAPN_INLINE int capn_write32(capn_ptr p, int off, uint32_t val) {
 }
 
 CAPN_INLINE uint64_t capn_read64(capn_ptr p, int off) {
-	return off+8 <= p.datasz ? capn_flip64(*(uint64_t*) (p.data+off)) : 0;
+	return (p.type == CAPN_STRUCT && off+8 <= p.datasz) ?
+		capn_flip64(*(uint64_t*) (p.data+off)) : 0;
 }
 CAPN_INLINE int capn_write64(capn_ptr p, int off, uint64_t val) {
 	if (off+8 <= p.datasz) {

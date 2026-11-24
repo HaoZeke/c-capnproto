@@ -24,6 +24,7 @@ TEST(Interface, NewInterfaceIsCapabilityPointer) {
   capn_ptr iface = capn_new_interface(root.seg, 0, 0);
   ASSERT_EQ(CAPN_INTERFACE, iface.type);
   EXPECT_EQ(0, iface.len);
+  EXPECT_EQ(0u, iface.cap_idx);
   EXPECT_EQ(root.seg, iface.seg);
 }
 
@@ -36,12 +37,13 @@ TEST(Interface, CreateWriteRead) {
 
   capn_ptr iface = capn_new_interface(holder.seg, 0, 0);
   ASSERT_EQ(CAPN_INTERFACE, iface.type);
-  iface.len = 7;
+  iface.cap_idx = 7;
   ASSERT_EQ(0, capn_setp(holder, 0, iface));
 
   capn_ptr got = capn_getp(holder, 0, 1);
   EXPECT_EQ(CAPN_INTERFACE, got.type);
-  EXPECT_EQ(7, got.len);
+  EXPECT_EQ(0, got.len);
+  EXPECT_EQ(7u, got.cap_idx);
 
   /* Wire word at the struct's first pointer: A=3, B=0, C=7. */
   uint64_t word = capn_flip64(*(uint64_t *)(holder.data + holder.datasz));
@@ -54,12 +56,13 @@ TEST(Interface, IndexZeroIsNotNull) {
   InterfaceSession s;
   capn_ptr root = capn_root(&s.capn);
   capn_ptr iface = capn_new_interface(root.seg, 0, 0);
-  iface.len = 0;
+  iface.cap_idx = 0;
   ASSERT_EQ(0, capn_setp(root, 0, iface));
 
   capn_ptr got = capn_getp(root, 0, 1);
   EXPECT_EQ(CAPN_INTERFACE, got.type);
   EXPECT_EQ(0, got.len);
+  EXPECT_EQ(0u, got.cap_idx);
 
   uint64_t word = capn_flip64(*(uint64_t *)root.data);
   EXPECT_EQ(UINT64_C(3), word);
@@ -82,7 +85,7 @@ TEST(Interface, RoundTripMem) {
     capn_ptr root = capn_root(&c);
     capn_ptr holder = capn_new_struct(root.seg, 0, 1);
     capn_ptr iface = capn_new_interface(holder.seg, 8, 1);
-    iface.len = 42;
+    iface.cap_idx = 42;
     ASSERT_EQ(0, capn_setp(holder, 0, iface));
     ASSERT_EQ(0, capn_set_root(&c, holder));
     sz = capn_write_mem(&c, buf, sizeof(buf), 0);
@@ -97,7 +100,8 @@ TEST(Interface, RoundTripMem) {
     ASSERT_EQ(CAPN_STRUCT, holder.type);
     capn_ptr got = capn_getp(holder, 0, 1);
     EXPECT_EQ(CAPN_INTERFACE, got.type);
-    EXPECT_EQ(42, got.len);
+    EXPECT_EQ(0, got.len);
+    EXPECT_EQ(42u, got.cap_idx);
     capn_free(&c);
   }
 }
@@ -110,7 +114,7 @@ TEST(Interface, ListOfCapabilities) {
 
   for (int i = 0; i < 3; i++) {
     capn_ptr iface = capn_new_interface(list.seg, 0, 0);
-    iface.len = 10 + i;
+    iface.cap_idx = (uint32_t) (10 + i);
     ASSERT_EQ(0, capn_setp(list, i, iface));
   }
 
@@ -122,7 +126,8 @@ TEST(Interface, ListOfCapabilities) {
   for (int i = 0; i < 3; i++) {
     capn_ptr got = capn_getp(got_list, i, 1);
     EXPECT_EQ(CAPN_INTERFACE, got.type);
-    EXPECT_EQ(10 + i, got.len);
+    EXPECT_EQ(0, got.len);
+    EXPECT_EQ((uint32_t) (10 + i), got.cap_idx);
   }
 }
 
@@ -151,6 +156,8 @@ TEST(Interface, HandCraftedCapabilityIndex) {
   ASSERT_EQ(0, capn_init_mem(&c, msg, sizeof(msg), 0));
   capn_ptr got = capn_getp(capn_root(&c), 0, 1);
   EXPECT_EQ(CAPN_INTERFACE, got.type);
-  EXPECT_EQ(5, got.len);
+  EXPECT_EQ(0, got.len);
+  EXPECT_EQ(5u, got.cap_idx);
+  EXPECT_EQ(0, capn_ptr_len(got));
   capn_free(&c);
 }

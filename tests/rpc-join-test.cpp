@@ -136,119 +136,6 @@ JoinReply read_join_reply(const std::vector<uint8_t> &frame)
 }
 
 
-/* A call whose target is `promisedAnswer`: the answer to
- * `answer_question_id`, optionally walked by getPointerField ops. */
-void send_pipelined_call(struct capn_rpc_conn *c, uint32_t qid,
-                         uint32_t answer_question_id,
-                         const std::vector<uint16_t> &ops)
-{
-	struct capn msg;
-	capn_init_malloc(&msg);
-	struct capn_segment *cs = capn_root(&msg).seg;
-
-	struct PromisedAnswer pa;
-	memset(&pa, 0, sizeof pa);
-	pa.questionId = answer_question_id;
-	pa.transform = new_PromisedAnswer_Op_list(cs, (int)ops.size());
-	for (size_t i = 0; i < ops.size(); i++) {
-		struct PromisedAnswer_Op op;
-		memset(&op, 0, sizeof op);
-		op.which = PromisedAnswer_Op_getPointerField;
-		op.getPointerField = ops[i];
-		set_PromisedAnswer_Op(&op, pa.transform, (int)i);
-	}
-	PromisedAnswer_ptr pap = new_PromisedAnswer(cs);
-	write_PromisedAnswer(&pa, pap);
-
-	struct MessageTarget t;
-	memset(&t, 0, sizeof t);
-	t.which = MessageTarget_promisedAnswer;
-	t.promisedAnswer = pap;
-	MessageTarget_ptr tp = new_MessageTarget(cs);
-	write_MessageTarget(&t, tp);
-
-	struct Call call;
-	memset(&call, 0, sizeof call);
-	call.questionId = qid;
-	call.target = tp;
-	call.params = new_Payload(cs);
-	Call_ptr cp = new_Call(cs);
-	write_Call(&call, cp);
-
-	struct Message m;
-	memset(&m, 0, sizeof m);
-	m.which = Message_call;
-	m.call = cp;
-	Message_ptr mp = new_Message(cs);
-	write_Message(&m, mp);
-	capn_setp(capn_root(&msg), 0, mp.p);
-
-	uint8_t buf[4096];
-	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
-	capn_free(&msg);
-	ASSERT_GT(sz, 0);
-	capn_rpc_handle(c, buf, static_cast<size_t>(sz));
-}
-
-void send_finish(struct capn_rpc_conn *c, uint32_t qid)
-{
-	struct capn msg;
-	capn_init_malloc(&msg);
-	struct capn_segment *cs = capn_root(&msg).seg;
-	struct Finish f;
-	memset(&f, 0, sizeof f);
-	f.questionId = qid;
-	Finish_ptr fp = new_Finish(cs);
-	write_Finish(&f, fp);
-	struct Message m;
-	memset(&m, 0, sizeof m);
-	m.which = Message_finish;
-	m.finish = fp;
-	Message_ptr mp = new_Message(cs);
-	write_Message(&m, mp);
-	capn_setp(capn_root(&msg), 0, mp.p);
-	uint8_t buf[4096];
-	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
-	capn_free(&msg);
-	ASSERT_GT(sz, 0);
-	ASSERT_EQ(0, capn_rpc_handle(c, buf, static_cast<size_t>(sz)));
-}
-
-/* Return union tag and, for results, the first u32 of the content. */
-struct ReturnInfo {
-	uint32_t answer_id;
-	int which;
-	uint32_t value;
-};
-
-ReturnInfo read_return(const std::vector<uint8_t> &frame)
-{
-	struct capn msg;
-	EXPECT_EQ(0, capn_init_mem(&msg, frame.data(), frame.size(), 0));
-	Message_ptr mp;
-	mp.p = capn_getp(capn_root(&msg), 0, 1);
-	struct Message m;
-	read_Message(&m, mp);
-	EXPECT_EQ(Message__return, m.which);
-	struct Return r;
-	read_Return(&r, m._return);
-
-	ReturnInfo out;
-	out.answer_id = r.answerId;
-	out.which = (int)r.which;
-	out.value = 0;
-	if (r.which == Return_results) {
-		struct Payload pl;
-		read_Payload(&pl, r.results);
-		capn_ptr content = pl.content;
-		capn_resolve(&content);
-		if (content.type == CAPN_STRUCT)
-			out.value = capn_read32(content, 0);
-	}
-	capn_free(&msg);
-	return out;
-}
-
 /* Bootstrap once so the vat holds a live export. */
 uint32_t bootstrap_export(struct capn_rpc_conn *c, Outbox *out)
 {
@@ -293,7 +180,49 @@ class RpcJoin : public ::testing::Test {
 	Outbox out;
 	int calls;
 	uint32_t live;
+
+	void TearDown() override
+	{
+		capn_rpc_free(&conn);
+	}
 };
+
+TEST_F(RpcJoin, SenderLoopbackRequiresALocalTarget)
+{
+	struct capn msg;
+	struct MessageTarget target;
+	struct Disembargo embargo;
+	struct Message message;
+	MessageTarget_ptr tp;
+	Disembargo_ptr dp;
+	Message_ptr mp;
+	uint8_t buf[4096];
+	ssize_t len;
+
+	capn_init_malloc(&msg);
+	memset(&target, 0, sizeof target);
+	target.which = MessageTarget_importedCap;
+	target.importedCap = live + 1;
+	tp = new_MessageTarget(capn_root(&msg).seg);
+	write_MessageTarget(&target, tp);
+	memset(&embargo, 0, sizeof embargo);
+	embargo.target = tp;
+	embargo.context_which = Disembargo_context_senderLoopback;
+	embargo.context.senderLoopback = 7;
+	dp = new_Disembargo(capn_root(&msg).seg);
+	write_Disembargo(&embargo, dp);
+	memset(&message, 0, sizeof message);
+	message.which = Message_disembargo;
+	message.disembargo = dp;
+	mp = new_Message(capn_root(&msg).seg);
+	write_Message(&message, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	len = capn_write_mem(&msg, buf, sizeof buf, 0);
+	capn_free(&msg);
+	ASSERT_GT(len, 0);
+	ASSERT_EQ(0, capn_rpc_handle(&conn, buf, static_cast<size_t>(len)));
+	EXPECT_TRUE(out.frames.empty());
+}
 
 TEST_F(RpcJoin, SameCapabilityJoinsAndOneResultCarriesTheCap)
 {
@@ -365,10 +294,10 @@ TEST_F(RpcJoin, PartNumOutsideTheSetIsRejectedOnItsOwn)
 }
 
 /* Level 3: Alice tells us to hold a capability for Carol, and Carol
- * claims it with the nonce Alice chose. We match on the nonce alone, so
- * we never have to trust Carol's account of who sent her. */
+ * claims it with the nonce Alice chose. handle_accept matches the
+ * nonce. A pointer beside that nonce is ignored. */
 static void send_provide(struct capn_rpc_conn *c, uint32_t qid,
-                         uint32_t export_id, uint64_t nonce)
+                         uint32_t export_id, uint64_t nonce, int with_vat = 1)
 {
 	struct capn msg;
 	capn_init_malloc(&msg);
@@ -382,15 +311,19 @@ static void send_provide(struct capn_rpc_conn *c, uint32_t qid,
 	write_MessageTarget(&t, tp);
 
 	struct VatId vat;
+	VatId_ptr vp;
 	memset(&vat, 0, sizeof vat);
-	vat.host.str = "127.0.0.1";
-	vat.host.len = 9;
-	/* NULL segment: capn_set_text copies into the message. Naming a
-	 * segment would claim the literal already lives there. */
-	vat.host.seg = NULL;
-	vat.port = 4000;
-	VatId_ptr vp = new_VatId(cs);
-	write_VatId(&vat, vp);
+	memset(&vp, 0, sizeof vp);
+	if (with_vat) {
+		vat.host.str = "127.0.0.1";
+		vat.host.len = 9;
+		/* NULL segment: capn_set_text copies into the message. Naming a
+		 * segment would claim the literal already lives there. */
+		vat.host.seg = NULL;
+		vat.port = 4000;
+		vp = new_VatId(cs);
+		write_VatId(&vat, vp);
+	}
 
 	struct RecipientId rid;
 	memset(&rid, 0, sizeof rid);
@@ -937,6 +870,793 @@ TEST_F(RpcJoin, TwoProvisionsOfTheSameCapabilityAreIndependent)
 	EXPECT_FALSE(read_l3(out.frames[0]).is_exception);
 	/* Claiming one leaves the other standing. */
 	EXPECT_EQ(1, capn_rpc_pending_provisions(&conn, NULL, 0));
+}
+
+void send_release(struct capn_rpc_conn *c, uint32_t id, uint32_t count)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+
+	struct Release rel;
+	memset(&rel, 0, sizeof rel);
+	rel.id = id;
+	rel.referenceCount = count;
+	Release_ptr rp = new_Release(cs);
+	write_Release(&rel, rp);
+
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_release;
+	m.release = rp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+
+	uint8_t buf[512];
+	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
+	capn_free(&msg);
+	ASSERT_GT(sz, 0);
+	ASSERT_EQ(0, capn_rpc_handle(c, buf, static_cast<size_t>(sz)));
+}
+
+TEST_F(RpcJoin, ReleasingMoreReferencesThanHeldAborts)
+{
+	ASSERT_TRUE(conn.exports[live].used);
+	int held = conn.exports[live].refcount;
+	send_release(&conn, live, 0xffffffffu);
+	EXPECT_TRUE(capn_rpc_is_aborted(&conn));
+	EXPECT_TRUE(conn.exports[live].used);
+	EXPECT_EQ(held, conn.exports[live].refcount);
+}
+
+TEST_F(RpcJoin, ReleasingFewerReferencesKeepsTheExport)
+{
+	ASSERT_GE(conn.exports[live].refcount, 1);
+	conn.exports[live].refcount = 3;
+	send_release(&conn, live, 2);
+	EXPECT_TRUE(conn.exports[live].used);
+	EXPECT_EQ(1, conn.exports[live].refcount);
+	send_release(&conn, live, 1);
+	EXPECT_FALSE(conn.exports[live].used);
+}
+
+/* Alice arranges the handoff. Carol accepts on her own connection.
+ * The Return belongs on Carol's connection, and Alice's extra
+ * reference is gone once Carol has claimed the capability. */
+TEST_F(RpcJoin, AcceptAfterTheIntroducerIsFreed)
+{
+	struct capn_rpc_vat vat;
+	struct capn_rpc_conn alice, carol;
+	Outbox alice_out, carol_out;
+	const uint64_t nonce = 0x111ULL;
+
+	memset(&vat, 0, sizeof vat);
+	capn_rpc_init(&alice, collect, &alice_out);
+	capn_rpc_init(&carol, collect, &carol_out);
+	capn_rpc_set_vat(&alice, &vat);
+	capn_rpc_set_vat(&carol, &vat);
+	capn_rpc_set_bootstrap(&alice, &calls, counting_dispatch);
+	uint32_t exp = bootstrap_export(&alice, &alice_out);
+	send_provide(&alice, 80, exp, nonce);
+	capn_rpc_free(&alice);
+	send_accept_embargoed(&carol, 81, nonce);
+	EXPECT_EQ(0u, carol_out.frames.size());
+	send_disembargo_provide(&carol, 80);
+	capn_rpc_free(&carol);
+}
+
+TEST_F(RpcJoin, DisembargoAfterTheAcceptorIsFreed)
+{
+	struct capn_rpc_vat vat;
+	struct capn_rpc_conn alice, carol;
+	Outbox alice_out, carol_out;
+	const uint64_t nonce = 0x222ULL;
+
+	memset(&vat, 0, sizeof vat);
+	capn_rpc_init(&alice, collect, &alice_out);
+	capn_rpc_init(&carol, collect, &carol_out);
+	capn_rpc_set_vat(&alice, &vat);
+	capn_rpc_set_vat(&carol, &vat);
+	capn_rpc_set_bootstrap(&alice, &calls, counting_dispatch);
+	uint32_t exp = bootstrap_export(&alice, &alice_out);
+	send_provide(&alice, 80, exp, nonce);
+	send_accept_embargoed(&carol, 81, nonce);
+	capn_rpc_free(&carol);
+	alice_out.frames.clear();
+	send_disembargo_provide(&alice, 80);
+	EXPECT_EQ(0u, alice_out.frames.size());
+	capn_rpc_free(&alice);
+}
+
+TEST_F(RpcJoin, EmbargoedAcceptIsAnsweredOnTheAcceptingConnection)
+{
+	struct capn_rpc_vat vat;
+	struct capn_rpc_conn alice, carol;
+	Outbox alice_out, carol_out;
+	const uint64_t nonce = 0xca201ULL;
+	uint32_t exp;
+
+	memset(&vat, 0, sizeof vat);
+	memset(&alice, 0, sizeof alice);
+	memset(&carol, 0, sizeof carol);
+	capn_rpc_init(&alice, collect, &alice_out);
+	capn_rpc_init(&carol, collect, &carol_out);
+	capn_rpc_set_vat(&alice, &vat);
+	capn_rpc_set_vat(&carol, &vat);
+	capn_rpc_set_bootstrap(&alice, &calls, counting_dispatch);
+	exp = bootstrap_export(&alice, &alice_out);
+	ASSERT_EQ(1, alice.exports[exp].refcount);
+
+	send_provide(&alice, 80, exp, nonce);
+	EXPECT_EQ(2, alice.exports[exp].refcount);
+	alice_out.frames.clear();
+
+	send_accept_embargoed(&carol, 81, nonce);
+	EXPECT_EQ(0u, carol_out.frames.size());
+	EXPECT_EQ(0u, alice_out.frames.size());
+	EXPECT_EQ(1, alice.exports[exp].refcount);
+
+	send_disembargo_provide(&alice, 80);
+	EXPECT_EQ(0u, alice_out.frames.size());
+	ASSERT_EQ(1u, carol_out.frames.size());
+	{
+		L3Reply r = read_l3(carol_out.frames[0]);
+		EXPECT_EQ(81u, r.answer_id);
+		EXPECT_FALSE(r.is_exception);
+		EXPECT_TRUE(r.has_cap);
+	}
+	capn_rpc_free(&alice);
+	capn_rpc_free(&carol);
+}
+
+struct PipePark {
+	int armed;
+	struct capn_rpc_conn *conn;
+	uint32_t question;
+	uint32_t generation;
+	capn_ptr results;
+};
+
+PipePark g_pipe;
+int g_later_calls;
+
+int later_dispatch(void *, uint64_t, uint16_t, capn_ptr, capn_ptr results)
+{
+	g_later_calls++;
+	capn_write32(results, 0, 5);
+	return 0;
+}
+
+int pipe_dispatch(void *, uint64_t, uint16_t method, capn_ptr, capn_ptr results)
+{
+	if (method == 0 && g_pipe.armed) {
+		g_pipe.question = capn_rpc_current_question(g_pipe.conn);
+		g_pipe.generation = capn_rpc_current_generation(g_pipe.conn);
+		g_pipe.results = results;
+		g_pipe.armed = 0;
+		return CAPN_RPC_PENDING;
+	}
+	capn_write32(results, 0, 1);
+	return 0;
+}
+
+void send_raw(struct capn_rpc_conn *c, struct capn *msg)
+{
+	uint8_t buf[4096];
+	ssize_t sz = capn_write_mem(msg, buf, sizeof buf, 0);
+	ASSERT_GT(sz, 0);
+	ASSERT_EQ(0, capn_rpc_handle(c, buf, static_cast<size_t>(sz)));
+}
+
+void send_method(struct capn_rpc_conn *c, uint32_t qid, uint32_t export_id, uint16_t method)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+	struct MessageTarget t;
+	memset(&t, 0, sizeof t);
+	t.which = MessageTarget_importedCap;
+	t.importedCap = export_id;
+	MessageTarget_ptr tp = new_MessageTarget(cs);
+	write_MessageTarget(&t, tp);
+	struct Call call;
+	memset(&call, 0, sizeof call);
+	call.questionId = qid;
+	call.target = tp;
+	call.methodId = method;
+	Call_ptr cp = new_Call(cs);
+	write_Call(&call, cp);
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_call;
+	m.call = cp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	send_raw(c, &msg);
+	capn_free(&msg);
+}
+
+void send_pipeline_call(struct capn_rpc_conn *c, uint32_t qid, uint32_t promise_qid,
+                        int hosted = -1)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+	struct PromisedAnswer_Op op;
+	memset(&op, 0, sizeof op);
+	op.which = PromisedAnswer_Op_getPointerField;
+	op.getPointerField = 0;
+	PromisedAnswer_Op_list ol = new_PromisedAnswer_Op_list(cs, 1);
+	set_PromisedAnswer_Op(&op, ol, 0);
+	struct PromisedAnswer pa;
+	memset(&pa, 0, sizeof pa);
+	pa.questionId = promise_qid;
+	pa.transform = ol;
+	PromisedAnswer_ptr pap = new_PromisedAnswer(cs);
+	write_PromisedAnswer(&pa, pap);
+	struct MessageTarget t;
+	memset(&t, 0, sizeof t);
+	t.which = MessageTarget_promisedAnswer;
+	t.promisedAnswer = pap;
+	MessageTarget_ptr tp = new_MessageTarget(cs);
+	write_MessageTarget(&t, tp);
+	struct Call call;
+	memset(&call, 0, sizeof call);
+	call.questionId = qid;
+	call.target = tp;
+	call.methodId = 1;
+	if (hosted >= 0) {
+		struct CapDescriptor cd;
+		memset(&cd, 0, sizeof cd);
+		cd.which = CapDescriptor_senderHosted;
+		cd.senderHosted = (uint32_t) hosted;
+		CapDescriptor_list table = new_CapDescriptor_list(cs, 1);
+		set_CapDescriptor(&cd, table, 0);
+		capn_ptr body = capn_new_struct(cs, 0, 1);
+		capn_ptr iface = capn_new_interface(cs, 0, 0);
+		iface.cap_idx = 0;
+		capn_setp(body, 0, iface);
+		struct Payload params;
+		memset(&params, 0, sizeof params);
+		params.content = body;
+		params.capTable = table;
+		call.params = new_Payload(cs);
+		write_Payload(&params, call.params);
+	}
+	Call_ptr cp = new_Call(cs);
+	write_Call(&call, cp);
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_call;
+	m.call = cp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	send_raw(c, &msg);
+	capn_free(&msg);
+}
+
+/* A call pipelined onto an answer that has not been returned yet must
+ * wait. Answering it at once with "no such export" drops the call. */
+TEST_F(RpcJoin, PipelineOntoAPendingAnswerWaits)
+{
+	struct capn_rpc_conn vat;
+	Outbox box;
+	uint32_t exp;
+
+	memset(&vat, 0, sizeof vat);
+	memset(&g_pipe, 0, sizeof g_pipe);
+	g_later_calls = 0;
+	g_pipe.armed = 1;
+	g_pipe.conn = &vat;
+	capn_rpc_init(&vat, collect, &box);
+	capn_rpc_set_result_size(&vat, 8, 1);
+	capn_rpc_set_bootstrap(&vat, &calls, pipe_dispatch);
+	exp = bootstrap_export(&vat, &box);
+
+	send_method(&vat, 10, exp, 0);
+	EXPECT_EQ(0u, box.frames.size()) << "the parked call has no Return yet";
+
+	send_pipeline_call(&vat, 11, 10);
+	EXPECT_EQ(0u, box.frames.size()) << "a pipeline onto a pending answer waits";
+
+	{
+		capn_ptr cap = capn_rpc_new_export_cap(&vat, g_pipe.results.seg,
+		                                       &g_later_calls, later_dispatch);
+		ASSERT_EQ(CAPN_INTERFACE, cap.type);
+		ASSERT_EQ(0, capn_setp(g_pipe.results, 0, cap));
+	}
+	ASSERT_EQ(0, capn_rpc_return(&vat, g_pipe.question, g_pipe.generation));
+	ASSERT_EQ(2u, box.frames.size());
+	EXPECT_EQ(1, g_later_calls);
+	{
+		L3Reply second = read_l3(box.frames[1]);
+		EXPECT_EQ(11u, second.answer_id);
+		EXPECT_FALSE(second.is_exception);
+	}
+	capn_rpc_free(&vat);
+}
+
+static void send_finish(struct capn_rpc_conn *c, uint32_t qid)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+	struct Finish fin;
+	memset(&fin, 0, sizeof fin);
+	fin.questionId = qid;
+	fin.releaseResultCaps = 1;
+	Finish_ptr fp = new_Finish(cs);
+	write_Finish(&fin, fp);
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_finish;
+	m.finish = fp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	send_raw(c, &msg);
+	capn_free(&msg);
+}
+
+static int return_which(const std::vector<uint8_t> &frame, uint32_t *answer, std::string *reason)
+{
+	struct capn msg;
+	if (capn_init_mem(&msg, frame.data(), frame.size(), 0) != 0)
+		return -1;
+	Message_ptr mp;
+	mp.p = capn_getp(capn_root(&msg), 0, 1);
+	struct Message m;
+	read_Message(&m, mp);
+	if (m.which == Message_abort) {
+		capn_free(&msg);
+		return 1;
+	}
+	if (m.which != Message__return) {
+		capn_free(&msg);
+		return -1;
+	}
+	struct Return r;
+	read_Return(&r, m._return);
+	if (answer)
+		*answer = r.answerId;
+	if (reason && r.which == Return_exception) {
+		struct Exception ex;
+		read_Exception(&ex, r.exception);
+		if (ex.reason.str && ex.reason.len > 0)
+			reason->assign(ex.reason.str, ex.reason.str + ex.reason.len);
+	}
+	int which = (int) r.which;
+	capn_free(&msg);
+	return which;
+}
+
+TEST_F(RpcJoin, FinishForAQueuedCallIsCanceled)
+{
+	struct capn_rpc_conn vat;
+	Outbox box;
+	uint32_t exp, answer = 0;
+
+	memset(&vat, 0, sizeof vat);
+	memset(&g_pipe, 0, sizeof g_pipe);
+	g_later_calls = 0;
+	g_pipe.armed = 1;
+	g_pipe.conn = &vat;
+	capn_rpc_init(&vat, collect, &box);
+	capn_rpc_set_result_size(&vat, 8, 1);
+	capn_rpc_set_bootstrap(&vat, &calls, pipe_dispatch);
+	exp = bootstrap_export(&vat, &box);
+
+	send_method(&vat, 10, exp, 0);
+	send_pipeline_call(&vat, 11, 10);
+	box.frames.clear();
+	send_finish(&vat, 11);
+	ASSERT_EQ(1u, box.frames.size());
+	EXPECT_EQ(Return_canceled, return_which(box.frames[0], &answer, NULL));
+	EXPECT_EQ(11u, answer);
+	EXPECT_EQ(0, g_later_calls);
+
+	{
+		capn_ptr cap = capn_rpc_new_export_cap(&vat, g_pipe.results.seg,
+		                                       &g_later_calls, later_dispatch);
+		ASSERT_EQ(CAPN_INTERFACE, cap.type);
+		ASSERT_EQ(0, capn_setp(g_pipe.results, 0, cap));
+	}
+	ASSERT_EQ(0, capn_rpc_return(&vat, g_pipe.question, g_pipe.generation));
+	EXPECT_EQ(0, g_later_calls);
+	send_method(&vat, 11, exp, 1);
+	EXPECT_FALSE(capn_rpc_is_aborted(&vat));
+	capn_rpc_free(&vat);
+}
+
+TEST_F(RpcJoin, NinePipelinedCallsAllRun)
+{
+	struct capn_rpc_conn vat;
+	Outbox box;
+	uint32_t exp;
+	int i;
+
+	memset(&vat, 0, sizeof vat);
+	memset(&g_pipe, 0, sizeof g_pipe);
+	g_later_calls = 0;
+	g_pipe.armed = 1;
+	g_pipe.conn = &vat;
+	capn_rpc_init(&vat, collect, &box);
+	capn_rpc_set_result_size(&vat, 8, 1);
+	capn_rpc_set_bootstrap(&vat, &calls, pipe_dispatch);
+	exp = bootstrap_export(&vat, &box);
+	send_method(&vat, 10, exp, 0);
+	for (i = 0; i < 9; i++)
+		send_pipeline_call(&vat, (uint32_t) (11 + i), 10);
+	EXPECT_EQ(0u, box.frames.size());
+	{
+		capn_ptr cap = capn_rpc_new_export_cap(&vat, g_pipe.results.seg,
+		                                       &g_later_calls, later_dispatch);
+		ASSERT_EQ(CAPN_INTERFACE, cap.type);
+		ASSERT_EQ(0, capn_setp(g_pipe.results, 0, cap));
+	}
+	ASSERT_EQ(0, capn_rpc_return(&vat, g_pipe.question, g_pipe.generation));
+	EXPECT_EQ(9, g_later_calls);
+	EXPECT_EQ(10u, box.frames.size());
+	capn_rpc_free(&vat);
+}
+
+static int g_order[4];
+static int g_order_n;
+static int order_dispatch(void *, uint64_t, uint16_t, capn_ptr, capn_ptr);
+
+static int middle_dispatch(void *, uint64_t, uint16_t, capn_ptr, capn_ptr results)
+{
+	if (g_order_n < 4)
+		g_order[g_order_n++] = (int) capn_rpc_current_question(g_pipe.conn);
+	capn_ptr cap = capn_rpc_new_export_cap(g_pipe.conn, results.seg,
+	                                       &g_later_calls, order_dispatch);
+	if (cap.type != CAPN_INTERFACE)
+		return -1;
+	if (capn_setp(results, 0, cap) != 0)
+		return -1;
+	return 0;
+}
+
+static int order_dispatch(void *s, uint64_t a, uint16_t b, capn_ptr p, capn_ptr results)
+{
+	if (g_order_n < 4)
+		g_order[g_order_n++] = (int) capn_rpc_current_question(g_pipe.conn);
+	return later_dispatch(s, a, b, p, results);
+}
+
+TEST_F(RpcJoin, PipelinedCallsRunInArrivalOrder)
+{
+	struct capn_rpc_conn vat;
+	Outbox box;
+	uint32_t exp;
+
+	memset(&vat, 0, sizeof vat);
+	memset(&g_pipe, 0, sizeof g_pipe);
+	memset(g_order, 0, sizeof g_order);
+	g_order_n = 0;
+	g_later_calls = 0;
+	g_pipe.armed = 1;
+	g_pipe.conn = &vat;
+	capn_rpc_init(&vat, collect, &box);
+	capn_rpc_set_result_size(&vat, 8, 1);
+	capn_rpc_set_bootstrap(&vat, &calls, pipe_dispatch);
+	exp = bootstrap_export(&vat, &box);
+	send_method(&vat, 10, exp, 0);
+	send_pipeline_call(&vat, 11, 10);
+	send_pipeline_call(&vat, 12, 10);
+	{
+		capn_ptr cap = capn_rpc_new_export_cap(&vat, g_pipe.results.seg,
+		                                       &g_later_calls, order_dispatch);
+		ASSERT_EQ(0, capn_setp(g_pipe.results, 0, cap));
+	}
+	ASSERT_EQ(0, capn_rpc_return(&vat, g_pipe.question, g_pipe.generation));
+	ASSERT_EQ(2, g_order_n);
+	EXPECT_EQ(11, g_order[0]);
+	EXPECT_EQ(12, g_order[1]);
+	capn_rpc_free(&vat);
+}
+
+TEST_F(RpcJoin, PipelineOntoADeferredCallWaits)
+{
+	struct capn_rpc_conn vat;
+	Outbox box;
+	uint32_t exp, answer = 0;
+	std::string reason;
+
+	memset(&vat, 0, sizeof vat);
+	memset(&g_pipe, 0, sizeof g_pipe);
+	memset(g_order, 0, sizeof g_order);
+	g_order_n = 0;
+	g_later_calls = 0;
+	g_pipe.armed = 1;
+	g_pipe.conn = &vat;
+	capn_rpc_init(&vat, collect, &box);
+	capn_rpc_set_result_size(&vat, 8, 1);
+	capn_rpc_set_bootstrap(&vat, &calls, pipe_dispatch);
+	exp = bootstrap_export(&vat, &box);
+	send_method(&vat, 10, exp, 0);
+	send_pipeline_call(&vat, 11, 10);
+	send_pipeline_call(&vat, 12, 11);
+	EXPECT_EQ(0u, box.frames.size());
+	{
+		capn_ptr cap = capn_rpc_new_export_cap(&vat, g_pipe.results.seg,
+		                                       &g_later_calls, middle_dispatch);
+		ASSERT_EQ(0, capn_setp(g_pipe.results, 0, cap));
+	}
+	ASSERT_EQ(0, capn_rpc_return(&vat, g_pipe.question, g_pipe.generation));
+	ASSERT_EQ(2, g_order_n);
+	EXPECT_EQ(11, g_order[0]);
+	EXPECT_EQ(12, g_order[1]);
+	for (size_t i = 0; i < box.frames.size(); i++) {
+		reason.clear();
+		int which = return_which(box.frames[i], &answer, &reason);
+		if (answer == 12) {
+			EXPECT_NE(Return_exception, which) << reason;
+		}
+	}
+	capn_rpc_free(&vat);
+}
+
+TEST_F(RpcJoin, PendingExceptionIsSharedWithThePipeline)
+{
+	struct capn_rpc_conn vat;
+	Outbox box;
+	uint32_t exp, answer = 0;
+	int seen = 0;
+	std::string reason;
+
+	memset(&vat, 0, sizeof vat);
+	memset(&g_pipe, 0, sizeof g_pipe);
+	g_pipe.armed = 1;
+	g_pipe.conn = &vat;
+	capn_rpc_init(&vat, collect, &box);
+	capn_rpc_set_result_size(&vat, 8, 1);
+	capn_rpc_set_bootstrap(&vat, &calls, pipe_dispatch);
+	exp = bootstrap_export(&vat, &box);
+	send_method(&vat, 10, exp, 0);
+	send_pipeline_call(&vat, 11, 10);
+	ASSERT_EQ(0, capn_rpc_return_exception(&vat, g_pipe.question, g_pipe.generation,
+	                                      "slow failed"));
+	ASSERT_EQ(2u, box.frames.size());
+	for (size_t i = 0; i < box.frames.size(); i++) {
+		reason.clear();
+		EXPECT_EQ(Return_exception, return_which(box.frames[i], &answer, &reason));
+		EXPECT_EQ("slow failed", reason);
+		seen |= answer == 10 ? 1 : answer == 11 ? 2 : 4;
+	}
+	EXPECT_EQ(3, seen);
+	capn_rpc_free(&vat);
+}
+
+static void send_results_to(struct capn_rpc_conn *c, uint32_t qid, uint32_t export_id,
+                            int which)
+{
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+	struct MessageTarget t;
+	memset(&t, 0, sizeof t);
+	t.which = MessageTarget_importedCap;
+	t.importedCap = export_id;
+	MessageTarget_ptr tp = new_MessageTarget(cs);
+	write_MessageTarget(&t, tp);
+	struct Call call;
+	memset(&call, 0, sizeof call);
+	call.questionId = qid;
+	call.target = tp;
+	call.sendResultsTo_which = (enum Call_sendResultsTo_which) which;
+	Call_ptr cp = new_Call(cs);
+	write_Call(&call, cp);
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_call;
+	m.call = cp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	uint8_t buf[4096];
+	ssize_t sz = capn_write_mem(&msg, buf, sizeof buf, 0);
+	capn_free(&msg);
+	ASSERT_GT(sz, 0);
+	capn_rpc_handle(c, buf, static_cast<size_t>(sz));
+}
+
+TEST_F(RpcJoin, ThirdPartyResultsAbort)
+{
+	out.frames.clear();
+	send_results_to(&conn, 20, live, Call_sendResultsTo_thirdParty);
+	EXPECT_TRUE(capn_rpc_is_aborted(&conn));
+	ASSERT_FALSE(out.frames.empty());
+	EXPECT_EQ(1, return_which(out.frames.back(), NULL, NULL));
+}
+
+TEST_F(RpcJoin, AcceptMatchesTheNonce)
+{
+	struct capn_rpc_conn vat;
+	Outbox box;
+	const uint64_t nonce = 0x55aaULL;
+	uint32_t answer = 0;
+	std::string reason;
+	int exp;
+
+	memset(&vat, 0, sizeof vat);
+	capn_rpc_init(&vat, collect, &box);
+	exp = capn_rpc_export(&vat, &calls, counting_dispatch);
+	ASSERT_GE(exp, 0);
+	send_provide(&vat, 80, (uint32_t) exp, nonce);
+	{
+		char host[64];
+		uint16_t port = 0;
+		EXPECT_EQ(1, capn_rpc_provision_recipient(&vat, nonce, host,
+		                                          sizeof host, &port));
+		EXPECT_STREQ("127.0.0.1", host);
+		EXPECT_EQ(4000, port);
+	}
+	box.frames.clear();
+
+	struct capn msg;
+	capn_init_malloc(&msg);
+	struct capn_segment *cs = capn_root(&msg).seg;
+	struct VatId id;
+	memset(&id, 0, sizeof id);
+	id.host.str = "other";
+	id.host.len = 5;
+	id.host.seg = NULL;
+	id.port = 9;
+	VatId_ptr vp = new_VatId(cs);
+	write_VatId(&id, vp);
+	struct RecipientId rid;
+	memset(&rid, 0, sizeof rid);
+	rid.vat = vp;
+	rid.nonce = nonce;
+	RecipientId_ptr rp = new_RecipientId(cs);
+	write_RecipientId(&rid, rp);
+	struct Accept ac;
+	memset(&ac, 0, sizeof ac);
+	ac.questionId = 81;
+	ac.provision = rp.p;
+	Accept_ptr ap = new_Accept(cs);
+	write_Accept(&ac, ap);
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_accept;
+	m.accept = ap;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	send_raw(&vat, &msg);
+	capn_free(&msg);
+	ASSERT_FALSE(box.frames.empty());
+	EXPECT_EQ(Return_results, return_which(box.frames.back(), &answer, &reason));
+	EXPECT_EQ(81u, answer);
+	/* The claim freed the slot. A later Provide with no vat must
+	 * not keep the host the previous one stored. */
+	send_provide(&vat, 82, (uint32_t) exp, nonce + 1, 0);
+	EXPECT_EQ(0, capn_rpc_provision_recipient(&vat, nonce + 1, NULL, 0, NULL));
+	EXPECT_EQ(-1, capn_rpc_provision_recipient(&vat, nonce, NULL, 0, NULL));
+	capn_rpc_free(&vat);
+}
+
+static int release_id(const std::vector<uint8_t> &frame, uint32_t *id)
+{
+	struct capn msg;
+	if (capn_init_mem(&msg, frame.data(), frame.size(), 0) != 0)
+		return -1;
+	Message_ptr mp;
+	mp.p = capn_getp(capn_root(&msg), 0, 1);
+	struct Message m;
+	read_Message(&m, mp);
+	int ok = m.which == Message_release;
+	if (ok) {
+		struct Release rel;
+		read_Release(&rel, m.release);
+		*id = rel.id;
+	}
+	capn_free(&msg);
+	return ok ? 0 : -1;
+}
+
+TEST_F(RpcJoin, FinishForAQueuedCallReleasesItsParams)
+{
+	struct capn_rpc_conn vat;
+	Outbox box;
+	uint32_t exp, answer = 0, rel = 0;
+
+	memset(&vat, 0, sizeof vat);
+	memset(&g_pipe, 0, sizeof g_pipe);
+	g_pipe.armed = 1;
+	g_pipe.conn = &vat;
+	capn_rpc_init(&vat, collect, &box);
+	capn_rpc_set_result_size(&vat, 8, 1);
+	capn_rpc_set_bootstrap(&vat, &calls, pipe_dispatch);
+	exp = bootstrap_export(&vat, &box);
+	send_method(&vat, 10, exp, 0);
+	send_pipeline_call(&vat, 11, 10, 5);
+	box.frames.clear();
+	send_finish(&vat, 11);
+	ASSERT_EQ(2u, box.frames.size());
+	EXPECT_EQ(Return_canceled, return_which(box.frames[0], &answer, NULL));
+	EXPECT_EQ(11u, answer);
+	ASSERT_EQ(0, release_id(box.frames[1], &rel));
+	EXPECT_EQ(5u, rel);
+	capn_rpc_free(&vat);
+}
+
+static void send_owned(struct capn_rpc_conn *c, struct capn *msg)
+{
+	int64_t need = capn_size(msg);
+	ASSERT_GT(need, (int64_t) 0);
+	std::vector<uint8_t> buf((size_t) need);
+	ASSERT_EQ(need, capn_write_mem(msg, buf.data(), buf.size(), 0));
+	ASSERT_EQ(0, capn_rpc_handle(c, buf.data(), buf.size()));
+}
+
+static int quiet_dispatch(void *, uint64_t, uint16_t, capn_ptr, capn_ptr)
+{
+	return 0;
+}
+
+TEST_F(RpcJoin, ReleasesEveryParameterCapability)
+{
+	struct capn msg;
+	struct capn_segment *cs;
+	int exp, i, n = 0;
+	const int count = 20;
+
+	exp = capn_rpc_export(&conn, NULL, quiet_dispatch);
+	ASSERT_GE(exp, 0);
+	capn_init_malloc(&msg);
+	cs = capn_root(&msg).seg;
+	CapDescriptor_list table = new_CapDescriptor_list(cs, count);
+	for (i = 0; i < count; i++) {
+		struct CapDescriptor cd;
+		memset(&cd, 0, sizeof cd);
+		cd.which = CapDescriptor_senderHosted;
+		cd.senderHosted = (uint32_t) (1000 + i);
+		set_CapDescriptor(&cd, table, i);
+	}
+	capn_ptr body = capn_new_struct(cs, 0, 1);
+	capn_ptr iface = capn_new_interface(cs, 0, 0);
+	iface.cap_idx = 0;
+	capn_setp(body, 0, iface);
+	struct Payload params;
+	memset(&params, 0, sizeof params);
+	params.content = body;
+	params.capTable = table;
+	Payload_ptr plp = new_Payload(cs);
+	write_Payload(&params, plp);
+	struct MessageTarget tgt;
+	memset(&tgt, 0, sizeof tgt);
+	tgt.which = MessageTarget_importedCap;
+	tgt.importedCap = (uint32_t) exp;
+	MessageTarget_ptr tp = new_MessageTarget(cs);
+	write_MessageTarget(&tgt, tp);
+	struct Call call;
+	memset(&call, 0, sizeof call);
+	call.questionId = 90;
+	call.target = tp;
+	call.params = plp;
+	Call_ptr cp = new_Call(cs);
+	write_Call(&call, cp);
+	struct Message m;
+	memset(&m, 0, sizeof m);
+	m.which = Message_call;
+	m.call = cp;
+	Message_ptr mp = new_Message(cs);
+	write_Message(&m, mp);
+	capn_setp(capn_root(&msg), 0, mp.p);
+	out.frames.clear();
+	send_owned(&conn, &msg);
+	capn_free(&msg);
+	for (i = 0; i < count; i++) {
+		for (const auto &f : out.frames)
+			if (is_release_of(f, (uint32_t) (1000 + i)))
+				n++;
+	}
+	EXPECT_EQ(count, n);
 }
 
 } // namespace

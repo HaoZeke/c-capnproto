@@ -36,6 +36,8 @@ struct node {
 	struct Node n;
 	struct node *next;
 	struct node *file_nodes, *next_file_node;
+	/* A method's own parameter or result struct, named for $C.rpcstubs. */
+	int rpc_struct;
 	struct str name;
 	struct field *fields;
 };
@@ -50,6 +52,9 @@ typedef struct {
 } capnp_ctx_t;
 
 struct node *find_node(uint64_t id);
+
+/* Generic name, or Name_Arg when the brand binds a type parameter. */
+const char *node_brand_name(struct node *n, Brand_ptr brand);
 
 const char *get_mapname(Annotation_list l);
 const char *get_maplistcount(Annotation_list l);

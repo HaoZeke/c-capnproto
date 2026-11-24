@@ -52,15 +52,16 @@ add_library(capnp_c
   lib/capn-malloc.c
   lib/capn-stream.c
   lib/capn-rpc.c
-  compiler/rpc.capnp.c
-  compiler/rpc-threeparty.capnp.c
+  lib/capn-dyn.c
+  lib/capn-rpc-schema.c
+  lib/capn-rpc-threeparty-schema.c
 )
 set_target_properties(capnp_c PROPERTIES
   OUTPUT_NAME capnp_c
   POSITION_INDEPENDENT_CODE ON
   WINDOWS_EXPORT_ALL_SYMBOLS ON
   VERSION ${PROJECT_VERSION}
-  SOVERSION 0
+  SOVERSION 2
 )
 add_library(c_capnproto::capnp_c ALIAS capnp_c)
 set_target_properties(capnp_c PROPERTIES EXPORT_NAME capnp_c)
@@ -84,12 +85,17 @@ set(capnpc_c_sources
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/compiler/codecgen.c")
   list(APPEND capnpc_c_sources compiler/codecgen.c)
 endif()
+list(APPEND capnpc_c_sources compiler/reflectgen.c)
 
 add_executable(capnpc-c ${capnpc_c_sources})
 target_link_libraries(capnpc-c PRIVATE capnp_c)
 target_include_directories(capnpc-c PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/lib"
   "${CMAKE_CURRENT_SOURCE_DIR}/compiler"
+)
+# With BUILD_SHARED_LIBS the installed plugin must find its runtime.
+set_target_properties(capnpc-c PROPERTIES
+  INSTALL_RPATH "${CMAKE_INSTALL_FULL_LIBDIR}"
 )
 
 if(C_CAPNPROTO_INSTALL)
@@ -99,9 +105,15 @@ install(TARGETS capnp_c capnpc-c
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
-install(FILES lib/capnp_c.h lib/capn-rpc.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-# Generated user headers #include "c.capnp.h"; ship it beside capnp_c.h.
-install(FILES compiler/c.capnp.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES lib/capnp_c.h lib/capn-rpc.h lib/capn-dyn.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+# Generated user headers #include "c.capnp.h", and capn-rpc.h includes
+# rpc.capnp.h; install the RPC schema headers beside capnp_c.h.
+install(FILES
+  compiler/c.capnp.h
+  compiler/rpc.capnp.h
+  compiler/rpc-threeparty.capnp.h
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
 install(FILES compiler/c.capnp DESTINATION ${CMAKE_INSTALL_DATADIR}/c-capnproto)
 
 install(EXPORT c_capnprotoTargets
@@ -156,6 +168,31 @@ endif()
 
 if(BUILD_TESTING)
   include(CTest)
+  add_executable(rpc-schema-export-test
+    tests/rpc-schema-export-test.c
+  )
+  target_link_libraries(rpc-schema-export-test PRIVATE capnp_c)
+  add_test(NAME rpc-schema-export-test COMMAND rpc-schema-export-test)
+
+  find_program(CAPNP_SH sh)
+  if(CAPNP_SH)
+    add_test(
+      NAME capn-public-exports
+      COMMAND ${CAPNP_SH}
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/check-dyn-export.sh"
+        "$<TARGET_FILE:capnp_c>"
+        "${CMAKE_CURRENT_SOURCE_DIR}/lib"
+    )
+    set_tests_properties(capn-public-exports PROPERTIES SKIP_RETURN_CODE 77)
+    add_test(
+      NAME capn-public-exports-comment
+      COMMAND ${CAPNP_SH}
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/check-dyn-export-comment.sh"
+        "$<TARGET_FILE:capnp_c>"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/dyn-export-comment.h"
+    )
+  endif()
+
   find_package(GTest QUIET)
   if(GTest_FOUND)
     if(TARGET GTest::gtest)
@@ -173,6 +210,7 @@ if(BUILD_TESTING)
       tests/fortran-golden-test.cpp
       tests/interface-test.cpp
       tests/list-c6-upgrade-test.cpp
+      tests/constants-test.cpp
       tests/addressbook.capnp.c
       compiler/test.capnp.c
       compiler/schema-test.cpp

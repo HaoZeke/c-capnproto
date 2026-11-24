@@ -54,9 +54,11 @@ jobs:
         run: pip install meson ninja
       # capnp must be on PATH before `meson setup`: find_program bakes the
       # path into CAPNP_CLI, and the 19 CapnpCli tests GTEST_SKIP without it.
+      # `-> stream` imports /capnp/stream.capnp, which ships in libcapnp-dev
+      # (and is vendored under compiler/capnp for the same layout).
       - name: Install capnproto
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y capnproto
+        run: sudo apt-get update && sudo apt-get install -y capnproto libcapnp-dev
       - name: Install capnproto (macOS)
         if: runner.os == 'macOS'
         run: brew install capnp
@@ -84,6 +86,11 @@ jobs:
       - name: level 3 frames still match the capnp CLI
         if: matrix.run_tests
         run: bash scripts/gen-rpc-frames.sh --check
+      # The generated sources are checked in, so they have to be what the
+      # current plugin emits.
+      - name: Checked-in generated sources are current
+        if: runner.os == 'Linux'
+        run: bash scripts/regen-generated.sh --check build/capnpc-c
       - name: Fuzz harness smoke
         if: matrix.fuzz_smoke
         run: |
@@ -147,6 +154,8 @@ jobs:
           python-version: "3.12"
       - name: Install meson ninja
         run: pip install meson ninja
+      # Same stream schema import as the meson job. The matrix compiler
+      # is installed here so clang is present on that leg.
       - name: Install capnproto
         run: |
           sudo apt-get update
@@ -247,3 +256,31 @@ jobs:
         run: |
           ctest --test-dir build --output-on-failure
           ctest --test-dir build -N | grep -E 'Test #.*capn-test'
+
+  s390x:
+    name: qemu s390x
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Install meson ninja
+        run: pip install meson ninja
+      - name: Install the s390x cross compiler and qemu-user
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-s390x-linux-gnu g++-s390x-linux-gnu \
+            libc6-dev-s390x-cross qemu-user
+      # No host capnp: the CLI parity tests are not built. The runtime
+      # suite runs under qemu-s390x from qemu-user. ubuntu-latest does
+      # not ship qemu-user-static.
+      - name: Configure
+        run: meson setup build-s390x --cross-file cross/s390x.ini -Denable_tests=true
+      - name: Build
+        run: meson compile -C build-s390x
+      - name: Test
+        run: meson test -C build-s390x --print-errorlogs

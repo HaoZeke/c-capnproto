@@ -58,5 +58,11 @@ struct capn_stream {
 intern int capn_deflate(struct capn_stream*);
 intern int capn_inflate(struct capn_stream*);
 
+/* The heap allocator accepts an object the int-sized create callback
+ * cannot name. capn_using_malloc is true for a session from
+ * capn_init_malloc. */
+intern int capn_using_malloc(const struct capn *c);
+intern struct capn_segment *capn_malloc_segment(size_t sz);
+
 
 #endif /* CAPNP_PRIV_H */

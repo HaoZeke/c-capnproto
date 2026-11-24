@@ -8,6 +8,114 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- `$C.rpcstubs` handlers receive the results pointer. `CAPN_RPC_PENDING`
+  is `-2` and preserves results written through it; a plain return of
+  `1` is an exception.
+
+### Added
+
+- `$C.reflect` and `lib/capn-dyn.h`: a descriptor per struct, group and
+  enum (`<Name>_dyn`), with field access by name, union selection and
+  setters, `capn_dyn_to_text` (`capnp decode --short`),
+  `capn_dyn_to_json` (`capnp convert binary:json`), and
+  `capn_dyn_from_text` / `capn_dyn_from_json`, which build the canonical
+  message `capnp encode` builds. Generic instantiations are resolved
+  through their brands.
+- `capn_rpc_free`, `capn_rpc_send_abort`, `capn_rpc_is_aborted` and
+  `capn_rpc_set_result_size`.
+- RPC capabilities in payloads: `capn_rpc_new_export_cap` and
+  `capn_rpc_new_import_cap` build a capability pointer and the capTable,
+  `capn_rpc_param_cap` and `capn_rpc_answer_cap` read one, and
+  `capn_rpc_send_pipelined_call` calls a capability inside an answer that
+  has not arrived.
+- Deferred RPC replies: `dispatch` returns `CAPN_RPC_PENDING` and answers
+  later with `capn_rpc_return` or `capn_rpc_return_exception`; a `Finish` in
+  between cancels the call.
+- `$C.rpcstubs`: per interface, the method parameter and result structs, a
+  client call helper and result reader per method, and a server vtable with
+  a `<Interface>_dispatch` for `capn-rpc.h`.
+- `capn_rpc_fd_send`, `capn_rpc_fd_read_frame` and `capn_rpc_fd_pump`: a
+  blocking descriptor transport for the vat on Unix-like systems.
+- `scripts/regen-generated.sh`, which rewrites every checked-in
+  `*.capnp.[ch]` or, with `--check`, fails on a stale one; CI runs it.
+- Tests that read back the values baked into generated constants, that
+  compare read/write round trips and far-pointer messages with `capnp`,
+  and that check RPC frames over 8 KiB.
+
+### Changed
+
+- The shared library soname is 2 (meson `soversion: 2`, libtool
+  `-version-info 2:0:0`, CMake `SOVERSION 2`). Public RPC structs grew,
+  including `capn_rpc_queued` and `capn_rpc_conn`, so a binary built
+  against soname 1 cannot use this library.
+- `struct capn_rpc_pending_call` carries `caps` and `ncaps` until
+  `capn_rpc_return`. `struct capn_rpc_conn` carries `cap_dest` and
+  `cap_dest_n`, which name that table during dispatch.
+  `capn_rpc_pending_results` reads the parked results struct. A generated
+  stub can return `CAPN_RPC_PENDING` and finish with
+  `<Interface>_return_<method>`.
+- `capn_rpc_new_export_cap`, `capn_rpc_new_import_cap`,
+  `capn_rpc_new_promise_cap` and `capn_rpc_new_answer_cap` append to
+  `cap_dest` while a call is being filled or dispatched, otherwise to the
+  parked call whose message owns the segment, otherwise to the connection
+  list.
+- `CAPN_RPC_MAX_ANSWERS`, `CAPN_RPC_MAX_EXPORTS` and
+  `CAPN_RPC_MAX_QUESTIONS` are gone. Tables grow up to
+  `CAPN_RPC_MAX_TABLE_CAPACITY` (1024). `CAPN_RPC_MAX_ANSWER_BYTES` is
+  gone: RPC frames are sized from the message, and `capn_rpc_answer` /
+  `capn_rpc_question` hold heap frames that `capn_rpc_free` releases.
+  Every `capn_rpc_init` must be paired with `capn_rpc_free`.
+- Stream readers refuse a message over 64 MiB, as C++ does, and a buffer
+  whose segment table claims more than the buffer holds
+  (`CAPN_MAX_MESSAGE_BYTES` overrides the limit at compile time).
+- `capn_new_*` return a null pointer for a negative or oversized count.
+- The names `which`, `errno`, `stdin`, `stdout`, `stderr`, `unix`, `linux`,
+  `i386`, `noreturn`, `complex` and `imaginary` are renamed with a leading
+  underscore when a schema field uses them.
+
+### Fixed
+
+- Calls queued on one promise are replayed in arrival order. A resolve
+  of another promise can free a lower queue slot, and a later call must
+  not be delivered before an earlier one on the same promise.
+- A `senderLoopback` Disembargo is echoed only after its target settles
+  to a capability the sender hosts. An ordinary local export aborts the
+  connection.
+- A Text field read from a null pointer wrote back as an empty string,
+  turning a schema default or a null into explicit data; it now writes a
+  null again.
+- `capn_setp` with a same-session far pointer stored the pointer word in
+  the struct's first data word instead of the named slot. A far pointer
+  that does land in the right slot now deep-copies the object it names;
+  copying the word aliases the landing pad. A far pointer that does not
+  resolve is stored as null.
+- Reusing a question id that is still live aborts the connection. The
+  reason is the Call text from C++ 1.4.0: `expected !answer.active;
+  questionId is already in use`. That covers an answer still waiting for
+  Finish, a call that has not returned, a queued frame, and an unfinished
+  Join. A Bootstrap appends `; answerId = N`, which is the extra
+  argument on that check.
+- `capn_getv`/`capn_setv` for 16, 32 and 64 bit lists treated the element
+  offset as bytes; `getv1`/`setv1` mixed bits and bytes; negative offsets
+  and counts are rejected, as are negative indices to `capn_get*`,
+  `capn_set*`, `capn_getp` and `capn_setp`.
+- RPC: frames over 8 KiB were dropped; `Unimplemented` and `Abort` were
+  answered with an `Unimplemented` of their own and the echo wrapped the
+  message in a second one; a `Release` count of 0xffffffff overflowed.
+- `capn_rpc_export` reused an export whenever the server pointer matched,
+  so one object served by two dispatchers collapsed into the first.
+- `capnpc-c`: a header for a `-> stream` method included the nonexistent
+  `capnp/stream.capnp.h`; two schemas in one request read freed memory;
+  an all-Void union produced an empty C union; generated constants warned
+  under `-Wextra`.
+- The checked-in generated sources matched an older plugin (no `has_`
+  accessors); they are regenerated.
+- An installed `capnpc-c` could not find `libcapnp_c.so`; the meson
+  `.pc` file lacked `codegen`; `make dist` failed and the tarball lacked
+  files; `.travis.yml` was dead and is removed.
+
 ## [0.4.2] - 2026-11-21
 
 ### Added

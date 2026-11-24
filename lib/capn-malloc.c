@@ -50,19 +50,49 @@ struct check_segment_alignment {
 #define CAPN_CREATE_MIN_SZ 4096
 #endif
 
-static struct capn_segment *create(void *u, uint32_t id, int sz) {
+static struct capn_segment *create_sz(size_t need) {
 	struct capn_segment *s;
-	sz += sizeof(*s);
-	if (sz < CAPN_CREATE_MIN_SZ) {
-		sz = CAPN_CREATE_MIN_SZ;
+	size_t total, unit;
+	if (need > (size_t) -1 - sizeof(*s))
+		return NULL;
+	total = need + sizeof(*s);
+	unit = (size_t) CAPN_CREATE_MIN_SZ;
+	if (total < unit) {
+		total = unit;
 	} else {
-		sz = (sz + CAPN_CREATE_MIN_SZ - 1) & ~(CAPN_CREATE_MIN_SZ - 1);
+		if (unit == 0 || (unit & (unit - 1)) != 0)
+			return NULL;
+		if (total > (size_t) -1 - (unit - 1))
+			return NULL;
+		total = (total + unit - 1) & ~(unit - 1);
 	}
-	s = (struct capn_segment*) calloc(1, sz);
+	s = (struct capn_segment*) calloc(1, total);
+	if (!s)
+		return NULL;
 	s->data = (char*) (s+1);
-	s->cap = sz - sizeof(*s);
+	s->cap = total - sizeof(*s);
 	s->user = s;
 	return s;
+}
+
+static struct capn_segment *create(void *u, uint32_t id, int sz) {
+	(void) u;
+	(void) id;
+	/* sz is the caller's int (the create callback). A request near
+	 * INT_MAX plus this header used to wrap the signed add and the
+	 * 4096-byte round-up, then calloc a 4096-byte segment for a
+	 * multi-gigabyte list. Count in size_t and refuse a wrap. */
+	if (sz < 0)
+		return NULL;
+	return create_sz((size_t) sz);
+}
+
+int capn_using_malloc(const struct capn *c) {
+	return c != NULL && c->create == create;
+}
+
+struct capn_segment *capn_malloc_segment(size_t sz) {
+	return create_sz(sz);
 }
 
 static struct capn_segment *create_local(void *u, int sz) {
@@ -82,6 +112,8 @@ void capn_free(struct capn *c) {
 		free(s->user);
 		s = n;
 	}
+	free(c->dup_busy);
+	free(c->dup_at);
 	capn_reset_copy(c);
 }
 
@@ -97,10 +129,18 @@ void capn_reset_copy(struct capn *c) {
 }
 
 #define ZBUF_SZ 4096
-/* Framing header is a stack array of this many segment-size words.
- * The first word of the stream is (segnum - 1); more than CAPN_MAX_SEGS
- * segments cannot be decoded. */
-#define CAPN_MAX_SEGS 1024
+/* The first word of the stream is (segnum - 1). C++
+ * InputStreamMessageReader and PackedMessageReader reject a count of
+ * 512 or more. FlatArrayMessageReader stops only where the table runs
+ * past the buffer, so a larger table is allocated. */
+#define CAPN_MAX_SEGS 511
+
+/* Largest framed message the stream readers will allocate for, matching
+ * the 64 MiB default traversal limit (C++ refuses a larger message at
+ * the framing layer, before it allocates). Override at compile time. */
+#ifndef CAPN_MAX_MESSAGE_BYTES
+#define CAPN_MAX_MESSAGE_BYTES ((uint32_t) 64u * 1024u * 1024u)
+#endif
 
 #ifndef __KERNEL__
 static int read_fd_all(ssize_t (*read_fd)(int fd, void *p, size_t count), int fd, void *p, size_t count)
@@ -126,6 +166,9 @@ static int read_fd_all(ssize_t (*read_fd)(int fd, void *p, size_t count), int fd
 static int read_fp(void *p, size_t sz, FILE *f,
 		   ssize_t (*read_fd)(int fd, void *p, size_t count), int fd,
 		   struct capn_stream *z, uint8_t* zbuf, int packed) {
+	/* fread of zero bytes returns 0, which is not a short read. */
+	if (sz == 0)
+		return 0;
 #ifndef __KERNEL__
 	if ((f || read_fd) && packed) {
 		z->next_out = (uint8_t*) p;
@@ -197,7 +240,7 @@ static int read_fp(void *p, size_t sz, FILE *f,
 
 static int init_fp(struct capn *c, FILE *f,
 		   ssize_t (*read_fd)(int fd, void *p, size_t count), int fd,
-		   struct capn_stream *z, int packed) {
+		   struct capn_stream *z, int packed, size_t max_bytes) {
 	/*
 	 * Initialize 'c' from the contents of 'f', assuming the message has been
 	 * serialized with the standard framing format. From https://capnproto.org/encoding.html:
@@ -210,42 +253,123 @@ static int init_fp(struct capn *c, FILE *f,
 	 */
 
 	struct capn_segment *s = NULL;
-	uint32_t i, segnum, total = 0;
-	uint32_t hdr[CAPN_MAX_SEGS];
+	uint32_t i, segnum;
+	size_t total = 0;
+	/* An even count also reads the pad word. */
+	uint32_t hdr_stack[CAPN_MAX_SEGS + 1];
+	uint32_t *hdr = hdr_stack;
 	uint8_t zbuf[ZBUF_SZ];
+	int flat = !packed && !f && !read_fd;
 	char *data = NULL;
 
 	capn_init_malloc(c);
+	if (max_bytes == 0)
+		max_bytes = CAPN_MAX_MESSAGE_BYTES;
+	else
+		c->traversal_limit = max_bytes;
 
-	/* Read the first four bytes to know how many headers we have */
-	if (read_fp(&segnum, 4, f, read_fd, fd, z, zbuf, packed))
+	/* C++ FlatArrayMessageReader treats a zero-length buffer as an
+	 * empty message. The root read is what fails, not the open. */
+	if (!packed && !f && !read_fd && z->avail_in == 0) {
+		s = (struct capn_segment *) calloc(1, sizeof(*s));
+		if (!s)
+			goto err;
+		s->user = s;
+		capn_append_segment(c, s);
+		return 0;
+	}
+
+	/* Read the first four bytes to know how many headers we have.
+	 * A packed stream is a sequence of words. C++ reads the first
+	 * word, then the rest of the table, and a zero or raw run that
+	 * continues past that read is an error. */
+	if (packed) {
+		uint8_t word[8];
+		if (read_fp(word, 8, f, read_fd, fd, z, zbuf, 1) ||
+		    z->zeros || z->raw || z->avail_buf)
+			goto err;
+		memcpy(&segnum, word, 4);
+		memcpy(&hdr[0], word + 4, 4);
+	} else if (read_fp(&segnum, 4, f, read_fd, fd, z, zbuf, 0))
 		goto err;
 
 	segnum = capn_flip32(segnum);
-	if (segnum > CAPN_MAX_SEGS - 1)
+	if (flat) {
+		/* The count wraps to zero, or the table is longer than
+		 * the buffer: C++ refuses both before reading sizes. The
+		 * table and its pad are count / 2 + 1 words, and the
+		 * first four bytes are already read. */
+		size_t count = (size_t) segnum + 1u;
+		size_t words = z->avail_in / 8u + (z->avail_in % 8u >= 4u);
+		if (segnum == 0xffffffffu || count / 2u + 1u > words)
+			goto err;
+		if (count + 1u > sizeof(hdr_stack) / sizeof(hdr_stack[0])) {
+			hdr = (uint32_t *) malloc((count + 1u) * sizeof(*hdr));
+			if (!hdr)
+				goto err;
+		}
+	} else if (segnum > CAPN_MAX_SEGS - 1) {
 		goto err;
+	}
 	segnum++; /* The wire encoding was zero-based */
 
 	/* Read the header list */
-	if (read_fp(hdr, 8 * (segnum/2) + 4, f, read_fd, fd, z, zbuf, packed))
+	if (packed) {
+		if (segnum > 1) {
+			size_t rest = (size_t) (segnum & ~1u) * 4u;
+			if (read_fp(hdr + 1, rest, f, read_fd, fd, z, zbuf, 1) ||
+			    z->zeros || z->raw || z->avail_buf)
+				goto err;
+		}
+	} else if (read_fp(hdr, 8 * (segnum/2) + 4, f, read_fd, fd, z, zbuf, 0))
 		goto err;
 
 	for (i = 0; i < segnum; i++) {
 		uint32_t n = capn_flip32(hdr[i]);
-		if (n > INT_MAX/8 || n > UINT32_MAX/8 || UINT32_MAX - total < n*8)
+		size_t nbytes;
+		/* 2^29-1 words is the largest segment C++ will read. */
+		if (n > 0x1fffffffu)
 			goto err;
-		hdr[i] = n*8;
-		total += hdr[i];
+		nbytes = (size_t) n * 8u;
+		if (total > (size_t) -1 - nbytes)
+			goto err;
+		hdr[i] = (uint32_t) nbytes;
+		total += nbytes;
 	}
 
-	/* Allocate space for the data and the capn_segment structs */
-	s = (struct capn_segment*) calloc(1, total + (sizeof(*s) * segnum));
+	if (total > max_bytes)
+		goto err;
+	/* A buffer cannot hold more than it was given, or than the longest
+	 * run a packed stream can inflate to (255 zero words per two bytes).
+	 * The inflate product is capped so a large avail_in cannot wrap. */
+	if (!f && !read_fd) {
+		size_t bound = z->avail_in;
+		if (packed) {
+			if (z->avail_in > (SIZE_MAX - 8u) / 1024u)
+				bound = SIZE_MAX;
+			else
+				bound = z->avail_in * 1024u + 8u;
+		}
+		if (total > bound)
+			goto err;
+	}
+
+	/* Allocate space for the data and the capn_segment structs. */
+	if ((size_t) segnum > ((size_t) -1 - total) / sizeof(*s))
+		goto err;
+	s = (struct capn_segment*) calloc(1, (size_t) total + (sizeof(*s) * segnum));
 	if (!s)
 		goto err;
 
-	/* Now read the data and setup the capn_segment structs */
+	/* The segment bodies are one packed stream. A zero run or a raw
+	 * run continues from one segment into the next. A run that still
+	 * has bytes after those bodies is not part of this message. */
 	data = (char*) (s+segnum);
-	if (read_fp(data, total, f, read_fd, fd, z, zbuf, packed))
+	if (packed) {
+		if (total && (read_fp(data, total, f, read_fd, fd, z, zbuf, 1) ||
+		    z->zeros || z->raw || z->avail_buf))
+			goto err;
+	} else if (read_fp(data, total, f, read_fd, fd, z, zbuf, 0))
 		goto err;
 
 	for (i = 0; i < segnum; i++) {
@@ -257,27 +381,46 @@ static int init_fp(struct capn *c, FILE *f,
 
     /* Set the entire region to be freed on the last segment */
 	s[segnum-1].user = s;
+	if (hdr != hdr_stack)
+		free(hdr);
 
+	/* A segment of zero words is a message the reader can be
+	 * built from. The missing root is reported when it is read. */
 	return 0;
 
 err:
+	if (hdr != hdr_stack)
+		free(hdr);
 	memset(c, 0, sizeof(*c));
 	free(s);
+	/* kj::InputStream::read throws "Premature EOF" when a stream
+	 * ends before the framing word. A flat buffer is not a stream. */
+	if (f || read_fd)
+		c->decode_err = 1;
 	return -1;
 }
 
-int capn_init_fp(struct capn *c, FILE *f, int packed) {
+int capn_init_fp_max(struct capn *c, FILE *f, int packed, size_t max_bytes) {
 	struct capn_stream z;
 	memset(&z, 0, sizeof(z));
-	return init_fp(c, f, NULL, -1, &z, packed);
+	return init_fp(c, f, NULL, -1, &z, packed, max_bytes);
 }
 
-int capn_init_mem(struct capn *c, const uint8_t *p, size_t sz, int packed) {
+int capn_init_fp(struct capn *c, FILE *f, int packed) {
+	return capn_init_fp_max(c, f, packed, 0);
+}
+
+int capn_init_mem_max(struct capn *c, const uint8_t *p, size_t sz, int packed,
+		      size_t max_bytes) {
 	struct capn_stream z;
 	memset(&z, 0, sizeof(z));
 	z.next_in = p;
 	z.avail_in = sz;
-	return init_fp(c, NULL, NULL, -1, &z, packed);
+	return init_fp(c, NULL, NULL, -1, &z, packed, max_bytes);
+}
+
+int capn_init_mem(struct capn *c, const uint8_t *p, size_t sz, int packed) {
+	return capn_init_mem_max(c, p, sz, packed, 0);
 }
 
 #ifndef __KERNEL__
@@ -286,7 +429,7 @@ int capn_init_fd(struct capn *c, ssize_t (*read_fd)(int fd, void *p, size_t coun
 	if (read_fd == NULL)
 		return -1;
 	memset(&z, 0, sizeof(z));
-	return init_fp(c, NULL, read_fd, fd, &z, packed);
+	return init_fp(c, NULL, read_fd, fd, &z, packed, 0);
 }
 #else /* __KERNEL__ */
 int capn_init_fd(struct capn *c, ssize_t (*read_fd)(int fd, void *p, size_t count), int fd, int packed) {
@@ -309,6 +452,14 @@ static void header_calc(struct capn *c, uint32_t *headerlen, size_t *headersz)
 	*headersz = 4 * *headerlen;
 }
 
+static int add_size(size_t *sum, size_t n)
+{
+	if (*sum > (size_t) -1 - n)
+		return -1;
+	*sum += n;
+	return 0;
+}
+
 static int header_render(struct capn *c, struct capn_segment *seg, uint8_t *header, uint32_t headerlen, size_t *datasz)
 {
 	size_t i;
@@ -323,8 +474,11 @@ static int header_render(struct capn *c, struct capn_segment *seg, uint8_t *head
 	for (i = 0; i < c->segnum; i++, seg = seg->next) {
 		if (0 == seg)
 			return -1;
-		*datasz += seg->len;
-		val = capn_flip32(seg->len / 8);
+		if (seg->len / 8 > 0xffffffffu)
+			return -1;
+		if (add_size(datasz, seg->len))
+			return -1;
+		val = capn_flip32((uint32_t) (seg->len / 8));
 		memcpy(header + (1 + i) * 4, &val, sizeof(val));
 	}
 	if (0 != seg)
@@ -333,17 +487,35 @@ static int header_render(struct capn *c, struct capn_segment *seg, uint8_t *head
 	return 0;
 }
 
+/* The zero-length buffer reader keeps one segment with no data, so
+ * its root read fails. C++ has no segment to write for it. */
+static int no_segments(const struct capn *c)
+{
+	return c->segnum == 0 || (c->segnum == 1 && c->seglist &&
+		c->seglist->data == NULL && c->seglist->cap == 0);
+}
+
+/* A builder whose first segment has room but no root yet is padded
+ * to one word, which is what writing used to do by reading the root.
+ * A wire segment is left alone, including one with no words. */
+static void pad_builder_root(struct capn *c)
+{
+	struct capn_segment *seg = c->seglist;
+
+	if (seg && seg->cap > seg->len && seg->len < 8 && seg->cap >= 8)
+		seg->len = 8;
+}
+
 static int64_t capn_write_mem_packed(struct capn *c, uint8_t *p, size_t sz)
 {
 	struct capn_segment *seg;
-	struct capn_ptr root;
 	uint32_t headerlen;
 	size_t headersz, datasz = 0;
 	uint8_t *header;
 	struct capn_stream z;
 	int ret;
 
-	root = capn_root(c);
+	pad_builder_root(c);
 	header_calc(c, &headerlen, &headersz);
 
 	/* Uncompressed header is written at p + headersz + 2 (two bytes of
@@ -358,7 +530,7 @@ static int64_t capn_write_mem_packed(struct capn *c, uint8_t *p, size_t sz)
 
 	header = p + headersz + 2;
 
-	ret = header_render(c, root.seg, header, headerlen, &datasz);
+	ret = header_render(c, c->seglist, header, headerlen, &datasz);
 	if (ret != 0)
 		return -1;
 
@@ -373,7 +545,7 @@ static int64_t capn_write_mem_packed(struct capn *c, uint8_t *p, size_t sz)
 	if (ret != 0 || z.avail_in != 0)
 		return -1;
 
-	for (seg = root.seg; seg; seg = seg->next) {
+	for (seg = c->seglist; seg; seg = seg->next) {
 		z.next_in = (uint8_t *)seg->data;
 		z.avail_in = seg->len;
 		ret = capn_deflate(&z);
@@ -384,39 +556,207 @@ static int64_t capn_write_mem_packed(struct capn *c, uint8_t *p, size_t sz)
 	return (int64_t)(sz - z.avail_out);
 }
 
+/* Copy the root into one segment. A null root leaves dst empty.
+ * A broken pointer, a spent traversal budget, or a capability is an
+ * error. Shared objects are duplicated, which is what a re-encode
+ * does. The first segment starts large enough for the source, and
+ * grows when a shared copy needs more than that. */
+static int copy_for_flat(struct capn *src, struct capn *dst)
+{
+	capn_ptr root, obj;
+	int null_word;
+	size_t guess, saved_used;
+	struct capn_segment *seg;
+	int tries;
+
+	memset(dst, 0, sizeof *dst);
+	if (!src || !src->seglist)
+		return 0;
+	if (capn_validate(src) != 0 || !capn_ok(src))
+		return -1;
+	root = capn_root(src);
+	obj = capn_getp(root, 0, 1);
+	if (!capn_ok(src))
+		return -1;
+	null_word = root.seg && root.data &&
+		capn_flip64(*(uint64_t *) root.data) == 0;
+	if (obj.type == CAPN_NULL) {
+		if (!null_word)
+			return -1;
+		return 0;
+	}
+	/* A capability has no single-segment encoding. Lists and structs do. */
+	if (obj.type == CAPN_INTERFACE)
+		return -1;
+
+	saved_used = src->traversal_used;
+	guess = 8;
+	for (seg = src->seglist; seg; seg = seg->next) {
+		if (guess > (size_t) -1 - seg->len)
+			return -1;
+		guess += seg->len;
+	}
+	for (tries = 0; tries < 8; tries++) {
+		struct capn_segment *made;
+		size_t used;
+		int req;
+
+		if (guess > (size_t) INT_MAX)
+			return -1;
+		req = (int) guess;
+		src->traversal_used = saved_used;
+		capn_init_malloc(dst);
+		dst->traversal_limit = src->traversal_limit;
+		dst->nesting_limit = src->nesting_limit;
+		made = dst->create ? dst->create(dst->user, 0, req) : NULL;
+		if (!made) {
+			capn_free(dst);
+			memset(dst, 0, sizeof *dst);
+			return -1;
+		}
+		capn_append_segment(dst, made);
+		dst->dup_copy = 1;
+		if (capn_set_root(dst, obj) != 0 || !capn_ok(src)) {
+			capn_free(dst);
+			memset(dst, 0, sizeof *dst);
+			return -1;
+		}
+		if (dst->segnum == 1)
+			return 0;
+		used = 0;
+		for (seg = dst->seglist; seg; seg = seg->next) {
+			if (used > (size_t) -1 - seg->len) {
+				capn_free(dst);
+				memset(dst, 0, sizeof *dst);
+				return -1;
+			}
+			used += seg->len;
+		}
+		capn_free(dst);
+		memset(dst, 0, sizeof *dst);
+		if (used > (size_t) -1 / 2)
+			return -1;
+		guess = used * 2;
+	}
+	return -1;
+}
+
+int64_t capn_write_flat(struct capn *c, uint8_t *p, size_t sz)
+{
+	struct capn dst;
+	struct capn_segment *seg;
+	int64_t n;
+
+	if (!c || !p || no_segments(c))
+		return -1;
+	if (copy_for_flat(c, &dst) != 0)
+		return -1;
+	if (dst.segnum == 0) {
+		/* A null root re-encodes as a canonical empty struct. */
+		static const uint8_t empty_struct[8] = {
+			0xfc, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00
+		};
+		capn_free(&dst);
+		if (sz < 8)
+			return -1;
+		memcpy(p, empty_struct, 8);
+		return 8;
+	}
+	seg = dst.seglist;
+	if (!seg || seg->len > sz) {
+		capn_free(&dst);
+		return -1;
+	}
+	memcpy(p, seg->data, seg->len);
+	n = (int64_t) seg->len;
+	capn_free(&dst);
+	return n;
+}
+
+int64_t capn_write_flat_packed(struct capn *c, uint8_t *p, size_t sz)
+{
+	uint8_t *raw;
+	int64_t n;
+	struct capn_stream z;
+	int ret;
+
+	if (!c || !p || no_segments(c))
+		return -1;
+	{
+		struct capn dst;
+		struct capn_segment *one;
+		static const uint8_t empty_struct[8] = {
+			0xfc, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00
+		};
+
+		if (copy_for_flat(c, &dst) != 0)
+			return -1;
+		if (dst.segnum == 0) {
+			raw = (uint8_t *) malloc(8);
+			if (!raw)
+				return -1;
+			memcpy(raw, empty_struct, 8);
+			n = 8;
+		} else {
+			one = dst.seglist;
+			if (!one) {
+				capn_free(&dst);
+				return -1;
+			}
+			raw = (uint8_t *) malloc(one->len ? one->len : 1);
+			if (!raw) {
+				capn_free(&dst);
+				return -1;
+			}
+			memcpy(raw, one->data, one->len);
+			n = (int64_t) one->len;
+			capn_free(&dst);
+		}
+	}
+	memset(&z, 0, sizeof z);
+	z.next_in = raw;
+	z.avail_in = (size_t) n;
+	z.next_out = p;
+	z.avail_out = sz;
+	ret = capn_deflate(&z);
+	free(raw);
+	if (ret != 0 || z.avail_in != 0)
+		return -1;
+	return (int64_t) (sz - z.avail_out);
+}
+
 int64_t
 capn_write_mem(struct capn *c, uint8_t *p, size_t sz, int packed)
 {
 	struct capn_segment *seg;
-	struct capn_ptr root;
 	uint32_t headerlen;
 	size_t headersz, datasz = 0;
 	uint8_t *header;
 	int ret;
 
-	if (c->segnum == 0)
+	if (no_segments(c))
 		return -1;
 
 	if (packed)
 		return capn_write_mem_packed(c, p, sz);
 
-	root = capn_root(c);
+	pad_builder_root(c);
 	header_calc(c, &headerlen, &headersz);
 	header = p;
 
 	if (sz < headersz)
 		return -1;
 
-	ret = header_render(c, root.seg, header, headerlen, &datasz);
+	ret = header_render(c, c->seglist, header, headerlen, &datasz);
 	if (ret != 0)
 		return -1;
 
-	if (sz < headersz + datasz)
+	if (datasz > (size_t) -1 - headersz || sz < headersz + datasz)
 		return -1;
 
 	p += headersz;
 
-	for (seg = root.seg; seg; seg = seg->next) {
+	for (seg = c->seglist; seg; seg = seg->next) {
 		memcpy(p, seg->data, seg->len);
 		p += seg->len;
 	}
@@ -492,35 +832,61 @@ static int emit_fd(void *ctx, const void *p, size_t n)
 	return _write_fd(e->write_fd, e->fd, (void *)p, n);
 }
 
+/* The segment table grows with the segment count. A packed header
+ * needs a second copy of that table plus two bytes. The 4096 byte
+ * floor is the chunk size a small message already used. */
+static unsigned char *header_buf(size_t headersz, int packed, size_t *cap_out)
+{
+	size_t need = headersz;
+	size_t cap = 4096;
+
+	if (packed) {
+		if (headersz > (SIZE_MAX - 2) / 2)
+			return NULL;
+		need = headersz * 2 + 2;
+	}
+	if (need > cap)
+		cap = need;
+	if (cap == 0)
+		cap = 1;
+	*cap_out = cap;
+	return (unsigned char *) malloc(cap);
+}
+
 int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, size_t count), int fd, int packed)
 {
-	unsigned char buf[4096];
+	unsigned char *buf = NULL;
+	size_t bufcap = 0;
 	struct capn_segment *seg;
-	struct capn_ptr root;
 	uint32_t headerlen;
 	size_t headersz, datasz = 0;
 	int ret;
 	struct capn_stream z;
 	unsigned char *p;
 
-	if (c->segnum == 0)
+	if (no_segments(c))
 		return -1;
 
-	root = capn_root(c);
+	/* A zero-word segment is a real segment. C++ writeMessage
+	 * writes it. The root read is a separate step. */
+	pad_builder_root(c);
 	header_calc(c, &headerlen, &headersz);
 
-	if (sizeof(buf) < headersz)
+	buf = header_buf(headersz, packed, &bufcap);
+	if (buf == NULL)
 		return -1;
 
-	ret = header_render(c, root.seg, buf, headerlen, &datasz);
+	ret = header_render(c, c->seglist, buf, headerlen, &datasz);
 	if (ret != 0)
-		return -1;
+		goto out;
 
 	if (packed) {
-		const int headerrem = sizeof(buf) - headersz;
-		const int maxpack = headersz + 2;
-		if (headerrem < maxpack)
-			return -1;
+		size_t headerrem = bufcap - headersz;
+		size_t maxpack = headersz + 2;
+		if (headerrem < maxpack) {
+			ret = -1;
+			goto out;
+		}
 
 		memset(&z, 0, sizeof(z));
 		z.next_in = buf;
@@ -529,7 +895,7 @@ int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, siz
 		z.avail_out = headerrem;
 		ret = capn_deflate(&z);
 		if (ret != 0)
-			return -1;
+			goto out;
 
 		p = buf + headersz;
 		headersz = headerrem - z.avail_out;
@@ -539,28 +905,34 @@ int capn_write_fd(struct capn *c, ssize_t (*write_fd)(int fd, const void *p, siz
 
 	ret = _write_fd(write_fd, fd, p, headersz);
 	if (ret < 0)
-		return -1;
+		goto out;
 
 	datasz = headersz;
-	for (seg = root.seg; seg; seg = seg->next) {
+	for (seg = c->seglist; seg; seg = seg->next) {
 		if (packed) {
 			struct write_fd_ctx e;
 			e.write_fd = write_fd;
 			e.fd = fd;
-			ret = packed_emit_seg(&z, buf, sizeof(buf),
+			ret = packed_emit_seg(&z, buf, bufcap,
 				(const uint8_t *)seg->data, seg->len,
 				emit_fd, &e, &datasz);
 			if (ret < 0)
-				return -1;
+				goto out;
 		} else {
 			ret = _write_fd(write_fd, fd, (uint8_t *)seg->data, seg->len);
 			if (ret < 0)
-				return -1;
-			datasz += seg->len;
+				goto out;
+			if (add_size(&datasz, seg->len)) {
+				ret = -1;
+				goto out;
+			}
 		}
 	}
 
-	return datasz;
+	ret = (int) datasz;
+out:
+	free(buf);
+	return ret;
 }
 
 #ifndef __KERNEL__
@@ -585,33 +957,36 @@ static int emit_fp(void *ctx, const void *p, size_t n)
 
 int capn_write_fp(struct capn *c, FILE *f, int packed)
 {
-	unsigned char buf[4096];
+	unsigned char *buf = NULL;
+	size_t bufcap = 0;
 	struct capn_segment *seg;
-	struct capn_ptr root;
 	uint32_t headerlen;
 	size_t headersz, datasz = 0;
 	int ret;
 	struct capn_stream z;
 	unsigned char *p;
 
-	if (c->segnum == 0 || f == NULL)
+	if (no_segments(c) || f == NULL)
 		return -1;
 
-	root = capn_root(c);
+	pad_builder_root(c);
 	header_calc(c, &headerlen, &headersz);
 
-	if (sizeof(buf) < headersz)
+	buf = header_buf(headersz, packed, &bufcap);
+	if (buf == NULL)
 		return -1;
 
-	ret = header_render(c, root.seg, buf, headerlen, &datasz);
+	ret = header_render(c, c->seglist, buf, headerlen, &datasz);
 	if (ret != 0)
-		return -1;
+		goto out;
 
 	if (packed) {
-		const int headerrem = sizeof(buf) - headersz;
-		const int maxpack = headersz + 2;
-		if (headerrem < maxpack)
-			return -1;
+		size_t headerrem = bufcap - headersz;
+		size_t maxpack = headersz + 2;
+		if (headerrem < maxpack) {
+			ret = -1;
+			goto out;
+		}
 
 		memset(&z, 0, sizeof(z));
 		z.next_in = buf;
@@ -620,7 +995,7 @@ int capn_write_fp(struct capn *c, FILE *f, int packed)
 		z.avail_out = headerrem;
 		ret = capn_deflate(&z);
 		if (ret != 0)
-			return -1;
+			goto out;
 
 		p = buf + headersz;
 		headersz = headerrem - z.avail_out;
@@ -630,28 +1005,36 @@ int capn_write_fp(struct capn *c, FILE *f, int packed)
 
 	ret = _write_fp(f, p, headersz);
 	if (ret < 0)
-		return -1;
+		goto out;
 
 	datasz = headersz;
-	for (seg = root.seg; seg; seg = seg->next) {
+	for (seg = c->seglist; seg; seg = seg->next) {
 		if (packed) {
-			ret = packed_emit_seg(&z, buf, sizeof(buf),
+			ret = packed_emit_seg(&z, buf, bufcap,
 				(const uint8_t *)seg->data, seg->len,
 				emit_fp, f, &datasz);
 			if (ret < 0)
-				return -1;
+				goto out;
 		} else {
 			ret = _write_fp(f, seg->data, seg->len);
 			if (ret < 0)
-				return -1;
-			datasz += seg->len;
+				goto out;
+			if (add_size(&datasz, seg->len)) {
+				ret = -1;
+				goto out;
+			}
 		}
 	}
 
-	if (fflush(f) != 0)
-		return -1;
+	if (fflush(f) != 0) {
+		ret = -1;
+		goto out;
+	}
 
-	return (int)datasz;
+	ret = (int) datasz;
+out:
+	free(buf);
+	return ret;
 }
 #else /* __KERNEL__ */
 int capn_write_fp(struct capn *c, FILE *f, int packed)
@@ -663,24 +1046,26 @@ int capn_write_fp(struct capn *c, FILE *f, int packed)
 int64_t capn_size(struct capn *c)
 {
 	size_t headersz, datasz = 0;
-	struct capn_ptr root;
 	struct capn_segment *seg;
 	uint32_t i;
 
-	if (c->segnum == 0)
+	if (no_segments(c))
 		return -1;
 
-	root = capn_root(c);
-	seg = root.seg;
+	pad_builder_root(c);
+	seg = c->seglist;
 
 	headersz = 8 * ((2 + c->segnum) / 2);
 
 	for (i = 0; i < c->segnum; i++, seg = seg->next) {
 		if (0 == seg)
 			return -1;
-		datasz += seg->len;
+		if (add_size(&datasz, seg->len))
+			return -1;
 	}
 	if (0 != seg)
+		return -1;
+	if (datasz > (size_t) -1 - headersz)
 		return -1;
 
 	return (int64_t)(headersz + datasz);

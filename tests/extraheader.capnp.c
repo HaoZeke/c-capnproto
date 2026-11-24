@@ -8,7 +8,9 @@
 # define capnp_use(x)
 #endif
 
-static const capn_text capn_val0 = {0,"",0};
+static const char capn_val0_str[1] = {0};
+static const capn_text capn_val0 = {0,capn_val0_str,0};
+static const capn_text capn_text_null = {0,0,0};
 
 EXTRAHEADER_EXTATTR Widget_ptr new_Widget(struct capn_segment *s) {
 	Widget_ptr p;
@@ -21,7 +23,7 @@ EXTRAHEADER_EXTATTR Widget_list new_Widget_list(struct capn_segment *s, int len)
 	return p;
 }
 EXTRAHEADER_EXTATTR void read_Widget(struct Widget *s capnp_unused, Widget_ptr p) {
-	capn_resolve(&p.p);
+	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->id = capn_read32(p.p, 0);
 	s->name = capn_get_text(p.p, 0, capn_val0);
@@ -30,10 +32,11 @@ EXTRAHEADER_EXTATTR void write_Widget(const struct Widget *s capnp_unused, Widge
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write32(p.p, 0, s->id);
-	capn_set_text(p.p, 0, s->name);
+	capn_set_text(p.p, 0, (s->name.str != capn_val0.str) ? s->name : capn_text_null);
 }
 EXTRAHEADER_EXTATTR void get_Widget(struct Widget *s, Widget_list l, int i) {
 	Widget_ptr p;
+	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Widget(s, p);
 }
@@ -45,6 +48,7 @@ EXTRAHEADER_EXTATTR void set_Widget(const struct Widget *s, Widget_list l, int i
 
 EXTRAHEADER_EXTATTR uint32_t Widget_get_id(Widget_ptr p)
 {
+	capn_resolve_struct(&p.p);
 	uint32_t id;
 	id = capn_read32(p.p, 0);
 	return id;
@@ -52,17 +56,28 @@ EXTRAHEADER_EXTATTR uint32_t Widget_get_id(Widget_ptr p)
 
 EXTRAHEADER_EXTATTR capn_text Widget_get_name(Widget_ptr p)
 {
+	capn_resolve_struct(&p.p);
 	capn_text name;
 	name = capn_get_text(p.p, 0, capn_val0);
 	return name;
 }
 
+EXTRAHEADER_EXTATTR int Widget_has_name(Widget_ptr p)
+{
+	capn_resolve_struct(&p.p);
+	capn_ptr name;
+	name = capn_getp(p.p, 0, 1);
+	return name.type != CAPN_NULL;
+}
+
 EXTRAHEADER_EXTATTR void Widget_set_id(Widget_ptr p, uint32_t id)
 {
+	capn_resolve(&p.p);
 	capn_write32(p.p, 0, id);
 }
 
 EXTRAHEADER_EXTATTR void Widget_set_name(Widget_ptr p, capn_text name)
 {
-	capn_set_text(p.p, 0, name);
+	capn_resolve(&p.p);
+	capn_set_text(p.p, 0, (name.str != capn_val0.str) ? name : capn_text_null);
 }

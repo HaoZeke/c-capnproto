@@ -12,6 +12,7 @@
 #endif
 
 #include "capnp_c.h"
+#include "capnp_priv.h"
 
 #ifndef __KERNEL__
 #include <stdlib.h>
@@ -24,6 +25,7 @@
 #define capn_alloc(n) malloc(n)
 #define capn_zalloc(n) calloc(1, (n))
 #define capn_freemem(p) free(p)
+#define capn_realloc(p, n) realloc((p), (n))
 #else /* __KERNEL__ */
 #include <linux/string.h>
 #include <linux/slab.h>
@@ -31,6 +33,7 @@
 #define capn_alloc(n) kmalloc((n), GFP_KERNEL)
 #define capn_zalloc(n) kzalloc((n), GFP_KERNEL)
 #define capn_freemem(p) kfree(p)
+#define capn_realloc(p, n) krealloc((p), (n), GFP_KERNEL)
 #endif /* __KERNEL__ */
 
 #define STRUCT_PTR 0
@@ -54,6 +57,13 @@
 #define I32(val) ((int32_t) (val))
 #define U16(val) ((uint16_t) (val))
 #define I16(val) ((int16_t) (val))
+
+/* capn_ptr.datasz is 19 bits. A bit-list byte count past this is not
+ * stored there; the count is (len + 7) / 8. */
+#define CAPN_DATASZ_MAX ((1u << 19) - 1u)
+/* List element counts and struct sizes the wire can encode. */
+#define CAPN_MAX_LIST_ELEMS 0x1fffffff
+#define CAPN_MAX_STRUCT_WORDS 0xffff
 
 #ifndef min
 static int min(int a, int b) { return (a < b) ? a : b; }
@@ -191,17 +201,25 @@ void capn_append_segment(struct capn *c, struct capn_segment *s) {
 	c->segtree = capn_tree_insert(c->segtree, &s->hdr);
 }
 
-static char *new_data(struct capn *c, int sz, struct capn_segment **ps) {
+static char *new_data(struct capn *c, size_t sz, struct capn_segment **ps) {
 	struct capn_segment *s;
+
+	if (!c) {
+		*ps = NULL;
+		return NULL;
+	}
 
 	/* find a segment with sufficient data */
 	for (s = c->seglist; s != NULL; s = s->next) {
-		if (s->len + sz <= s->cap) {
+		if (s->len <= s->cap && sz <= s->cap - s->len)
 			goto end;
-		}
 	}
 
-	s = c->create ? c->create(c->user, c->segnum, sz) : NULL;
+	if (sz > (size_t) INT_MAX) {
+		s = capn_using_malloc(c) ? capn_malloc_segment(sz) : NULL;
+	} else {
+		s = c->create ? c->create(c->user, c->segnum, (int) sz) : NULL;
+	}
 	if (!s) {
 		*ps = NULL;
 		return NULL;
@@ -210,8 +228,8 @@ static char *new_data(struct capn *c, int sz, struct capn_segment **ps) {
 	capn_append_segment(c, s);
 end:
 	*ps = s;
-	s->len += sz;
-	return s->data + s->len - sz;
+	s->len += (size_t) sz;
+	return s->data + s->len - (size_t) sz;
 }
 
 static struct capn_segment *lookup_segment(struct capn* c, struct capn_segment *s, uint32_t id) {
@@ -366,7 +384,8 @@ static uint64_t lookup_double(struct capn_segment **s, char **d, uint64_t val) {
 
 	off = (size_t) (U32(val) >> 3) * 8;
 	seg = lookup_segment((*s)->capn, *s, U32(val >> 32));
-	if (!seg) {
+	/* A segment of zero words is not a segment C++ will return. */
+	if (!seg || seg->len == 0) {
 		*s = NULL;
 		return 0;
 	}
@@ -376,24 +395,51 @@ static uint64_t lookup_double(struct capn_segment **s, char **d, uint64_t val) {
 		*s = NULL;
 		return 0;
 	}
+	/* C++ boundsCheck of a double-far landing pad charges both words. */
+	if (charge_traversal(seg->capn, 16, 0) != 0) {
+		*s = NULL;
+		return 0;
+	}
 
 	p = seg->data + off;
 	far = capn_flip64(*(uint64_t*) p);
 	tag = capn_flip64(*(uint64_t*) (p+8));
 
-	/* the far tag should not be another double, and the tag
-	 * should be struct/list and have no offset */
-	if ((far&7) != FAR_PTR || U32(tag) > LIST_PTR) {
+	/* Kind is the low two bits. The double-far bit sits above
+	 * them, and C++ 1.4.0 accepts a landing pad that has it set. */
+	if ((far & 3) != FAR_PTR) {
 		*s = NULL;
 		return 0;
 	}
 
 	seg = lookup_segment(seg->capn, seg, U32(far >> 32));
-	if (!seg) {
+	/* A far into a zero-word segment is an error, not an empty object. */
+	if (!seg || seg->len == 0) {
 		*s = NULL;
 		return 0;
 	}
 	*s = seg;
+
+	/* A capability has no landing object. Its offset field must
+	 * be zero, and the index stays in the high half of the tag. */
+	if ((U32(tag) & 3u) == OTHER_PTR) {
+		size_t foff;
+
+		if (U32(tag) >> 2) {
+			*s = NULL;
+			return 0;
+		}
+		foff = (size_t) (U32(far) >> 3) * 8;
+		*d = (foff > seg->len) ? seg->data : seg->data + foff;
+		return tag;
+	}
+
+	/* Struct or list. A nonzero offset in the tag is ignored.
+	 * The far target is the object's address. */
+	if ((U32(tag) & 3u) > LIST_PTR) {
+		*s = NULL;
+		return 0;
+	}
 
 	/* -8 because far pointers reference from the start of
 	 * the segment, but offsets reference the end of the
@@ -401,7 +447,9 @@ static uint64_t lookup_double(struct capn_segment **s, char **d, uint64_t val) {
 	 * ptr would be.
 	 */
 	*d = seg->data - 8;
-	return U64(U32(far) >> 3 << 2) | tag;
+	return (tag & 0xffffffff00000000ull)
+		| (U64(U32(far) >> 3) << 2)
+		| (U64(U32(tag) & 3u));
 }
 
 static uint64_t lookup_far(struct capn_segment **s, char **d, uint64_t val) {
@@ -416,7 +464,8 @@ static uint64_t lookup_far(struct capn_segment **s, char **d, uint64_t val) {
 
 	off = (size_t) (U32(val) >> 3) * 8;
 	seg = lookup_segment((*s)->capn, *s, U32(val >> 32));
-	if (!seg) {
+	/* A zero-word segment is absent, the way C++ reports it. */
+	if (!seg || seg->len == 0) {
 		*s = NULL;
 		return 0;
 	}
@@ -426,12 +475,17 @@ static uint64_t lookup_far(struct capn_segment **s, char **d, uint64_t val) {
 		*s = NULL;
 		return 0;
 	}
+	/* C++ boundsCheck of a single-far landing pad charges that word. */
+	if (charge_traversal(seg->capn, 8, 0) != 0) {
+		*s = NULL;
+		return 0;
+	}
 
 	*d = seg->data + off;
 	return capn_flip64(*(uint64_t*)*d);
 }
 
-/* rem is remaining hops including this one. rem==0 rejects.
+/* rem is remaining hops including this one. rem==0 rejects a non-null word.
  * rem<0 skips the nesting check (copy path).
  * err (OOB / budget / nesting / broken) sets decode_err. A wire-null
  * pointer word returns CAPN_NULL without taking this path. */
@@ -440,38 +494,67 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 	uint64_t val;
 	size_t nbytes = 0;
 	struct capn *c = s ? s->capn : NULL;
-
-	if (rem == 0)
-		goto err;
+	/* A far landing on a zero word is an empty struct. The word is
+	 * zero because the offset and the sizes are zero, so the type
+	 * has to come from the fact that a far was followed. */
+	int from_far = 0;
+	/* The root word is charged twice, which is the whole cost of a
+	 * capability that lives in that word. A capability somewhere
+	 * else still pays for its own word. */
+	int charged_root_word = 0;
 
 	if (!s || !bounds_ok(s, d, 8))
 		goto err;
 
+	/* C++ charges the root pointer once: getRootInternal checks the
+	 * word, then PointerReader::getRoot checks it again. Later lists
+	 * do not pay that pair. A single void list of 8388607 is one
+	 * word over the default limit. 8388606 still fits. */
+	if (s->id == 0 && d == s->data) {
+		if (charge_traversal(c, 16, 0) != 0)
+			goto err;
+		charged_root_word = 1;
+	}
+
 	val = capn_flip64(*(uint64_t*) d);
+	/* C++ returns the default for a null word before it checks the
+	 * nesting limit. */
+	if (val == 0)
+		return ret;
+	if (rem == 0)
+		goto err;
 
 	switch (val&7) {
 	case FAR_PTR:
 		val = lookup_far(&s, &d, val);
 		if (!s)
 			goto err;
+		from_far = 1;
+		charged_root_word = 0;
 		ret.has_ptr_tag = (U32(val) >> 2) == 0;
 		break;
 	case DOUBLE_PTR:
 		val = lookup_double(&s, &d, val);
 		if (!s)
 			goto err;
+		from_far = 1;
+		charged_root_word = 0;
 		break;
 	}
 
 	/* Capability / other pointer: A=3. No landing object.
 	 * B (bits 2-31) must be 0; C (high 32) is the table index.
-	 * Do not apply_offset or charge_traversal: C is the table
-	 * index, not an object size or list length. */
+	 * The index is not a list length and is not a size. A root
+	 * capability was already charged two words. Any other
+	 * capability pays for its own word and nothing more. */
 	if ((val & 3) == OTHER_PTR) {
 		if ((U32(val) >> 2) != 0)
 			goto err;
+		if (!charged_root_word && charge_traversal(s->capn, 8, 0) != 0)
+			goto err;
 		ret.type = CAPN_INTERFACE;
-		ret.len = (int) U32(val >> 32);
+		ret.len = 0;
+		ret.cap_idx = U32(val >> 32);
 		ret.seg = s;
 		ret.data = d;
 		if (rem > 0) {
@@ -481,12 +564,31 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 		return ret;
 	}
 
-	if (!apply_offset(s, &d, val))
-		goto err;
+	if (!apply_offset(s, &d, val)) {
+		/* A zero-size object has no bytes to read. C++ clamps an
+		 * offset past the segment to the end, where a zero-length
+		 * object is in range. An object with bytes stays rejected.
+		 * A void list is zero-size at any count. An empty list of
+		 * any element size is too. A composite list still has a tag. */
+		int zero = 0;
+		if ((val & 3) == STRUCT_PTR && U32(val >> 32) == 0)
+			zero = 1;
+		else if ((val & 3) == LIST_PTR) {
+			unsigned es = (unsigned) ((val >> 32) & 7);
+			if (es == VOID_LIST)
+				zero = 1;
+			else if (es != COMPOSITE_LIST && (val >> 35) == 0)
+				zero = 1;
+		}
+		if (zero)
+			d = s->data + s->len;
+		else
+			goto err;
+	}
 
 	switch (val & 3) {
 	case STRUCT_PTR:
-		ret.type = val ? CAPN_STRUCT : CAPN_NULL;
+		ret.type = (val || from_far) ? CAPN_STRUCT : CAPN_NULL;
 		ret.datasz = U32(U16(val >> 32)) * 8;
 		ret.ptrs = U32(U16(val >> 48));
 		if ((size_t) ret.datasz > (size_t) -1 - 8u * (size_t) ret.ptrs)
@@ -502,29 +604,45 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 
 		switch ((val >> 32) & 7) {
 		case VOID_LIST:
+			/* No bytes on the wire. The element count is charged
+			 * below, one word each, and nowhere else. */
 			nbytes = 0;
 			break;
 		case BIT_1_LIST:
 			ret.type = CAPN_BIT_LIST;
 			nbytes = ((size_t) ret.len + 7) / 8;
-			if (nbytes > (1u << 19) - 1)
+			/* A count the wire can carry may not fit in datasz.
+			 * Leave datasz 0 and size the object from len. */
+			if (nbytes <= (size_t) CAPN_DATASZ_MAX)
+				ret.datasz = (unsigned) nbytes;
+			/* C++ boundsCheck rounds the bit count up to words. */
+			if (nbytes > (size_t) -1 - 7)
 				goto err;
-			ret.datasz = (unsigned) nbytes;
+			nbytes = (nbytes + 7) & ~(size_t) 7;
 			break;
 		case BYTE_1_LIST:
 			ret.datasz = 1;
 			if (!mul_size((size_t) ret.len, 1, &nbytes))
 				goto err;
+			if (nbytes > (size_t) -1 - 7)
+				goto err;
+			nbytes = (nbytes + 7) & ~(size_t) 7;
 			break;
 		case BYTE_2_LIST:
 			ret.datasz = 2;
 			if (!mul_size((size_t) ret.len, 2, &nbytes))
 				goto err;
+			if (nbytes > (size_t) -1 - 7)
+				goto err;
+			nbytes = (nbytes + 7) & ~(size_t) 7;
 			break;
 		case BYTE_4_LIST:
 			ret.datasz = 4;
 			if (!mul_size((size_t) ret.len, 4, &nbytes))
 				goto err;
+			if (nbytes > (size_t) -1 - 7)
+				goto err;
+			nbytes = (nbytes + 7) & ~(size_t) 7;
 			break;
 		case BYTE_8_LIST:
 			ret.datasz = 8;
@@ -546,13 +664,19 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 				goto err;
 
 			tag = capn_flip64(*(uint64_t*) d);
+			/* The tag is shaped like a struct pointer: its offset
+			 * field is the element count. A list, far, or other
+			 * tag is not a list C++ 1.4.0 will read. */
+			if ((tag & 3) != STRUCT_PTR)
+				goto err;
 			d += 8;
 			if (!bounds_ok(s, d, words))
 				goto err;
 
 			ret.datasz = U32(U16(tag >> 32)) * 8;
 			ret.ptrs = U32(U16(tag >> 48));
-			ret.len = (int) (U32(tag) >> 2);
+			/* Element count is 29 bits. Bit 31 is not part of it. */
+			ret.len = (int) ((U32(tag) >> 2) & 0x1fffffffu);
 			ret.is_composite_list = 1;
 			if (ret.len < 0)
 				goto err;
@@ -562,9 +686,30 @@ static capn_ptr read_ptr(struct capn_segment *s, char *d, int rem) {
 			stride = (size_t) ret.datasz + 8u * (size_t) ret.ptrs;
 			if (!mul_size(stride, (size_t) ret.len, &total))
 				goto err;
-			if (total != words)
+			/* C++ accepts trailing padding: actualSize <= wordCount. */
+			if (total > words)
 				goto err;
-			nbytes = words;
+			/* A zero stride still costs one word per element.
+			 * The tag and the claimed body are charged here.
+			 * The element words are charged below, because
+			 * nbytes stays zero and is not a bounds size. */
+			if (stride == 0) {
+				/* boundsCheck charges the body and the tag.
+				 * The element count is charged below. */
+				size_t extra = words + 8;
+				if (extra < words)
+					goto err;
+				if (charge_traversal(s->capn, extra, 0) != 0)
+					goto err;
+				nbytes = 0;
+			} else {
+				/* The pointer has moved past the tag, so the
+				 * body check stays `words` bytes. The tag is
+				 * still one word of the traversal budget. */
+				if (charge_traversal(s->capn, 8, 0) != 0)
+					goto err;
+				nbytes = words;
+			}
 			break;
 		}
 		default:
@@ -618,18 +763,94 @@ void capn_resolve(capn_ptr *p) {
 	}
 }
 
+static void schema_mismatch(capn_ptr *p) {
+	capn_ptr null = {CAPN_NULL};
+	if (p->seg && p->seg->capn)
+		p->seg->capn->decode_err = 1;
+	null.seg = p->seg;
+	*p = null;
+}
+
+void capn_resolve_struct(capn_ptr *p) {
+	capn_resolve(p);
+	if (p->type != CAPN_NULL && p->type != CAPN_STRUCT)
+		schema_mismatch(p);
+}
+
+/* layout.c++ WireHelpers::readCapabilityPointer. A null word is a
+ * null capability. A struct or list in that slot is a schema mismatch. */
+void capn_resolve_interface(capn_ptr *p) {
+	capn_resolve(p);
+	if (p->type != CAPN_NULL && p->type != CAPN_INTERFACE)
+		schema_mismatch(p);
+}
+
+void capn_resolve_struct_list(capn_ptr *p) {
+	capn_resolve(p);
+	switch (p->type) {
+	case CAPN_NULL:
+	case CAPN_LIST:
+	case CAPN_PTR_LIST:
+		break;
+	default:
+		schema_mismatch(p);
+	}
+}
+
+/* readListPointer in C++ 1.4.0 layout.c++, for a list of `elem`. */
+static int list_mismatch(const capn_ptr *p, int elem)
+{
+	static const unsigned char bits[] = {0, 1, 8, 16, 32, 64, 0};
+	unsigned need;
+
+	if (elem < CAPN_ELEM_VOID || elem > CAPN_ELEM_POINTER)
+		return 0;
+	need = bits[elem];
+	switch (p->type) {
+	case CAPN_NULL:
+		return 0;
+	case CAPN_BIT_LIST:
+		return elem != CAPN_ELEM_BIT;
+	case CAPN_PTR_LIST:
+		return need != 0;
+	case CAPN_LIST:
+		if (p->is_composite_list) {
+			if (elem == CAPN_ELEM_BIT)
+				return 1;
+			if (elem == CAPN_ELEM_POINTER)
+				return p->ptrs == 0;
+			return need != 0 && p->datasz == 0;
+		}
+		if (elem == CAPN_ELEM_POINTER)
+			return 1;
+		return 8u * p->datasz < need;
+	default:
+		return 1;
+	}
+}
+
+void capn_resolve_list(capn_ptr *p, int elem) {
+	capn_resolve(p);
+	if (list_mismatch(p, elem))
+		schema_mismatch(p);
+}
+
 #define CAPN_V_EMPTY 0
 #define CAPN_V_PATH 1
 #define CAPN_V_DONE 2
 
-/* Key is (seg, data, type, is_composite_list). Composite List(T)
- * decode sets data to element 0, so (seg, data) alone aliases the
- * list and T[0]. */
+/* Key is (seg, data, type, is_composite_list, len, datasz, ptrs).
+ * Composite List(T) decode sets data to element 0, so (seg, data)
+ * alone aliases the list and T[0]. An empty list and a longer list
+ * can share a start address, and the size keeps them apart. */
 struct capn_vslot {
 	struct capn_segment *seg;
 	char *data;
 	unsigned type;
 	unsigned is_composite_list;
+	int len;
+	unsigned datasz;
+	unsigned ptrs;
 	unsigned state;
 };
 
@@ -646,14 +867,18 @@ struct capn_frame {
 };
 
 static size_t vhash(struct capn_segment *s, char *d, unsigned type,
-		    unsigned is_comp)
+		    unsigned is_comp, int len, unsigned datasz, unsigned ptrs)
 {
 	uintptr_t a = (uintptr_t) (void *) s;
 	uintptr_t b = (uintptr_t) (void *) d;
-	uintptr_t t = (uintptr_t) type + ((uintptr_t) is_comp << 8);
+	/* uint64_t, so a 32-bit uintptr_t is not shifted by its width. */
+	uint64_t t = (uint64_t) type + ((uint64_t) is_comp << 8)
+		+ ((uint64_t) (unsigned) len << 16)
+		+ ((uint64_t) datasz << 32)
+		+ ((uint64_t) ptrs << 40);
 	return (size_t) ((a * (uintptr_t) 11400714819323198485ull)
 			 ^ (b * (uintptr_t) 14029467366897019727ull)
-			 ^ (t * (uintptr_t) 1609587929392839161ull));
+			 ^ ((uintptr_t) t * (uintptr_t) 1609587929392839161ull));
 }
 
 static int vset_init(struct capn_vset *vs)
@@ -674,6 +899,7 @@ static void vset_free(struct capn_vset *vs)
 
 static struct capn_vslot *vset_find(struct capn_vset *vs, struct capn_segment *s,
 				    char *d, unsigned type, unsigned is_comp,
+				    int len, unsigned datasz, unsigned ptrs,
 				    int insert)
 {
 	size_t mask, i;
@@ -681,13 +907,15 @@ static struct capn_vslot *vset_find(struct capn_vset *vs, struct capn_segment *s
 	if (!vs->tab || vs->cap == 0)
 		return NULL;
 	mask = vs->cap - 1;
-	i = vhash(s, d, type, is_comp) & mask;
+	i = vhash(s, d, type, is_comp, len, datasz, ptrs) & mask;
 	for (;;) {
 		struct capn_vslot *sl = &vs->tab[i];
 		if (sl->state == CAPN_V_EMPTY)
 			return insert ? sl : NULL;
 		if (sl->seg == s && sl->data == d && sl->type == type
-		    && sl->is_composite_list == is_comp)
+		    && sl->is_composite_list == is_comp
+		    && sl->len == len && sl->datasz == datasz
+		    && sl->ptrs == ptrs)
 			return sl;
 		i = (i + 1) & mask;
 	}
@@ -710,7 +938,9 @@ static int vset_grow(struct capn_vset *vs)
 		if (old[i].state != CAPN_V_EMPTY) {
 			struct capn_vslot *sl = vset_find(vs, old[i].seg, old[i].data,
 							  old[i].type,
-							  old[i].is_composite_list, 1);
+							  old[i].is_composite_list,
+							  old[i].len, old[i].datasz,
+							  old[i].ptrs, 1);
 			if (!sl) {
 				capn_freemem(vs->tab);
 				vs->tab = old;
@@ -733,11 +963,16 @@ static int vset_enter(struct capn_vset *vs, capn_ptr p)
 
 	if (p.type == CAPN_NULL || !p.data || !p.seg)
 		return 2;
+	/* An empty struct occupies no bytes. Its start can sit on the
+	 * parent word, and that is not a cycle. */
+	if (p.type == CAPN_STRUCT && p.datasz == 0 && p.ptrs == 0)
+		return 0;
 	if (vs->n * 3 > vs->cap * 2) {
 		if (vset_grow(vs))
 			return -1;
 	}
-	sl = vset_find(vs, p.seg, p.data, p.type, p.is_composite_list, 1);
+	sl = vset_find(vs, p.seg, p.data, p.type, p.is_composite_list,
+		       p.len, p.datasz, p.ptrs, 1);
 	if (!sl)
 		return -1;
 	if (sl->state == CAPN_V_PATH)
@@ -748,6 +983,9 @@ static int vset_enter(struct capn_vset *vs, capn_ptr p)
 	sl->data = p.data;
 	sl->type = p.type;
 	sl->is_composite_list = p.is_composite_list;
+	sl->len = p.len;
+	sl->datasz = p.datasz;
+	sl->ptrs = p.ptrs;
 	sl->state = CAPN_V_PATH;
 	vs->n++;
 	return 0;
@@ -759,7 +997,8 @@ static void vset_leave(struct capn_vset *vs, capn_ptr p)
 
 	if (p.type == CAPN_NULL || !p.data || !p.seg)
 		return;
-	sl = vset_find(vs, p.seg, p.data, p.type, p.is_composite_list, 0);
+	sl = vset_find(vs, p.seg, p.data, p.type, p.is_composite_list,
+		       p.len, p.datasz, p.ptrs, 0);
 	if (sl)
 		sl->state = CAPN_V_DONE;
 }
@@ -772,11 +1011,16 @@ static int vset_reenter(struct capn_vset *vs, capn_ptr p)
 
 	if (p.type == CAPN_NULL || p.type == CAPN_INTERFACE || !p.data || !p.seg)
 		return 2;
+	/* An empty struct occupies no bytes. Its start can sit on the
+	 * parent word, and that is not a cycle. */
+	if (p.type == CAPN_STRUCT && p.datasz == 0 && p.ptrs == 0)
+		return 0;
 	if (vs->n * 3 > vs->cap * 2) {
 		if (vset_grow(vs))
 			return -1;
 	}
-	sl = vset_find(vs, p.seg, p.data, p.type, p.is_composite_list, 1);
+	sl = vset_find(vs, p.seg, p.data, p.type, p.is_composite_list,
+		       p.len, p.datasz, p.ptrs, 1);
 	if (!sl)
 		return -1;
 	if (sl->state == CAPN_V_PATH)
@@ -786,6 +1030,9 @@ static int vset_reenter(struct capn_vset *vs, capn_ptr p)
 		sl->data = p.data;
 		sl->type = p.type;
 		sl->is_composite_list = p.is_composite_list;
+		sl->len = p.len;
+		sl->datasz = p.datasz;
+		sl->ptrs = p.ptrs;
 		vs->n++;
 	}
 	sl->state = CAPN_V_PATH;
@@ -845,6 +1092,42 @@ static int ptr_word_null(struct capn_segment *s, char *d)
 	return capn_flip64(*(uint64_t *) d) == 0;
 }
 
+/* A far or double-far whose target segment has no words. Following
+ * it fails. Walking the message does not, because the pointer has
+ * not been followed yet. */
+static int pointer_far_into_empty(struct capn_segment *s, const char *d)
+{
+	uint64_t val, far;
+	uint32_t id;
+	size_t off, at;
+	struct capn_segment *t, *t2;
+	const char *p;
+
+	if (!s || !d || !s->data || s->len < 8)
+		return 0;
+	at = (size_t) (d - s->data);
+	if (d < s->data || at > s->len || s->len - at < 8)
+		return 0;
+	val = capn_flip64(*(const uint64_t *) d);
+	if ((val & 3) != FAR_PTR)
+		return 0;
+	id = U32(val >> 32);
+	t = lookup_segment(s->capn, s, id);
+	if (t && t->len == 0)
+		return 1;
+	if ((val & 4) == 0 || !t)
+		return 0;
+	off = (size_t) (U32(val) >> 3) * 8;
+	if (off > t->len || t->len - off < 16)
+		return 0;
+	p = t->data + off;
+	far = capn_flip64(*(const uint64_t *) p);
+	if ((far & 3) != FAR_PTR)
+		return 0;
+	t2 = lookup_segment(t->capn, t, U32(far >> 32));
+	return t2 != NULL && t2->len == 0;
+}
+
 int capn_validate(struct capn *c)
 {
 	size_t saved;
@@ -862,6 +1145,15 @@ int capn_validate(struct capn *c)
 	memset(&vs, 0, sizeof(vs));
 	limit = session_nesting(c);
 
+	/* A wire segment whose first segment cannot hold a pointer has
+	 * no root. A builder segment is larger than the bytes written
+	 * so far, and a null root there is still a valid message. */
+	s = lookup_segment(c, NULL, 0);
+	if (s && s->cap == s->len && s->len < 8) {
+		rc = -1;
+		goto done;
+	}
+
 	root = capn_root(c);
 	if (!root.seg || !root.data) {
 		rc = 0;
@@ -870,6 +1162,8 @@ int capn_validate(struct capn *c)
 
 	isnull = ptr_word_null(root.seg, root.data);
 	if (isnull < 0)
+		goto done;
+	if (pointer_far_into_empty(root.seg, root.data))
 		goto done;
 	if (isnull) {
 		rc = 0;
@@ -913,6 +1207,8 @@ int capn_validate(struct capn *c)
 
 		isnull = ptr_word_null(s, d);
 		if (isnull < 0)
+			goto done;
+		if (pointer_far_into_empty(s, d))
 			goto done;
 		if (isnull)
 			continue;
@@ -980,11 +1276,20 @@ capn_ptr capn_getp(capn_ptr p, int off, int resolve) {
 	capn_resolve(&p);
 	rem = hop_remaining(p);
 
+	if (off < 0)
+		goto err;
+
 	switch (p.type) {
 	case CAPN_LIST:
 		/* Return an inner pointer */
 		if (off < p.len) {
 			capn_ptr inner = {CAPN_STRUCT};
+			/* C++ `getStructElement` spends a nesting level. */
+			if (p.is_composite_list) {
+				if (rem == 0)
+					goto err;
+				rem--;
+			}
 			inner.is_list_member = 1;
 			inner.data = p.data + off * (p.datasz + 8*p.ptrs);
 			inner.seg = p.seg;
@@ -1068,8 +1373,8 @@ err:
 
 static int write_ptr_tag(char *d, capn_ptr p, int64_t off) {
 	if (p.type == CAPN_INTERFACE) {
-		/* A=3, B=0, C = capability table index (p.len). */
-		uint64_t cap = OTHER_PTR | (U64((uint32_t) p.len) << 32);
+		/* A=3, B=0, C = capability table index (p.cap_idx). */
+		uint64_t cap = OTHER_PTR | (U64(p.cap_idx) << 32);
 		*(uint64_t*) d = capn_flip64(cap);
 		return 0;
 	}
@@ -1112,12 +1417,28 @@ static int write_ptr_tag(char *d, capn_ptr p, int64_t off) {
 
 	switch (p.type) {
 	case CAPN_STRUCT:
+		if ((p.datasz / 8) > CAPN_MAX_STRUCT_WORDS || p.ptrs > CAPN_MAX_STRUCT_WORDS)
+			return -1;
 		val |= STRUCT_PTR | (U64(p.datasz/8) << 32) | (U64(p.ptrs) << 48);
 		break;
 
 	case CAPN_LIST:
+		if (p.len < 0 || (uint32_t) p.len > CAPN_MAX_LIST_ELEMS)
+			return -1;
 		if (p.is_composite_list) {
-			val |= LIST_PTR | (U64(COMPOSITE_LIST) << 32) | (U64(p.len * (p.datasz/8 + p.ptrs)) << 35);
+			uint64_t dw = (uint64_t) p.datasz / 8u;
+			uint64_t pw = p.ptrs;
+			uint64_t words;
+
+			if (dw > CAPN_MAX_STRUCT_WORDS || pw > CAPN_MAX_STRUCT_WORDS)
+				return -1;
+			if (dw + pw != 0 &&
+			    (uint64_t) p.len > (uint64_t) CAPN_MAX_LIST_ELEMS / (dw + pw))
+				return -1;
+			words = (uint64_t) p.len * (dw + pw);
+			if (words > (uint64_t) CAPN_MAX_LIST_ELEMS)
+				return -1;
+			val |= LIST_PTR | (U64(COMPOSITE_LIST) << 32) | (words << 35);
 		} else {
 			val |= LIST_PTR | (U64(p.len) << 35);
 
@@ -1142,10 +1463,14 @@ static int write_ptr_tag(char *d, capn_ptr p, int64_t off) {
 		break;
 
 	case CAPN_BIT_LIST:
+		if (p.len < 0 || (uint32_t) p.len > CAPN_MAX_LIST_ELEMS)
+			return -1;
 		val |= LIST_PTR | (U64(BIT_1_LIST) << 32) | (U64(p.len) << 35);
 		break;
 
 	case CAPN_PTR_LIST:
+		if (p.len < 0 || (uint32_t) p.len > CAPN_MAX_LIST_ELEMS)
+			return -1;
 		val |= LIST_PTR | (U64(PTR_LIST) << 32) | (U64(p.len) << 35);
 		break;
 
@@ -1193,8 +1518,10 @@ static int write_ptr(struct capn_segment *s, char *d, capn_ptr p) {
 
 	} else if (!p.seg || p.seg->capn != s->capn || p.is_list_member) {
 		return NEED_TO_COPY;
+	}
 
-	} else if (p.seg == s) {
+	pdata = p.data - 8*p.is_composite_list;
+	if (p.seg == s) {
 		return write_ptr_tag(d, p, pdata - d - 8);
 
 	} else if (p.has_ptr_tag) {
@@ -1257,7 +1584,7 @@ static capn_ptr new_clone(struct capn_segment *s, capn_ptr p) {
 		return capn_new_list(s, p.len, p.datasz, p.ptrs);
 	case CAPN_INTERFACE: {
 		capn_ptr n = capn_new_interface(s, p.datasz, p.ptrs);
-		n.len = p.len;
+		n.cap_idx = p.cap_idx;
 		return n;
 	}
 	default:
@@ -1270,22 +1597,179 @@ static int is_ptr_equal(const struct capn_ptr *a, const struct capn_ptr *b) {
 		&& a->type == b->type
 		&& a->len == b->len
 		&& a->datasz == b->datasz
-		&& a->ptrs == b->ptrs;
+		&& a->ptrs == b->ptrs
+		&& a->cap_idx == b->cap_idx;
+}
+
+/* Bytes from data to the end of the segment allocation.
+ * (size_t)-1 when the segment is unknown, so a logical size is kept. */
+static size_t seg_room(const struct capn_segment *seg, const char *data)
+{
+	uintptr_t base, addr, limit;
+	size_t span;
+
+	if (!seg || !seg->data || !data)
+		return (size_t) -1;
+	base = (uintptr_t) (void *) seg->data;
+	addr = (uintptr_t) (void *) data;
+	if (addr < base)
+		return 0;
+	span = seg->cap > seg->len ? seg->cap : seg->len;
+	if (span > (uintptr_t) -1 - base)
+		return 0;
+	limit = base + span;
+	if (addr > limit)
+		return 0;
+	return (size_t) (limit - addr);
+}
+
+/* Byte length of a bit list. datasz holds it when it fits in 19 bits.
+ * A smaller non-zero datasz is a truncated count and is the real
+ * allocation. Otherwise the length is (len + 7) / 8, clamped to the
+ * bytes the segment actually holds. */
+static size_t bit_list_nbytes(const capn_ptr *p)
+{
+	size_t logical, room;
+
+	if (!p || !p->data)
+		return 0;
+	if (p->is_list_member)
+		return 1;
+	if (p->len <= 0)
+		return 0;
+	logical = ((size_t) p->len + 7u) / 8u;
+	if (p->datasz != 0 && (size_t) p->datasz < logical)
+		logical = (size_t) p->datasz;
+	room = seg_room(p->seg, p->data);
+	if (room != (size_t) -1 && room < logical)
+		logical = room;
+	return logical;
+}
+
+/* Shrink sz so off..off+sz, in units of stride, stays inside the segment.
+ * Returns -1 when the start is already outside. */
+static int clamp_span(const capn_ptr *p, int off, int sz, size_t stride, int *out)
+{
+	size_t start, span, room;
+
+	if (sz < 0 || off < 0)
+		return -1;
+	if (stride == 0 || sz == 0) {
+		*out = sz;
+		return 0;
+	}
+	if (!mul_size((size_t) off, stride, &start) ||
+	    !mul_size((size_t) sz, stride, &span))
+		return -1;
+	room = seg_room(p->seg, p->data);
+	if (room == (size_t) -1) {
+		*out = sz;
+		return 0;
+	}
+	if (start > room)
+		return -1;
+	if (span > room - start)
+		sz = (int) ((room - start) / stride);
+	*out = sz;
+	return 0;
 }
 
 static int data_size(struct capn_ptr p) {
+	size_t n, stride;
+
 	switch (p.type) {
 	case CAPN_BIT_LIST:
-		return p.datasz;
+		n = bit_list_nbytes(&p);
+		break;
 	case CAPN_PTR_LIST:
-		return p.len*8;
+		if (p.len < 0 || !mul_size((size_t) p.len, 8, &n))
+			return 0;
+		break;
 	case CAPN_STRUCT:
-		return p.datasz + 8*p.ptrs;
+		if (!mul_size((size_t) p.ptrs, 8, &n) || n > (size_t) -1 - p.datasz)
+			return 0;
+		n += p.datasz;
+		break;
 	case CAPN_LIST:
-		return p.len * (p.datasz + 8*p.ptrs) + 8*p.is_composite_list;
+		if (p.len < 0 || !mul_size((size_t) p.ptrs, 8, &stride) ||
+		    stride > (size_t) -1 - p.datasz)
+			return 0;
+		stride += p.datasz;
+		if (!mul_size(stride, (size_t) p.len, &n))
+			return 0;
+		if (p.is_composite_list) {
+			if (n > (size_t) -1 - 8)
+				return 0;
+			n += 8;
+		}
+		break;
 	default:
 		return 0;
 	}
+	return n > (size_t) INT_MAX ? 0 : (int) n;
+}
+
+static int dup_busy_hit(struct capn *c, const struct capn_ptr *f)
+{
+	int i;
+
+	if (!c || !c->dup_copy)
+		return 0;
+	for (i = 0; i < c->dup_nbusy; i++) {
+		if (c->dup_busy[i].data == f->data &&
+		    c->dup_busy[i].type == f->type &&
+		    c->dup_busy[i].len == f->len &&
+		    c->dup_busy[i].datasz == (int) f->datasz &&
+		    c->dup_busy[i].ptrs == (int) f->ptrs)
+			return 1;
+	}
+	return 0;
+}
+
+static int dup_busy_grow(struct capn *c)
+{
+	int cap, limit;
+	struct capn_dup_key *busy;
+	int *at;
+
+	if (!c || !c->dup_copy)
+		return -1;
+	limit = session_nesting(c);
+	if (c->dup_nbusy >= limit)
+		return -1;
+	cap = c->dup_cap ? c->dup_cap : CAPN_NESTING_DEFAULT;
+	while (cap <= c->dup_nbusy && cap < limit) {
+		if (cap > INT_MAX / 2) {
+			cap = limit;
+			break;
+		}
+		cap *= 2;
+	}
+	if (cap > limit)
+		cap = limit;
+	if (cap <= c->dup_nbusy ||
+	    (size_t) cap > (size_t) -1 / sizeof(*busy) ||
+	    (size_t) cap > (size_t) -1 / sizeof(*at))
+		return -1;
+	busy = (struct capn_dup_key *) capn_realloc(
+		c->dup_busy, (size_t) cap * sizeof(*busy));
+	if (!busy)
+		return -1;
+	c->dup_busy = busy;
+	at = (int *) capn_realloc(c->dup_at, (size_t) cap * sizeof(*at));
+	if (!at)
+		return -1;
+	c->dup_at = at;
+	c->dup_cap = cap;
+	return 0;
+}
+
+static void dup_unwind(struct capn *c, int depth)
+{
+	if (!c || !c->dup_copy)
+		return;
+	while (c->dup_nbusy > 0 && c->dup_at[c->dup_nbusy - 1] >= depth)
+		c->dup_nbusy--;
 }
 
 static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, struct capn_ptr *f, int *dep) {
@@ -1296,6 +1780,14 @@ static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, st
 	char *fend = fbegin + data_size(*f);
 	int zero_sized = (fend == fbegin)
 		|| (f->type == CAPN_BIT_LIST && f->is_list_member);
+	int dep0 = *dep;
+	int grew = 0;
+	capn_ptr saved = *f;
+
+	/* C++ starts at nestingLimit 64 and refuses the next pointer.
+	 * A struct chain of 64 is copied. A 65th pointer is not. */
+	if (f->nesting_valid && f->nesting <= 0)
+		return -1;
 
 	/* We always copy list members as it would otherwise be an
 	 * overlapped pointer (the data is owned by the enclosing list).
@@ -1303,7 +1795,19 @@ static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, st
 	 * structures/lists as they never overlap. Nor do we add them to
 	 * the copy list as there is no data to be shared by multiple
 	 * pointers.
+	 *
+	 * A duplicating copy (flat re-encode) skips the alias tree. A
+	 * second pointer to the same object is copied again. A pointer
+	 * back to an object still being copied is a cycle.
 	 */
+
+	if (c && c->dup_copy) {
+		if (f->type == CAPN_INTERFACE)
+			return -1;
+		if (dup_busy_hit(c, f))
+			return -1;
+		goto dup_clone;
+	}
 
 	xcp = &c->copy;
 	while (*xcp && !zero_sized) {
@@ -1322,6 +1826,7 @@ static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, st
 	}
 
 	/* no copy found - have to create a new copy */
+dup_clone:
 	*t = new_clone(seg, *f);
 
 	if (write_ptr(seg, data, *t))
@@ -1329,7 +1834,7 @@ static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, st
 
 	/* add the copy to the copy tree so we can look for overlapping
 	 * source pointers and handle recursive structures */
-	if (!zero_sized) {
+	if (!zero_sized && !(c && c->dup_copy)) {
 		struct copy *n;
 		struct capn_segment *cs = c->copylist;
 
@@ -1373,8 +1878,9 @@ static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, st
 			t->type = CAPN_PTR_LIST;
 			t->len = t->ptrs;
 			(*dep)++;
+			grew = 1;
 		}
-		return 0;
+		goto copy_done;
 
 	case CAPN_BIT_LIST:
 		if (f->is_list_member) {
@@ -1382,36 +1888,82 @@ static int copy_ptr(struct capn_segment *seg, char *data, struct capn_ptr *t, st
 			fl.p = *f;
 			t->data[0] = (char) (capn_get1(fl, 0) ? 1 : 0);
 			return 0;
+		} else {
+			size_t n = bit_list_nbytes(t);
+			size_t fn = bit_list_nbytes(f);
+			if (fn < n)
+				n = fn;
+			if (n && t->data && f->data)
+				memcpy(t->data, f->data, n);
+			/* Unused bits in the last byte are zero in canonical
+			 * form and in a C++ copy. */
+			if (t->data && t->len > 0 && (t->len & 7)) {
+				size_t whole = (size_t) t->len / 8u;
+				uint8_t keep = (uint8_t) ((1u << (t->len & 7)) - 1u);
+				if (whole < n)
+					t->data[whole] = (char) ((uint8_t) t->data[whole] & keep);
+			}
 		}
-		memcpy(t->data, f->data, t->datasz);
-		return 0;
+		goto copy_done;
 
 	case CAPN_LIST:
 		if (!t->len) {
 			/* empty list - nothing to copy */
 		} else if (t->ptrs && t->datasz) {
 			(*dep)++;
+			grew = 1;
 		} else if (t->datasz) {
-			memcpy(t->data, f->data, t->len * t->datasz);
+			size_t nbytes, tr, fr;
+			if (t->len < 0 ||
+			    !mul_size((size_t) t->len, (size_t) t->datasz, &nbytes))
+				return -1;
+			tr = seg_room(t->seg, t->data);
+			fr = seg_room(f->seg, f->data);
+			if (tr != (size_t) -1 && nbytes > tr)
+				nbytes = tr;
+			if (fr != (size_t) -1 && nbytes > fr)
+				nbytes = fr;
+			if (nbytes && t->data && f->data)
+				memcpy(t->data, f->data, nbytes);
 		} else if (t->ptrs) {
+			size_t nptr;
+			if (t->len < 0 ||
+			    !mul_size((size_t) t->len, (size_t) t->ptrs, &nptr) ||
+			    nptr > (size_t) INT_MAX)
+				return -1;
 			t->type = CAPN_PTR_LIST;
-			t->len *= t->ptrs;
+			t->len = (int) nptr;
 			(*dep)++;
+			grew = 1;
 		}
-		return 0;
+		goto copy_done;
 
 	case CAPN_PTR_LIST:
 		if (t->len) {
 			(*dep)++;
+			grew = 1;
 		}
-		return 0;
+		goto copy_done;
 
 	case CAPN_INTERFACE:
-		return 0;
+		goto copy_done;
 
 	default:
 		return -1;
 	}
+copy_done:
+	if (grew && c && c->dup_copy) {
+		if (c->dup_nbusy >= c->dup_cap && dup_busy_grow(c))
+			return -1;
+		c->dup_busy[c->dup_nbusy].data = saved.data;
+		c->dup_busy[c->dup_nbusy].type = saved.type;
+		c->dup_busy[c->dup_nbusy].len = saved.len;
+		c->dup_busy[c->dup_nbusy].datasz = (int) saved.datasz;
+		c->dup_busy[c->dup_nbusy].ptrs = (int) saved.ptrs;
+		c->dup_at[c->dup_nbusy] = dep0;
+		c->dup_nbusy++;
+	}
+	return 0;
 }
 
 static void copy_list_member(capn_ptr* t, capn_ptr *f, int *dep) {
@@ -1434,29 +1986,36 @@ static void copy_list_member(capn_ptr* t, capn_ptr *f, int *dep) {
 	}
 }
 
-#define MAX_COPY_DEPTH 32
-
 int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
-	struct capn_ptr to[MAX_COPY_DEPTH], from[MAX_COPY_DEPTH];
+	struct capn_ptr *to, *from;
+	struct capn *src;
 	char *data;
-	int err, dep = 0;
+	int err, dep = 0, cap, rc = -1;
+	capn_ptr far_tgt;
 
 	capn_resolve(&p);
+	if (off < 0)
+		return -1;
+	/* C++ copies with the source reader's nesting limit. A builder
+	 * has no limit of its own. */
+	src = tgt.seg ? tgt.seg->capn : NULL;
+	cap = session_nesting(src);
+	if (cap < 1 || cap > INT_MAX - 2 ||
+	    (size_t) cap + 2 > (size_t) -1 / sizeof(*to))
+		return -1;
+	cap += 2;
+	to = (struct capn_ptr *) capn_alloc((size_t) cap * sizeof(*to));
+	from = (struct capn_ptr *) capn_alloc((size_t) cap * sizeof(*from));
+	if (!to || !from)
+		goto done;
 
-	if (tgt.type == CAPN_FAR_POINTER && tgt.seg->capn == p.seg->capn) {
-		uint64_t val = capn_flip64(*(uint64_t*) tgt.data);
-		if ((val & 3) == FAR_PTR) {
-			*(uint64_t*) p.data = *(uint64_t*) tgt.data;
-			return 0;
-		}
-	}
-
+	far_tgt = tgt;
 	capn_resolve(&tgt);
 
 	switch (p.type) {
 	case CAPN_LIST:
 		if (off >= p.len || tgt.type != CAPN_STRUCT)
-			return -1;
+			goto done;
 
 		to[0] = p;
 		to[0].data += off * (p.datasz + 8*p.ptrs);
@@ -1468,7 +2027,7 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 		capn_list1 dst;
 		int val;
 		if (off < 0 || off >= p.len)
-			return -1;
+			goto done;
 		if (tgt.type == CAPN_NULL || tgt.data == NULL) {
 			val = 0;
 		} else if (tgt.type == CAPN_BIT_LIST) {
@@ -1478,28 +2037,64 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 		} else if (tgt.type == CAPN_STRUCT && tgt.datasz >= 1 && tgt.data) {
 			val = (tgt.data[0] & 1) != 0;
 		} else {
-			return -1;
+			goto done;
 		}
 		dst.p = p;
-		return capn_set1(dst, off, val);
+		rc = capn_set1(dst, off, val);
+		goto done;
 	}
 
 	case CAPN_PTR_LIST:
 		if (off >= p.len)
-			return -1;
+			goto done;
 		data = p.data + 8*off;
 		goto copy_ptr;
 
 	case CAPN_STRUCT:
 		if (off >= p.ptrs)
-			return -1;
+			goto done;
 		data = p.data + p.datasz + 8*off;
 		goto copy_ptr;
 
 	copy_ptr:
+		/* An unresolved far word is not a value. Follow it and
+		 * deep-copy the object, as C++ copyPointer does. Copying the
+		 * word aliases the landing pad, and (val & 3) == FAR_PTR is
+		 * also true of a double far (DOUBLE_PTR == 6). A follow that
+		 * fails (missing segment, out of range) stores null. */
+		if (far_tgt.type == CAPN_FAR_POINTER && p.seg != NULL) {
+			int follow = 0;
+			if (far_tgt.seg != NULL && far_tgt.data != NULL &&
+			    bounds_ok(far_tgt.seg, far_tgt.data, 8)) {
+				uint64_t val = capn_flip64(*(uint64_t *) far_tgt.data);
+				unsigned kind = (unsigned) (val & 7);
+				if (kind == FAR_PTR || kind == DOUBLE_PTR)
+					follow = 1;
+			}
+			if (follow) {
+				if (tgt.type == CAPN_NULL || tgt.seg == NULL ||
+				    tgt.data == NULL) {
+					memset(&tgt, 0, sizeof tgt);
+				} else if (tgt.seg->capn == p.seg->capn) {
+					from[0] = tgt;
+					from[0].nesting_valid = 1;
+					from[0].nesting = session_nesting(src);
+					/* capn_root is the pointer word, not the
+					 * object. The object is the next check. */
+					if (tgt.type == CAPN_PTR_LIST && tgt.len == 1 &&
+					    tgt.data == tgt.seg->data)
+						from[0].nesting++;
+					if (copy_ptr(p.seg, data, to, from, &dep))
+						goto done;
+					break;
+				}
+			}
+		}
 		err = write_ptr(p.seg, data, tgt);
-		if (err != NEED_TO_COPY)
-			return err;
+		if (err != NEED_TO_COPY) {
+			rc = err;
+			goto done;
+		}
 
 		/* Depth first copy the source whilst using a pointer stack to
 		 * maintain the ptr to set and size left to copy at each level.
@@ -1510,30 +2105,45 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 		 */
 
 		from[0] = tgt;
+		from[0].nesting_valid = 1;
+		from[0].nesting = session_nesting(src);
+		/* capn_root is the pointer word, not the object. The
+		 * object is the next check. */
+		if (tgt.type == CAPN_PTR_LIST && tgt.len == 1 && tgt.seg &&
+		    tgt.data == tgt.seg->data)
+			from[0].nesting++;
 		if (copy_ptr(p.seg, data, to, from, &dep))
-			return -1;
+			goto done;
 		break;
 
 	default:
-		return -1;
+		goto done;
 	}
 
 	while (dep) {
 		struct capn_ptr *tc = &to[dep-1], *tn = &to[dep];
 		struct capn_ptr *fc = &from[dep-1], *fn = &from[dep];
 
-		if (dep+1 == MAX_COPY_DEPTH) {
-			return -1;
+		if (dep+1 >= cap) {
+			goto done;
 		}
 
 		if (!tc->len) {
 			dep--;
+			if (p.seg && p.seg->capn)
+				dup_unwind(p.seg->capn, dep);
 			continue;
 		}
 
 		if (tc->type == CAPN_LIST) {
 			*fn = capn_getp(*fc, 0, 1);
 			*tn = capn_getp(*tc, 0, 1);
+			/* The element struct is still this list's level.
+			 * Following its pointer is the next level. */
+			if (fc->nesting_valid) {
+				fn->nesting_valid = 1;
+				fn->nesting = fc->nesting;
+			}
 
 			copy_list_member(tn, fn, &dep);
 
@@ -1543,9 +2153,18 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 
 		} else { /* CAPN_PTR_LIST */
 			*fn = read_ptr(fc->seg, fc->data, -1);
+			/* A null word is a null pointer. A failed read is
+			 * also null, and it sets decode_err. The copy stops. */
+			if (!fn->type && fc->seg && fc->seg->capn &&
+			    fc->seg->capn->decode_err)
+				goto done;
+			if (fc->nesting_valid) {
+				fn->nesting_valid = 1;
+				fn->nesting = fc->nesting - 1;
+			}
 
 			if (fn->type && copy_ptr(tc->seg, tc->data, tn, fn, &dep))
-				return -1;
+				goto done;
 
 			fc->data += 8;
 			tc->data += 8;
@@ -1553,7 +2172,11 @@ int capn_setp(capn_ptr p, int off, capn_ptr tgt) {
 		}
 	}
 
-	return 0;
+	rc = 0;
+done:
+	capn_freemem(to);
+	capn_freemem(from);
+	return rc;
 }
 
 int capn_get1(capn_list1 l, int off) {
@@ -1570,6 +2193,8 @@ int capn_get1(capn_list1 l, int off) {
 		if (off >= p.len || !p.data)
 			return 0;
 		bit = off + (int) p.ptrs;
+		if (bit < 0 || (size_t) bit / 8u >= bit_list_nbytes(&p))
+			return 0;
 		return (p.data[bit / 8] & (1 << (bit % 8))) != 0;
 
 	case CAPN_LIST:
@@ -1612,6 +2237,8 @@ int capn_set1(capn_list1 l, int off, int val) {
 		if (off >= p.len || !p.data)
 			return -1;
 		bit = off + (int) p.ptrs;
+		if (bit < 0 || (size_t) bit / 8u >= bit_list_nbytes(&p))
+			return -1;
 		if (val) {
 			p.data[bit / 8] |= 1 << (bit % 8);
 		} else {
@@ -1656,42 +2283,88 @@ int capn_set1(capn_list1 l, int off, int val) {
 
 int capn_getv1(capn_list1 l, int off, uint8_t *data, int sz) {
 	/* Note we only support aligned reads */
-	int bsz;
+	int n;
 	capn_ptr p;
 	capn_resolve(&l.p);
 	p = l.p;
-	if (p.type != CAPN_BIT_LIST || (off & 7) != 0 || p.is_list_member)
+	if (p.type != CAPN_BIT_LIST || (off & 7) != 0 || p.is_list_member ||
+	    off < 0 || sz < 0 || off > p.len)
 		return -1;
 
-	bsz = (sz + 7) / 8;
-	off /= 8;
-
-	if (off + sz > p.datasz) {
-		memcpy(data, p.data + off, p.datasz - off);
-		return p.len - off*8;
-	} else {
-		memcpy(data, p.data + off, bsz);
-		return sz;
+	n = sz < p.len - off ? sz : p.len - off;
+	if (n == 0)
+		return 0;
+	if (!p.data)
+		return -1;
+	{
+		size_t have = bit_list_nbytes(&p);
+		size_t byte_off = (size_t) off / 8u;
+		size_t want, copy_bytes;
+		if (byte_off > have)
+			return -1;
+		have -= byte_off;
+		want = ((size_t) n + 7u) / 8u;
+		copy_bytes = want > have ? have : want;
+		if (copy_bytes == 0)
+			return 0;
+		if (copy_bytes <= (size_t) INT_MAX / 8u) {
+			int cap_bits = (int) (copy_bytes * 8u);
+			if (n > cap_bits)
+				n = cap_bits;
+		}
+		copy_bytes = ((size_t) n + 7u) / 8u;
+		if (copy_bytes > have)
+			copy_bytes = have;
+		memcpy(data, p.data + byte_off, copy_bytes);
 	}
+	return n;
 }
 
 int capn_setv1(capn_list1 l, int off, const uint8_t *data, int sz) {
 	/* Note we only support aligned writes */
-	int bsz;
+	int n, whole;
 	capn_ptr p = l.p;
-	if (p.type != CAPN_BIT_LIST || (off & 7) != 0 || p.is_list_member)
+	capn_resolve(&p);
+	if (p.type != CAPN_BIT_LIST || (off & 7) != 0 || p.is_list_member ||
+	    off < 0 || sz < 0 || off > p.len)
 		return -1;
 
-	bsz = (sz + 7) / 8;
-	off /= 8;
-
-	if (off + sz > p.datasz) {
-		memcpy(p.data + off, data, p.datasz - off);
-		return p.len - off*8;
-	} else {
-		memcpy(p.data + off, data, bsz);
-		return sz;
+	n = sz < p.len - off ? sz : p.len - off;
+	if (n == 0)
+		return 0;
+	if (!p.data || !data)
+		return -1;
+	{
+		size_t have = bit_list_nbytes(&p);
+		size_t byte_off = (size_t) off / 8u;
+		size_t want, copy_bytes;
+		if (byte_off > have)
+			return -1;
+		have -= byte_off;
+		want = ((size_t) n + 7u) / 8u;
+		copy_bytes = want > have ? have : want;
+		if (copy_bytes == 0)
+			return 0;
+		if (copy_bytes <= (size_t) INT_MAX / 8u) {
+			int cap_bits = (int) (copy_bytes * 8u);
+			if (n > cap_bits)
+				n = cap_bits;
+		}
+		copy_bytes = ((size_t) n + 7u) / 8u;
+		if (copy_bytes > have)
+			copy_bytes = have;
+		whole = n / 8;
+		if ((size_t) whole > copy_bytes)
+			whole = (int) copy_bytes;
+		memcpy(p.data + byte_off, data, (size_t) whole);
+		if ((n & 7) && (size_t) whole < copy_bytes) {
+			/* Leave the bits past the last element written alone. */
+			uint8_t keep = (uint8_t) (0xff << (n & 7));
+			uint8_t *last = (uint8_t *) p.data + byte_off + (size_t) whole;
+			*last = (uint8_t) ((*last & keep) | (data[whole] & ~keep));
+		}
 	}
+	return n;
 }
 
 /* pull out whether we add a tag or not as a define so the unit test can
@@ -1700,7 +2373,14 @@ int capn_setv1(capn_list1 l, int off, const uint8_t *data, int sz) {
 #define ADD_TAG 1
 #endif
 
-static void new_object(capn_ptr *p, int bytes) {
+/* Largest element count a list pointer can carry (29 bits). A segment
+ * holds at most 2^29-1 words, and a fresh segment also stores the far
+ * landing pad, so one object stops one word short of that. */
+#define MAX_LIST_ELEMS ((int64_t) CAPN_MAX_LIST_ELEMS)
+#define CAPN_MAX_SEGMENT_BYTES ((((size_t) 1 << 29) - 1u) * 8u)
+#define MAX_ALLOC_BYTES ((int64_t) (CAPN_MAX_SEGMENT_BYTES - 8u))
+
+static void new_object(capn_ptr *p, size_t bytes) {
 	struct capn_segment *s = p->seg;
 
 	if (!s) {
@@ -1713,16 +2393,19 @@ static void new_object(capn_ptr *p, int bytes) {
 		p->data = s->data + s->len;
 		return;
 	}
+	if (bytes > (size_t) MAX_ALLOC_BYTES) {
+		memset(p, 0, sizeof(*p));
+		return;
+	}
 
 	/* all allocations are 8 byte aligned */
 	bytes = (bytes + 7) & ~7;
 
-	if (s->len + bytes <= s->cap) {
+	if (s->len <= s->cap && (size_t) bytes <= s->cap - s->len) {
 		p->data = s->data + s->len;
-		s->len += bytes;
+		s->len += (size_t) bytes;
 		return;
 	}
-
 	/* add a tag whenever we switch segments so that write_ptr can
 	 * use it */
 	p->data = new_data(s->capn, bytes + ADD_TAG*8, &p->seg);
@@ -1750,7 +2433,12 @@ capn_ptr capn_root(struct capn *c) {
 	r.nesting = session_nesting(c);
 
 	if (!r.seg || r.seg->cap < 8) {
+		/* The segment is real and too short for a pointer.
+		 * The reader was built; this read is what fails. */
+		int missing = r.seg && r.seg->cap < 8;
 		memset(&r, 0, sizeof(r));
+		if (missing)
+			c->decode_err = 1;
 	} else if (r.seg->len < 8) {
 		r.seg->len = 8;
 	}
@@ -1831,8 +2519,9 @@ static int load_child(struct capn_segment *s, char *d, int rem, capn_ptr *out)
 {
 	int z;
 
-	if (rem == 0)
-		return -1;
+	/* A null word ends the chain. C++ copyPointer returns before the
+	 * nesting check on a null pointer, so the word at the limit is
+	 * legal. A non-null word at rem 0 still fails. */
 	z = ptr_word_null(s, d);
 	if (z < 0)
 		return -1;
@@ -1840,6 +2529,8 @@ static int load_child(struct capn_segment *s, char *d, int rem, capn_ptr *out)
 		memset(out, 0, sizeof(*out));
 		return 0;
 	}
+	if (rem <= 0)
+		return -1;
 	*out = read_ptr(s, d, rem);
 	if (out->type == CAPN_NULL)
 		return -1;
@@ -1877,8 +2568,11 @@ static int canon_measure(capn_ptr p, int rem, struct capn_vset *vs,
 	size_t add, nbytes;
 	capn_ptr ch;
 
-	if (p.type == CAPN_NULL || p.type == CAPN_INTERFACE)
+	if (p.type == CAPN_NULL)
 		return 0;
+	/* C++ 1.4.0 refuses a canonical message that contains a capability. */
+	if (p.type == CAPN_INTERFACE)
+		return -1;
 
 	ent = vset_reenter(vs, p);
 	if (ent < 0)
@@ -1927,6 +2621,10 @@ static int canon_measure(capn_ptr p, int rem, struct capn_vset *vs,
 
 	case CAPN_LIST:
 		if (p.is_composite_list) {
+			/* getStructElement needs a nesting level for every
+			 * element, including one with no pointers. */
+			if (p.len > 0 && rem <= 0)
+				goto fail;
 			trunc_composite(p, &dw, &pw);
 			if (!mul_size((size_t) p.len, (size_t) dw + (size_t) pw, &add))
 				goto fail;
@@ -1986,8 +2684,9 @@ static int canon_emit(struct capn_segment *ds, char *ptr_loc, capn_ptr p,
 		memset(ptr_loc, 0, 8);
 		return 0;
 	}
+	/* Same refusal as canon_measure, so a capability is never written. */
 	if (p.type == CAPN_INTERFACE)
-		return write_ptr_tag(ptr_loc, p, 0);
+		return -1;
 
 	ent = vset_reenter(vs, p);
 	if (ent < 0)
@@ -2065,6 +2764,10 @@ static int canon_emit(struct capn_segment *ds, char *ptr_loc, capn_ptr p,
 
 	case CAPN_LIST:
 		if (p.is_composite_list) {
+			/* getStructElement needs a nesting level for every
+			 * element, including one with no pointers. */
+			if (p.len > 0 && rem <= 0)
+				goto fail;
 			trunc_composite(p, &dw, &pw);
 			if (!mul_size((size_t) p.len, (size_t) dw + (size_t) pw, &add))
 				goto fail;
@@ -2174,6 +2877,20 @@ int capn_canonicalize(struct capn *src, struct capn *dst)
 	first = read_ptr(root.seg, root.data, nest);
 	if (first.type == CAPN_NULL)
 		goto done;
+	/* Only a struct root can be canonicalized. Lists can be canonical
+	 * messages, but C++ exposes canonicalize() only for structs. */
+	if (first.type != CAPN_STRUCT)
+		goto done;
+	/* C++ totalSize() gives the root struct body back. The copy
+	 * then charges each child, including one word per void element,
+	 * and does not charge that body again. */
+	{
+		size_t body = (size_t) first.datasz + 8u * (size_t) first.ptrs;
+		if (src->traversal_used >= body)
+			src->traversal_used -= body;
+		else
+			src->traversal_used = 0;
+	}
 
 	if (vset_init(&vs))
 		goto done;
@@ -2196,6 +2913,8 @@ alloc:
 	s->len = 8;
 
 	if (first.type == CAPN_NULL) {
+		/* C++ canonicalize writes an empty struct for a null root. */
+		*(uint64_t *) s->data = capn_flip64(0x00000000fffffffcULL);
 		rc = 0;
 		goto done;
 	}
@@ -2211,12 +2930,39 @@ done:
 	return rc;
 }
 
+static int struct_dims_ok(int datasz, int ptrs) {
+	return datasz >= 0 && ptrs >= 0 &&
+		datasz <= CAPN_MAX_STRUCT_WORDS * 8 &&
+		ptrs <= CAPN_MAX_STRUCT_WORDS;
+}
+
+static int alloc_ok(int64_t elems, int64_t bytes) {
+	return elems >= 0 && elems <= MAX_LIST_ELEMS && bytes >= 0 && bytes <= MAX_ALLOC_BYTES;
+}
+
+static capn_ptr null_ptr(void) {
+	capn_ptr p;
+	memset(&p, 0, sizeof(p));
+	return p;
+}
+
 capn_ptr capn_new_struct(struct capn_segment *seg, int datasz, int ptrs) {
 	capn_ptr p = {CAPN_STRUCT};
+	if (!struct_dims_ok(datasz, ptrs))
+		return null_ptr();
 	p.seg = seg;
-	p.datasz = (datasz + 7) & ~7;
-	p.ptrs = ptrs;
-	new_object(&p, p.datasz + 8*p.ptrs);
+	p.datasz = (unsigned) ((datasz + 7) & ~7);
+	p.ptrs = (unsigned) ptrs;
+	if ((int) p.datasz != ((datasz + 7) & ~7) || (int) p.ptrs != ptrs)
+		return null_ptr();
+	{
+		size_t bytes;
+		if (!mul_size((size_t) p.ptrs, 8, &bytes) ||
+		    bytes > (size_t) INT_MAX - p.datasz)
+			return null_ptr();
+		bytes += p.datasz;
+		new_object(&p, (int) bytes);
+	}
 	return p;
 }
 
@@ -2240,12 +2986,23 @@ capn_ptr capn_new_struct_list(struct capn_segment *seg, int sz, int datasz, int 
 	 * and 0-pointer / 1-word / 0-word structs. List(Void) stays on
 	 * capn_new_list(seg, n, 0, 0). */
 	capn_ptr p = {CAPN_LIST};
+	if (!struct_dims_ok(datasz, ptrs) ||
+	    !alloc_ok(sz, (int64_t) sz * ((((int64_t) datasz + 7) & ~7LL) + 8LL * ptrs) + 8))
+		return null_ptr();
 	p.seg = seg;
 	p.len = sz;
 	p.is_composite_list = 1;
-	p.datasz = (datasz + 7) & ~7;
-	p.ptrs = ptrs;
-	new_object(&p, p.len * (p.datasz + 8*p.ptrs) + 8);
+	p.datasz = (unsigned) ((datasz + 7) & ~7);
+	p.ptrs = (unsigned) ptrs;
+	if ((int) p.datasz != ((datasz + 7) & ~7) || (int) p.ptrs != ptrs)
+		return null_ptr();
+	{
+		int64_t stride = (int64_t) p.datasz + 8LL * (int64_t) p.ptrs;
+		int64_t bytes = (int64_t) p.len * stride + 8;
+		if (bytes < 0 || bytes > MAX_ALLOC_BYTES)
+			return null_ptr();
+		new_object(&p, (size_t) bytes);
+	}
 	if (p.data) {
 		uint64_t hdr = STRUCT_PTR | (U64(p.len) << 2) | (U64(p.datasz/8) << 32) | (U64(p.ptrs) << 48);
 		*(uint64_t*) p.data = capn_flip64(hdr);
@@ -2256,20 +3013,35 @@ capn_ptr capn_new_struct_list(struct capn_segment *seg, int sz, int datasz, int 
 
 capn_ptr capn_new_list(struct capn_segment *seg, int sz, int datasz, int ptrs) {
 	capn_ptr p = {CAPN_LIST};
+	if (datasz < 0 || ptrs < 0 || sz < 0)
+		return null_ptr();
 	p.seg = seg;
 	p.len = sz;
 
 	if (ptrs || datasz > 8) {
 		return capn_new_struct_list(seg, sz, datasz, ptrs);
-	} else if (datasz > 4) {
+	} else {
+		/* Charge the element width. Eight bytes for every width
+		 * refuses a byte list C++ 1.4.0 allocates. */
+		int64_t nbytes = (int64_t) sz * (int64_t) datasz;
+		if (datasz > 4)
+			nbytes = (int64_t) sz * 8;
+		else if (datasz > 2)
+			nbytes = (int64_t) sz * 4;
+		else if (datasz > 1)
+			nbytes = (int64_t) sz * 2;
+		if (!alloc_ok(sz, nbytes))
+			return null_ptr();
+	}
+	if (datasz > 4) {
 		p.datasz = 8;
-		new_object(&p, p.len * 8);
+		new_object(&p, (size_t) p.len * 8u);
 	} else if (datasz > 2) {
 		p.datasz = 4;
-		new_object(&p, p.len * 4);
+		new_object(&p, (size_t) p.len * 4u);
 	} else {
 		p.datasz = datasz;
-		new_object(&p, p.len * datasz);
+		new_object(&p, (size_t) p.len * (size_t) datasz);
 	}
 
 	return p;
@@ -2277,27 +3049,50 @@ capn_ptr capn_new_list(struct capn_segment *seg, int sz, int datasz, int ptrs) {
 
 capn_list1 capn_new_list1(struct capn_segment *seg, int sz) {
 	capn_list1 l = {{CAPN_BIT_LIST}};
+	size_t nbytes;
+
+	if (sz < 0 || (int64_t) sz > MAX_LIST_ELEMS) {
+		l.p = null_ptr();
+		return l;
+	}
+	nbytes = ((size_t) sz + 7u) / 8u;
+	if (nbytes > (size_t) MAX_ALLOC_BYTES) {
+		l.p = null_ptr();
+		return l;
+	}
 	l.p.seg = seg;
-	l.p.datasz = (sz+7)/8;
 	l.p.len = sz;
-	new_object(&l.p, l.p.datasz);
+	/* datasz cannot hold every wire-legal byte count. Store it when
+	 * it fits; a zero means the size is (len + 7) / 8. */
+	if (nbytes <= (size_t) CAPN_DATASZ_MAX)
+		l.p.datasz = (unsigned) nbytes;
+	new_object(&l.p, nbytes);
+	if (nbytes != 0 && l.p.data == NULL)
+		l.p = null_ptr();
 	return l;
 }
 
 capn_ptr capn_new_ptr_list(struct capn_segment *seg, int sz) {
 	capn_ptr p = {CAPN_PTR_LIST};
+	if (!alloc_ok(sz, (int64_t) sz * 8))
+		return null_ptr();
 	p.seg = seg;
 	p.len = sz;
 	p.ptrs = 0;
 	p.datasz = 0;
-	new_object(&p, sz*8);
+	new_object(&p, (size_t) sz * 8u);
 	return p;
 }
 
 capn_ptr capn_new_string(struct capn_segment *seg, const char *str, ssize_t sz) {
 	capn_ptr p = {CAPN_LIST};
+	size_t n = (sz >= 0) ? (size_t) sz : strlen(str);
+	/* p.len is n + 1, and a list length is 29 bits. MAX_ALLOC_BYTES is
+	 * wider than that, so a length in between would not fit the wire. */
+	if (n >= (size_t) MAX_LIST_ELEMS)
+		return null_ptr();
 	p.seg = seg;
-	p.len = ((sz >= 0) ? (size_t)sz : strlen(str)) + 1;
+	p.len = (int) (n + 1);
 	p.datasz = 1;
 	new_object(&p, p.len);
 	if (p.data) {
@@ -2310,10 +3105,23 @@ capn_ptr capn_new_string(struct capn_segment *seg, const char *str, ssize_t sz) 
 capn_text capn_get_text(capn_ptr p, int off, capn_text def) {
 	capn_ptr m = capn_getp(p, off, 1);
 	capn_text ret = def;
-	if (m.type == CAPN_LIST && m.datasz == 1 && m.len && m.data[m.len - 1] == 0) {
+	struct capn *c;
+
+	/* A byte list whose last byte is NUL. An interior NUL is
+	 * allowed, matching Text::Reader in C++ 1.4.0. */
+	if (m.type == CAPN_LIST && m.datasz == 1 && m.len && m.data
+	    && m.data[m.len - 1] == 0) {
 		ret.seg = m.seg;
 		ret.str = m.data;
 		ret.len = m.len - 1;
+		return ret;
+	}
+	/* A wire-null pointer is the default and is not an error.
+	 * Any other pointer is text C++ 1.4.0 throws on. */
+	if (m.type != CAPN_NULL) {
+		c = m.seg ? m.seg->capn : (p.seg ? p.seg->capn : NULL);
+		if (c)
+			c->decode_err = 1;
 	}
 	return ret;
 }
@@ -2334,10 +3142,20 @@ int capn_set_text(capn_ptr p, int off, capn_text tgt) {
 
 capn_data capn_get_data(capn_ptr p, int off) {
 	capn_data ret;
+	struct capn *c;
+
 	ret.p = capn_getp(p, off, 1);
-	if (ret.p.type != CAPN_LIST || ret.p.datasz != 1) {
-		memset(&ret, 0, sizeof(ret));
+	/* Data is a byte list, including an empty one. A wire-null
+	 * pointer is an absent field. Any other pointer is the schema
+	 * mismatch C++ 1.4.0 throws. */
+	if (ret.p.type == CAPN_LIST && ret.p.datasz == 1)
+		return ret;
+	if (ret.p.type != CAPN_NULL) {
+		c = ret.p.seg ? ret.p.seg->capn : (p.seg ? p.seg->capn : NULL);
+		if (c)
+			c->decode_err = 1;
 	}
+	memset(&ret, 0, sizeof(ret));
 	return ret;
 }
 
@@ -2363,3 +3181,318 @@ int capn_set_data(capn_ptr p, int off, capn_data tgt) {
 #define SZ 64
 #include "capn-list.inc"
 #undef SZ
+
+static int canon_take(size_t *budget, size_t words)
+{
+	if (words > *budget)
+		return 0;
+	*budget -= words;
+	return 1;
+}
+
+static int canonical_word(struct capn_segment *s, char *ptrword, char **head,
+                          size_t *budget, int depth);
+
+static int signed_off(uint64_t val)
+{
+	int32_t b = (int32_t) ((uint32_t) val & ~3u);
+	return (int) (b >> 2);
+}
+
+/* Trailing bits and bytes of a primitive list must be zero. */
+static int pad_is_clear(const uint8_t *obj, size_t bits, size_t nbytes)
+{
+	size_t whole = bits / 8u;
+	unsigned left = (unsigned) (bits % 8u);
+	const uint8_t *b = obj + whole;
+	const uint8_t *end = obj + nbytes;
+
+	if (left) {
+		uint8_t mask = (uint8_t) ~((1u << left) - 1u);
+		if (*b & mask)
+			return 0;
+		b++;
+	}
+	while (b < end) {
+		if (*b)
+			return 0;
+		b++;
+	}
+	return 1;
+}
+
+/* C++ isCanonical reads each object before it checks its position.
+ * A read that fails throws there, so it is a decode error here. A
+ * misplaced or untruncated object is only non-canonical. */
+static int canon_bad(struct capn_segment *s)
+{
+	if (s && s->capn)
+		s->capn->decode_err = 1;
+	return 0;
+}
+
+/* C++ tests the last pointer with isNull(), which is getPointerType().
+ * That follows a far pointer, charges its pad, and rejects an unknown
+ * kind. Returns 1 when the word is not null, 0 when null, -1 on error. */
+static int canon_last_ptr(struct capn_segment *s, char *d, size_t *budget)
+{
+	uint64_t val = capn_flip64(*(uint64_t *) d);
+	struct capn_segment *t;
+	size_t off, pad;
+
+	if (val == 0)
+		return 0;
+	if ((val & 3) == FAR_PTR) {
+		t = lookup_segment(s->capn, s, U32(val >> 32));
+		if (!t || t->len == 0)
+			return -1;
+		pad = (val & 4) ? 16 : 8;
+		off = (size_t) (U32(val) >> 3) * 8;
+		if (off > t->len || t->len - off < pad)
+			return -1;
+		if (!canon_take(budget, pad / 8u))
+			return -1;
+		d = t->data + off;
+		if (val & 4) {
+			uint64_t far = capn_flip64(*(uint64_t *) d);
+			struct capn_segment *u;
+			u = lookup_segment(t->capn, t, U32(far >> 32));
+			if (!u || u->len == 0 || (far & 3) != FAR_PTR)
+				return -1;
+			d += 8;
+		}
+		val = capn_flip64(*(uint64_t *) d);
+		if ((val & 3) == FAR_PTR)
+			return -1;
+	}
+	if ((val & 3) == OTHER_PTR && U32(val) != OTHER_PTR)
+		return -1;
+	return 1;
+}
+
+/* The caller has bounds-checked and charged the struct. */
+static int canonical_struct(struct capn_segment *s, char *obj, int dw, int pw,
+                            char **read_head, char **ptr_head, size_t *budget,
+                            int depth, int *data_trunc, int *ptr_trunc)
+{
+	int i;
+	char *p;
+
+	if (obj != *read_head)
+		return 0;
+	if (dw > 0)
+		*data_trunc = capn_flip64(*(uint64_t *) (obj + (dw - 1) * 8)) != 0;
+	else
+		*data_trunc = 1;
+	if (pw > 0) {
+		int last = canon_last_ptr(s, obj + dw * 8 + (pw - 1) * 8, budget);
+		if (last < 0)
+			return canon_bad(s);
+		*ptr_trunc = last;
+	} else {
+		*ptr_trunc = 1;
+	}
+	*read_head = obj + (size_t) (dw + pw) * 8u;
+	p = obj + (size_t) dw * 8u;
+	for (i = 0; i < pw; i++) {
+		if (!canonical_word(s, p + (size_t) i * 8u, ptr_head, budget, depth))
+			return 0;
+	}
+	return 1;
+}
+
+/* A composite list is canonical when the tag sits at the read head,
+ * the word count matches the elements, and at least one element is
+ * truncated in each section. Pointer targets follow the whole list.
+ * depth is the level of the list's elements. */
+static int canonical_composite(struct capn_segment *s, char *tag, int words,
+                               char **head, size_t *budget, int depth)
+{
+	uint64_t tv;
+	int dw, pw, count, stride, i;
+	int any_data = 0, any_ptr = 0;
+	char *read_head, *ptr_head;
+	size_t bytes = (size_t) words * 8u;
+
+	if (!bounds_ok(s, tag, 8) || (bytes && !bounds_ok(s, tag + 8, bytes)))
+		return canon_bad(s);
+	/* The tag word and the claimed body. */
+	if (!canon_take(budget, (size_t) words + 1u))
+		return canon_bad(s);
+	tv = capn_flip64(*(uint64_t *) tag);
+	if ((tv & 3) != STRUCT_PTR)
+		return canon_bad(s);
+	count = (int) ((U32(tv) >> 2) & 0x1fffffffu);
+	dw = (int) U16(tv >> 32);
+	pw = (int) U16(tv >> 48);
+	stride = dw + pw;
+	if ((uint64_t) count * (uint64_t) stride > (uint64_t) words)
+		return canon_bad(s);
+	/* A stride of zero carries no bytes. Each element still
+	 * spends one word. */
+	if (stride == 0 && !canon_take(budget, (size_t) count))
+		return canon_bad(s);
+	if (tag != *head)
+		return 0;
+	if ((uint64_t) count * (uint64_t) stride != (uint64_t) words)
+		return 0;
+	read_head = tag + 8;
+	if (stride == 0) {
+		*head = read_head;
+		return 1;
+	}
+	if (count > 0 && depth <= 0)
+		return canon_bad(s);
+	ptr_head = read_head + bytes;
+	for (i = 0; i < count; i++) {
+		int dt = 0, pt = 0;
+		char *el = read_head + (size_t) i * (size_t) stride * 8u;
+		/* read_head walks the bodies. The first check wants the
+		 * current element, so point it at this element. */
+		char *body = el;
+		if (!canonical_struct(s, el, dw, pw, &body, &ptr_head,
+		                      budget, depth - 1, &dt, &pt))
+			return 0;
+		if (body != el + (size_t) stride * 8u)
+			return 0;
+		any_data |= dt;
+		any_ptr |= pt;
+	}
+	*head = ptr_head;
+	return any_data && any_ptr;
+}
+
+static int canonical_word(struct capn_segment *s, char *ptrword, char **head,
+                          size_t *budget, int depth)
+{
+	uint64_t val;
+	int off, dw, pw, es, len;
+	char *obj;
+	size_t bits, nbytes;
+
+	if (!bounds_ok(s, ptrword, 8))
+		return canon_bad(s);
+	val = capn_flip64(*(uint64_t *) ptrword);
+	if (val == 0)
+		return 1;
+	if ((val & 3) == FAR_PTR || (val & 3) == OTHER_PTR)
+		return 0;
+	if (depth <= 0)
+		return canon_bad(s);
+	off = signed_off(val);
+	obj = ptrword + 8 + (int64_t) off * 8;
+	/* A zero-size object past the segment is clamped to the end,
+	 * which is where C++ reads it. An in-range offset is left
+	 * where it lands. */
+	{
+		int zero = 0;
+		if ((val & 3) == STRUCT_PTR && U32(val >> 32) == 0)
+			zero = 1;
+		else if ((val & 3) == LIST_PTR) {
+			unsigned esz = (unsigned) ((val >> 32) & 7);
+			if (esz == VOID_LIST)
+				zero = 1;
+			else if (esz != COMPOSITE_LIST && (val >> 35) == 0)
+				zero = 1;
+		}
+		if (zero && (obj < s->data || obj > s->data + s->len))
+			obj = s->data + s->len;
+	}
+	if ((val & 3) == STRUCT_PTR) {
+		int dt = 0, pt = 0;
+		dw = (int) U16(val >> 32);
+		pw = (int) U16(val >> 48);
+		if (!bounds_ok(s, obj, (size_t) (dw + pw) * 8u))
+			return canon_bad(s);
+		if (!canon_take(budget, (size_t) dw + (size_t) pw))
+			return canon_bad(s);
+		if (dw == 0 && pw == 0)
+			return obj == ptrword;
+		if (!canonical_struct(s, obj, dw, pw, head, head, budget,
+		                      depth - 1, &dt, &pt))
+			return 0;
+		return dt && pt;
+	}
+	es = (int) ((val >> 32) & 7);
+	len = (int) (val >> 35);
+	if (es == COMPOSITE_LIST)
+		return canonical_composite(s, obj, len, head, budget, depth - 1);
+	if (es == VOID_LIST) {
+		/* The landing spot may be the first byte past the segment.
+		 * The length is not a size. Each element still spends one
+		 * word of the shared budget. */
+		if (obj < s->data || obj > s->data + s->len)
+			return canon_bad(s);
+		if (!canon_take(budget, (size_t) len))
+			return canon_bad(s);
+		return obj == *head;
+	}
+	/* A list this long cannot be in bounds of a 32-bit segment. */
+	if ((size_t) len > ((size_t) -1 - 63u) / 64u)
+		return canon_bad(s);
+	if (es == PTR_LIST) {
+		int i;
+		nbytes = (size_t) len * 8u;
+		if (nbytes && !bounds_ok(s, obj, nbytes))
+			return canon_bad(s);
+		if (!canon_take(budget, (size_t) len))
+			return canon_bad(s);
+		if (obj != *head)
+			return 0;
+		*head = obj + nbytes;
+		for (i = 0; i < len; i++) {
+			if (!canonical_word(s, obj + (size_t) i * 8u, head,
+			                    budget, depth - 1))
+				return 0;
+		}
+		return 1;
+	}
+	bits = (size_t) len * (es == BIT_1_LIST ? 1u : es == BYTE_1_LIST ? 8u :
+	                       es == BYTE_2_LIST ? 16u : es == BYTE_4_LIST ? 32u : 64u);
+	nbytes = ((bits + 63u) / 64u) * 8u;
+	if (nbytes && !bounds_ok(s, obj, nbytes))
+		return canon_bad(s);
+	if (!canon_take(budget, nbytes / 8u))
+		return canon_bad(s);
+	if (obj != *head)
+		return 0;
+	if (nbytes && !pad_is_clear((const uint8_t *) obj, bits, nbytes))
+		return 0;
+	*head = obj + nbytes;
+	return 1;
+}
+
+int capn_is_canonical(struct capn *c)
+{
+	struct capn_segment *s, *n;
+	char *head;
+	uint64_t root;
+	size_t budget, limit;
+
+	if (!c || !c->seglist)
+		return 0;
+	s = c->seglist;
+	/* An empty later segment ends the message. C++ does not see
+	 * anything past it, so a canonical first segment still counts. */
+	for (n = s->next; n; n = n->next) {
+		if (n->len == 0)
+			break;
+		return 0;
+	}
+	if (s->len < 8)
+		return 0;
+	root = capn_flip64(*(uint64_t *) s->data);
+	if (root == 0)
+		return s->len == 8;
+	/* The root pointer word, then every object the walk reads.
+	 * One budget covers the whole message, so two void lists add. */
+	limit = (c->traversal_limit)
+		? c->traversal_limit : CAPN_TRAVERSAL_DEFAULT;
+	budget = limit / 8u;
+	if (!canon_take(&budget, 1))
+		return 0;
+	head = s->data + 8;
+	if (!canonical_word(s, s->data, &head, &budget, session_nesting(c)))
+		return 0;
+	return head == s->data + s->len;
+}

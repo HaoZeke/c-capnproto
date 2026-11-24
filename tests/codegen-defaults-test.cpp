@@ -7,6 +7,8 @@
  */
 
 #include <gtest/gtest.h>
+#include <errno.h>
+#include <stdio.h>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -23,6 +25,10 @@ static capn_text chars_to_text(const char *chars) {
     .seg = NULL,
   };
 }
+
+#ifndef TEST_CAPNP_GENERATED_C
+#define TEST_CAPNP_GENERATED_C "test.capnp.c"
+#endif
 
 #ifndef CODEGEN_DEFAULTS_GENERATED_C
 #define CODEGEN_DEFAULTS_GENERATED_C "codegen-defaults.capnp.c"
@@ -178,4 +184,122 @@ TEST(CodegenDefaults, GeneratedConstantsAreConst) {
   EXPECT_FLOAT_EQ(1.5f, ratio.f);
   EXPECT_EQ(99, answerCamel);
   EXPECT_EQ(99, ANSWER_CAMEL);
+}
+
+TEST(CodegenDefaults, TextDefaultSurvivesReadWriteRoundTrip) {
+  struct capn src;
+  capn_init_malloc(&src);
+  Greeting_ptr g = new_Greeting(capn_root(&src).seg);
+  capn_set_root(&src, g.p);
+  ASSERT_EQ(capn_getp(g.p, 0, 1).type, CAPN_NULL);
+
+  struct Greeting read;
+  memset(&read, 0, sizeof(read));
+  read_Greeting(&read, g);
+  ASSERT_STREQ(read.hello.str, "hi");
+  ASSERT_STREQ(read.plain.str, "");
+
+  struct capn dst;
+  capn_init_malloc(&dst);
+  Greeting_ptr copy = new_Greeting(capn_root(&dst).seg);
+  write_Greeting(&read, copy);
+  capn_set_root(&dst, copy.p);
+
+  EXPECT_EQ(capn_getp(copy.p, 0, 1).type, CAPN_NULL);
+  EXPECT_EQ(capn_getp(copy.p, 1, 1).type, CAPN_NULL);
+
+  struct Greeting again;
+  memset(&again, 0, sizeof(again));
+  read_Greeting(&again, copy);
+  EXPECT_STREQ(again.hello.str, "hi");
+
+  capn_free(&dst);
+  capn_free(&src);
+}
+
+TEST(CodegenDefaults, ExplicitEmptyTextOverridesDefault) {
+  struct capn c;
+  capn_init_malloc(&c);
+  Greeting_ptr g = new_Greeting(capn_root(&c).seg);
+  struct Greeting s;
+  memset(&s, 0, sizeof(s));
+  s.hello = chars_to_text("");
+  write_Greeting(&s, g);
+
+  EXPECT_EQ(capn_getp(g.p, 0, 1).type, CAPN_LIST);
+  struct Greeting back;
+  memset(&back, 0, sizeof(back));
+  read_Greeting(&back, g);
+  EXPECT_EQ(back.hello.len, 0);
+  capn_free(&c);
+}
+
+TEST(CodegenDefaults, ReservedNamesAndVoidOnlyUnionCompile) {
+  struct capn c;
+  capn_init_malloc(&c);
+  Names_ptr p = new_Names(capn_root(&c).seg);
+
+  struct Names in;
+  memset(&in, 0, sizeof(in));
+  in._which = 7;
+  in._errno = 42;
+  in._linux = 1;
+  in._stdin = chars_to_text("in");
+  in.voids_which = Names_voids_b;
+  write_Names(&in, p);
+
+  struct Names out;
+  memset(&out, 0, sizeof(out));
+  read_Names(&out, p);
+  EXPECT_EQ(7, out._which);
+  EXPECT_EQ(42u, out._errno);
+  EXPECT_EQ(1u, out._linux);
+  EXPECT_STREQ("in", out._stdin.str);
+  EXPECT_EQ(Names_voids_b, out.voids_which);
+  capn_free(&c);
+}
+
+TEST(CodegenDefaults, ConstantInitializersNameEveryField) {
+  const char *candidates[] = {
+    TEST_CAPNP_GENERATED_C,
+    "test.capnp.c",
+    "compiler/test.capnp.c",
+    "../compiler/test.capnp.c",
+  };
+  std::string body = read_generated(candidates, sizeof(candidates) / sizeof(candidates[0]));
+  ASSERT_FALSE(body.empty()) << "could not read generated test.capnp.c";
+  size_t checked = 0;
+  size_t pos = 0;
+  while (pos < body.size()) {
+    size_t eol = body.find('\n', pos);
+    if (eol == std::string::npos) {
+      eol = body.size();
+    }
+    std::string line = body.substr(pos, eol - pos);
+    pos = eol + 1;
+    bool is_text = line.find("capn_text ") != std::string::npos;
+    if (!is_text && line.find("&capn_seg") != std::string::npos) {
+      checked++;
+      EXPECT_NE(std::string::npos, line.find("&capn_seg,0,0,0}"))
+          << "capn_ptr constants must initialise nesting, nesting_valid "
+             "and cap_idx, or -Wextra warns in every including translation "
+             "unit: " << line;
+    }
+  }
+  EXPECT_GT(checked, 0u);
+}
+
+TEST(CodegenDefaults, EmptyPlaceholderIsNotAMergeableStringLiteral) {
+  const char *candidates[] = {
+    CODEGEN_DEFAULTS_GENERATED_C,
+    "codegen-defaults.capnp.c",
+    "tests/codegen-defaults.capnp.c",
+    "../tests/codegen-defaults.capnp.c",
+  };
+  std::string body = read_generated(candidates, sizeof(candidates) / sizeof(candidates[0]));
+  ASSERT_FALSE(body.empty()) << "could not read generated codegen-defaults.capnp.c";
+  EXPECT_NE(std::string::npos, body.find("capn_val0_str[1]"));
+  EXPECT_EQ(std::string::npos, body.find("capn_val0 = {0,\"\""))
+      << "write_ compares text pointers with the placeholder, so it must "
+         "not share an address with a caller's literal \"\" at -O2";
 }

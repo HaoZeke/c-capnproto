@@ -1965,6 +1965,9 @@ void TestNameAnnotation_NestedStruct_set_badNestedFieldName(TestNameAnnotation_N
 
 void TestNameAnnotation_NestedStruct_set_anotherBadNestedFieldName(TestNameAnnotation_NestedStruct_ptr p, TestNameAnnotation_NestedStruct_ptr anotherBadNestedFieldName);
 
+/* Interface TestInterface: id and method descriptors. */
+#define TestInterface_INTERFACE_ID 0x88eb12a0e0af92b2ULL
+
 TestAllTypes_ptr new_TestAllTypes(struct capn_segment*);
 TestDefaults_ptr new_TestDefaults(struct capn_segment*);
 TestAnyPointer_ptr new_TestAnyPointer(struct capn_segment*);
