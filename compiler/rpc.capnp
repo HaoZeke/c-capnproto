@@ -112,6 +112,10 @@
 using Cxx = import "/capnp/c++.capnp";
 $Cxx.namespace("capnp::rpc");
 
+# The accessors are built into libcapnp_c, which must export them.
+using C = import "/c.capnp";
+$C.extendedattribute("CAPN_SCHEMA_EXPORT");
+
 # ========================================================================================
 # The Four Tables
 #

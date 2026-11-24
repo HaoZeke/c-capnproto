@@ -13,17 +13,17 @@ static const capn_text capn_val0 = {0,capn_val0_str,0};
 static const capn_ptr capn_null = {CAPN_NULL,0,0,0,0,0,0,0,0,0,0,0};
 static const capn_text capn_text_null = {0,0,0};
 
-Message_ptr new_Message(struct capn_segment *s) {
+CAPN_SCHEMA_EXPORT Message_ptr new_Message(struct capn_segment *s) {
 	Message_ptr p;
 	p.p = capn_new_struct(s, 8, 1);
 	return p;
 }
-Message_list new_Message_list(struct capn_segment *s, int len) {
+CAPN_SCHEMA_EXPORT Message_list new_Message_list(struct capn_segment *s, int len) {
 	Message_list p;
 	p.p = capn_new_struct_list(s, len, 8, 1);
 	return p;
 }
-void read_Message(struct Message *s capnp_unused, Message_ptr p) {
+CAPN_SCHEMA_EXPORT void read_Message(struct Message *s capnp_unused, Message_ptr p) {
 	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->which = (enum Message_which)(int) capn_read16(p.p, 0);
@@ -88,7 +88,7 @@ if (s->join.p.type == CAPN_FAR_POINTER && s->join.p.data != NULL && *(const uint
 		break;
 	}
 }
-void write_Message(const struct Message *s capnp_unused, Message_ptr p) {
+CAPN_SCHEMA_EXPORT void write_Message(const struct Message *s capnp_unused, Message_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write16(p.p, 0, s->which);
@@ -139,64 +139,64 @@ void write_Message(const struct Message *s capnp_unused, Message_ptr p) {
 		break;
 	}
 }
-void get_Message(struct Message *s, Message_list l, int i) {
+CAPN_SCHEMA_EXPORT void get_Message(struct Message *s, Message_list l, int i) {
 	Message_ptr p;
 	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Message(s, p);
 }
-void set_Message(const struct Message *s, Message_list l, int i) {
+CAPN_SCHEMA_EXPORT void set_Message(const struct Message *s, Message_list l, int i) {
 	Message_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_Message(s, p);
 }
 
-Bootstrap_ptr new_Bootstrap(struct capn_segment *s) {
+CAPN_SCHEMA_EXPORT Bootstrap_ptr new_Bootstrap(struct capn_segment *s) {
 	Bootstrap_ptr p;
 	p.p = capn_new_struct(s, 8, 1);
 	return p;
 }
-Bootstrap_list new_Bootstrap_list(struct capn_segment *s, int len) {
+CAPN_SCHEMA_EXPORT Bootstrap_list new_Bootstrap_list(struct capn_segment *s, int len) {
 	Bootstrap_list p;
 	p.p = capn_new_struct_list(s, len, 8, 1);
 	return p;
 }
-void read_Bootstrap(struct Bootstrap *s capnp_unused, Bootstrap_ptr p) {
+CAPN_SCHEMA_EXPORT void read_Bootstrap(struct Bootstrap *s capnp_unused, Bootstrap_ptr p) {
 	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->questionId = capn_read32(p.p, 0);
 	s->deprecatedObjectId = capn_getp(p.p, 0, 0);
 if (s->deprecatedObjectId.type == CAPN_FAR_POINTER && s->deprecatedObjectId.data != NULL && *(const uint64_t*)s->deprecatedObjectId.data == 0) s->deprecatedObjectId.type = CAPN_NULL;
 }
-void write_Bootstrap(const struct Bootstrap *s capnp_unused, Bootstrap_ptr p) {
+CAPN_SCHEMA_EXPORT void write_Bootstrap(const struct Bootstrap *s capnp_unused, Bootstrap_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write32(p.p, 0, s->questionId);
 	capn_setp(p.p, 0, (s->deprecatedObjectId.type != CAPN_NULL) ? s->deprecatedObjectId : capn_null);
 }
-void get_Bootstrap(struct Bootstrap *s, Bootstrap_list l, int i) {
+CAPN_SCHEMA_EXPORT void get_Bootstrap(struct Bootstrap *s, Bootstrap_list l, int i) {
 	Bootstrap_ptr p;
 	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Bootstrap(s, p);
 }
-void set_Bootstrap(const struct Bootstrap *s, Bootstrap_list l, int i) {
+CAPN_SCHEMA_EXPORT void set_Bootstrap(const struct Bootstrap *s, Bootstrap_list l, int i) {
 	Bootstrap_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_Bootstrap(s, p);
 }
 
-Call_ptr new_Call(struct capn_segment *s) {
+CAPN_SCHEMA_EXPORT Call_ptr new_Call(struct capn_segment *s) {
 	Call_ptr p;
 	p.p = capn_new_struct(s, 24, 3);
 	return p;
 }
-Call_list new_Call_list(struct capn_segment *s, int len) {
+CAPN_SCHEMA_EXPORT Call_list new_Call_list(struct capn_segment *s, int len) {
 	Call_list p;
 	p.p = capn_new_struct_list(s, len, 24, 3);
 	return p;
 }
-void read_Call(struct Call *s capnp_unused, Call_ptr p) {
+CAPN_SCHEMA_EXPORT void read_Call(struct Call *s capnp_unused, Call_ptr p) {
 	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->questionId = capn_read32(p.p, 0);
@@ -219,7 +219,7 @@ if (s->sendResultsTo.thirdParty.type == CAPN_FAR_POINTER && s->sendResultsTo.thi
 		break;
 	}
 }
-void write_Call(const struct Call *s capnp_unused, Call_ptr p) {
+CAPN_SCHEMA_EXPORT void write_Call(const struct Call *s capnp_unused, Call_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write32(p.p, 0, s->questionId);
@@ -239,29 +239,29 @@ void write_Call(const struct Call *s capnp_unused, Call_ptr p) {
 		break;
 	}
 }
-void get_Call(struct Call *s, Call_list l, int i) {
+CAPN_SCHEMA_EXPORT void get_Call(struct Call *s, Call_list l, int i) {
 	Call_ptr p;
 	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Call(s, p);
 }
-void set_Call(const struct Call *s, Call_list l, int i) {
+CAPN_SCHEMA_EXPORT void set_Call(const struct Call *s, Call_list l, int i) {
 	Call_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_Call(s, p);
 }
 
-Return_ptr new_Return(struct capn_segment *s) {
+CAPN_SCHEMA_EXPORT Return_ptr new_Return(struct capn_segment *s) {
 	Return_ptr p;
 	p.p = capn_new_struct(s, 16, 1);
 	return p;
 }
-Return_list new_Return_list(struct capn_segment *s, int len) {
+CAPN_SCHEMA_EXPORT Return_list new_Return_list(struct capn_segment *s, int len) {
 	Return_list p;
 	p.p = capn_new_struct_list(s, len, 16, 1);
 	return p;
 }
-void read_Return(struct Return *s capnp_unused, Return_ptr p) {
+CAPN_SCHEMA_EXPORT void read_Return(struct Return *s capnp_unused, Return_ptr p) {
 	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->answerId = capn_read32(p.p, 0);
@@ -288,7 +288,7 @@ if (s->acceptFromThirdParty.type == CAPN_FAR_POINTER && s->acceptFromThirdParty.
 		break;
 	}
 }
-void write_Return(const struct Return *s capnp_unused, Return_ptr p) {
+CAPN_SCHEMA_EXPORT void write_Return(const struct Return *s capnp_unused, Return_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write32(p.p, 0, s->answerId);
@@ -312,65 +312,65 @@ void write_Return(const struct Return *s capnp_unused, Return_ptr p) {
 		break;
 	}
 }
-void get_Return(struct Return *s, Return_list l, int i) {
+CAPN_SCHEMA_EXPORT void get_Return(struct Return *s, Return_list l, int i) {
 	Return_ptr p;
 	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Return(s, p);
 }
-void set_Return(const struct Return *s, Return_list l, int i) {
+CAPN_SCHEMA_EXPORT void set_Return(const struct Return *s, Return_list l, int i) {
 	Return_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_Return(s, p);
 }
 
-Finish_ptr new_Finish(struct capn_segment *s) {
+CAPN_SCHEMA_EXPORT Finish_ptr new_Finish(struct capn_segment *s) {
 	Finish_ptr p;
 	p.p = capn_new_struct(s, 8, 0);
 	return p;
 }
-Finish_list new_Finish_list(struct capn_segment *s, int len) {
+CAPN_SCHEMA_EXPORT Finish_list new_Finish_list(struct capn_segment *s, int len) {
 	Finish_list p;
 	p.p = capn_new_struct_list(s, len, 8, 0);
 	return p;
 }
-void read_Finish(struct Finish *s capnp_unused, Finish_ptr p) {
+CAPN_SCHEMA_EXPORT void read_Finish(struct Finish *s capnp_unused, Finish_ptr p) {
 	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->questionId = capn_read32(p.p, 0);
 	s->releaseResultCaps = (capn_read8(p.p, 4) & 1) != 1;
 	s->requireEarlyCancellationWorkaround = (capn_read8(p.p, 4) & 2) != 2;
 }
-void write_Finish(const struct Finish *s capnp_unused, Finish_ptr p) {
+CAPN_SCHEMA_EXPORT void write_Finish(const struct Finish *s capnp_unused, Finish_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write32(p.p, 0, s->questionId);
 	capn_write1(p.p, 32, s->releaseResultCaps != 1);
 	capn_write1(p.p, 33, s->requireEarlyCancellationWorkaround != 1);
 }
-void get_Finish(struct Finish *s, Finish_list l, int i) {
+CAPN_SCHEMA_EXPORT void get_Finish(struct Finish *s, Finish_list l, int i) {
 	Finish_ptr p;
 	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Finish(s, p);
 }
-void set_Finish(const struct Finish *s, Finish_list l, int i) {
+CAPN_SCHEMA_EXPORT void set_Finish(const struct Finish *s, Finish_list l, int i) {
 	Finish_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_Finish(s, p);
 }
 
-Resolve_ptr new_Resolve(struct capn_segment *s) {
+CAPN_SCHEMA_EXPORT Resolve_ptr new_Resolve(struct capn_segment *s) {
 	Resolve_ptr p;
 	p.p = capn_new_struct(s, 8, 1);
 	return p;
 }
-Resolve_list new_Resolve_list(struct capn_segment *s, int len) {
+CAPN_SCHEMA_EXPORT Resolve_list new_Resolve_list(struct capn_segment *s, int len) {
 	Resolve_list p;
 	p.p = capn_new_struct_list(s, len, 8, 1);
 	return p;
 }
-void read_Resolve(struct Resolve *s capnp_unused, Resolve_ptr p) {
+CAPN_SCHEMA_EXPORT void read_Resolve(struct Resolve *s capnp_unused, Resolve_ptr p) {
 	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->promiseId = capn_read32(p.p, 0);
@@ -388,7 +388,7 @@ if (s->exception.p.type == CAPN_FAR_POINTER && s->exception.p.data != NULL && *(
 		break;
 	}
 }
-void write_Resolve(const struct Resolve *s capnp_unused, Resolve_ptr p) {
+CAPN_SCHEMA_EXPORT void write_Resolve(const struct Resolve *s capnp_unused, Resolve_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write32(p.p, 0, s->promiseId);
@@ -404,63 +404,63 @@ void write_Resolve(const struct Resolve *s capnp_unused, Resolve_ptr p) {
 		break;
 	}
 }
-void get_Resolve(struct Resolve *s, Resolve_list l, int i) {
+CAPN_SCHEMA_EXPORT void get_Resolve(struct Resolve *s, Resolve_list l, int i) {
 	Resolve_ptr p;
 	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Resolve(s, p);
 }
-void set_Resolve(const struct Resolve *s, Resolve_list l, int i) {
+CAPN_SCHEMA_EXPORT void set_Resolve(const struct Resolve *s, Resolve_list l, int i) {
 	Resolve_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_Resolve(s, p);
 }
 
-Release_ptr new_Release(struct capn_segment *s) {
+CAPN_SCHEMA_EXPORT Release_ptr new_Release(struct capn_segment *s) {
 	Release_ptr p;
 	p.p = capn_new_struct(s, 8, 0);
 	return p;
 }
-Release_list new_Release_list(struct capn_segment *s, int len) {
+CAPN_SCHEMA_EXPORT Release_list new_Release_list(struct capn_segment *s, int len) {
 	Release_list p;
 	p.p = capn_new_struct_list(s, len, 8, 0);
 	return p;
 }
-void read_Release(struct Release *s capnp_unused, Release_ptr p) {
+CAPN_SCHEMA_EXPORT void read_Release(struct Release *s capnp_unused, Release_ptr p) {
 	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->id = capn_read32(p.p, 0);
 	s->referenceCount = capn_read32(p.p, 4);
 }
-void write_Release(const struct Release *s capnp_unused, Release_ptr p) {
+CAPN_SCHEMA_EXPORT void write_Release(const struct Release *s capnp_unused, Release_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write32(p.p, 0, s->id);
 	capn_write32(p.p, 4, s->referenceCount);
 }
-void get_Release(struct Release *s, Release_list l, int i) {
+CAPN_SCHEMA_EXPORT void get_Release(struct Release *s, Release_list l, int i) {
 	Release_ptr p;
 	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Release(s, p);
 }
-void set_Release(const struct Release *s, Release_list l, int i) {
+CAPN_SCHEMA_EXPORT void set_Release(const struct Release *s, Release_list l, int i) {
 	Release_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_Release(s, p);
 }
 
-Disembargo_ptr new_Disembargo(struct capn_segment *s) {
+CAPN_SCHEMA_EXPORT Disembargo_ptr new_Disembargo(struct capn_segment *s) {
 	Disembargo_ptr p;
 	p.p = capn_new_struct(s, 8, 1);
 	return p;
 }
-Disembargo_list new_Disembargo_list(struct capn_segment *s, int len) {
+CAPN_SCHEMA_EXPORT Disembargo_list new_Disembargo_list(struct capn_segment *s, int len) {
 	Disembargo_list p;
 	p.p = capn_new_struct_list(s, len, 8, 1);
 	return p;
 }
-void read_Disembargo(struct Disembargo *s capnp_unused, Disembargo_ptr p) {
+CAPN_SCHEMA_EXPORT void read_Disembargo(struct Disembargo *s capnp_unused, Disembargo_ptr p) {
 	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->target.p = capn_getp(p.p, 0, 0);
@@ -480,7 +480,7 @@ if (s->target.p.type == CAPN_FAR_POINTER && s->target.p.data != NULL && *(const 
 		break;
 	}
 }
-void write_Disembargo(const struct Disembargo *s capnp_unused, Disembargo_ptr p) {
+CAPN_SCHEMA_EXPORT void write_Disembargo(const struct Disembargo *s capnp_unused, Disembargo_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_setp(p.p, 0, (s->target.p.type != CAPN_NULL) ? s->target.p : capn_null);
@@ -499,29 +499,29 @@ void write_Disembargo(const struct Disembargo *s capnp_unused, Disembargo_ptr p)
 		break;
 	}
 }
-void get_Disembargo(struct Disembargo *s, Disembargo_list l, int i) {
+CAPN_SCHEMA_EXPORT void get_Disembargo(struct Disembargo *s, Disembargo_list l, int i) {
 	Disembargo_ptr p;
 	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Disembargo(s, p);
 }
-void set_Disembargo(const struct Disembargo *s, Disembargo_list l, int i) {
+CAPN_SCHEMA_EXPORT void set_Disembargo(const struct Disembargo *s, Disembargo_list l, int i) {
 	Disembargo_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_Disembargo(s, p);
 }
 
-Provide_ptr new_Provide(struct capn_segment *s) {
+CAPN_SCHEMA_EXPORT Provide_ptr new_Provide(struct capn_segment *s) {
 	Provide_ptr p;
 	p.p = capn_new_struct(s, 8, 2);
 	return p;
 }
-Provide_list new_Provide_list(struct capn_segment *s, int len) {
+CAPN_SCHEMA_EXPORT Provide_list new_Provide_list(struct capn_segment *s, int len) {
 	Provide_list p;
 	p.p = capn_new_struct_list(s, len, 8, 2);
 	return p;
 }
-void read_Provide(struct Provide *s capnp_unused, Provide_ptr p) {
+CAPN_SCHEMA_EXPORT void read_Provide(struct Provide *s capnp_unused, Provide_ptr p) {
 	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->questionId = capn_read32(p.p, 0);
@@ -530,36 +530,36 @@ if (s->target.p.type == CAPN_FAR_POINTER && s->target.p.data != NULL && *(const 
 	s->recipient = capn_getp(p.p, 1, 0);
 if (s->recipient.type == CAPN_FAR_POINTER && s->recipient.data != NULL && *(const uint64_t*)s->recipient.data == 0) s->recipient.type = CAPN_NULL;
 }
-void write_Provide(const struct Provide *s capnp_unused, Provide_ptr p) {
+CAPN_SCHEMA_EXPORT void write_Provide(const struct Provide *s capnp_unused, Provide_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write32(p.p, 0, s->questionId);
 	capn_setp(p.p, 0, (s->target.p.type != CAPN_NULL) ? s->target.p : capn_null);
 	capn_setp(p.p, 1, (s->recipient.type != CAPN_NULL) ? s->recipient : capn_null);
 }
-void get_Provide(struct Provide *s, Provide_list l, int i) {
+CAPN_SCHEMA_EXPORT void get_Provide(struct Provide *s, Provide_list l, int i) {
 	Provide_ptr p;
 	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Provide(s, p);
 }
-void set_Provide(const struct Provide *s, Provide_list l, int i) {
+CAPN_SCHEMA_EXPORT void set_Provide(const struct Provide *s, Provide_list l, int i) {
 	Provide_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_Provide(s, p);
 }
 
-Accept_ptr new_Accept(struct capn_segment *s) {
+CAPN_SCHEMA_EXPORT Accept_ptr new_Accept(struct capn_segment *s) {
 	Accept_ptr p;
 	p.p = capn_new_struct(s, 8, 1);
 	return p;
 }
-Accept_list new_Accept_list(struct capn_segment *s, int len) {
+CAPN_SCHEMA_EXPORT Accept_list new_Accept_list(struct capn_segment *s, int len) {
 	Accept_list p;
 	p.p = capn_new_struct_list(s, len, 8, 1);
 	return p;
 }
-void read_Accept(struct Accept *s capnp_unused, Accept_ptr p) {
+CAPN_SCHEMA_EXPORT void read_Accept(struct Accept *s capnp_unused, Accept_ptr p) {
 	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->questionId = capn_read32(p.p, 0);
@@ -567,36 +567,36 @@ void read_Accept(struct Accept *s capnp_unused, Accept_ptr p) {
 if (s->provision.type == CAPN_FAR_POINTER && s->provision.data != NULL && *(const uint64_t*)s->provision.data == 0) s->provision.type = CAPN_NULL;
 	s->embargo = (capn_read8(p.p, 4) & 1) != 0;
 }
-void write_Accept(const struct Accept *s capnp_unused, Accept_ptr p) {
+CAPN_SCHEMA_EXPORT void write_Accept(const struct Accept *s capnp_unused, Accept_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write32(p.p, 0, s->questionId);
 	capn_setp(p.p, 0, (s->provision.type != CAPN_NULL) ? s->provision : capn_null);
 	capn_write1(p.p, 32, s->embargo != 0);
 }
-void get_Accept(struct Accept *s, Accept_list l, int i) {
+CAPN_SCHEMA_EXPORT void get_Accept(struct Accept *s, Accept_list l, int i) {
 	Accept_ptr p;
 	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Accept(s, p);
 }
-void set_Accept(const struct Accept *s, Accept_list l, int i) {
+CAPN_SCHEMA_EXPORT void set_Accept(const struct Accept *s, Accept_list l, int i) {
 	Accept_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_Accept(s, p);
 }
 
-Join_ptr new_Join(struct capn_segment *s) {
+CAPN_SCHEMA_EXPORT Join_ptr new_Join(struct capn_segment *s) {
 	Join_ptr p;
 	p.p = capn_new_struct(s, 8, 2);
 	return p;
 }
-Join_list new_Join_list(struct capn_segment *s, int len) {
+CAPN_SCHEMA_EXPORT Join_list new_Join_list(struct capn_segment *s, int len) {
 	Join_list p;
 	p.p = capn_new_struct_list(s, len, 8, 2);
 	return p;
 }
-void read_Join(struct Join *s capnp_unused, Join_ptr p) {
+CAPN_SCHEMA_EXPORT void read_Join(struct Join *s capnp_unused, Join_ptr p) {
 	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->questionId = capn_read32(p.p, 0);
@@ -605,36 +605,36 @@ if (s->target.p.type == CAPN_FAR_POINTER && s->target.p.data != NULL && *(const 
 	s->keyPart = capn_getp(p.p, 1, 0);
 if (s->keyPart.type == CAPN_FAR_POINTER && s->keyPart.data != NULL && *(const uint64_t*)s->keyPart.data == 0) s->keyPart.type = CAPN_NULL;
 }
-void write_Join(const struct Join *s capnp_unused, Join_ptr p) {
+CAPN_SCHEMA_EXPORT void write_Join(const struct Join *s capnp_unused, Join_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write32(p.p, 0, s->questionId);
 	capn_setp(p.p, 0, (s->target.p.type != CAPN_NULL) ? s->target.p : capn_null);
 	capn_setp(p.p, 1, (s->keyPart.type != CAPN_NULL) ? s->keyPart : capn_null);
 }
-void get_Join(struct Join *s, Join_list l, int i) {
+CAPN_SCHEMA_EXPORT void get_Join(struct Join *s, Join_list l, int i) {
 	Join_ptr p;
 	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Join(s, p);
 }
-void set_Join(const struct Join *s, Join_list l, int i) {
+CAPN_SCHEMA_EXPORT void set_Join(const struct Join *s, Join_list l, int i) {
 	Join_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_Join(s, p);
 }
 
-MessageTarget_ptr new_MessageTarget(struct capn_segment *s) {
+CAPN_SCHEMA_EXPORT MessageTarget_ptr new_MessageTarget(struct capn_segment *s) {
 	MessageTarget_ptr p;
 	p.p = capn_new_struct(s, 8, 1);
 	return p;
 }
-MessageTarget_list new_MessageTarget_list(struct capn_segment *s, int len) {
+CAPN_SCHEMA_EXPORT MessageTarget_list new_MessageTarget_list(struct capn_segment *s, int len) {
 	MessageTarget_list p;
 	p.p = capn_new_struct_list(s, len, 8, 1);
 	return p;
 }
-void read_MessageTarget(struct MessageTarget *s capnp_unused, MessageTarget_ptr p) {
+CAPN_SCHEMA_EXPORT void read_MessageTarget(struct MessageTarget *s capnp_unused, MessageTarget_ptr p) {
 	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->which = (enum MessageTarget_which)(int) capn_read16(p.p, 4);
@@ -650,7 +650,7 @@ if (s->promisedAnswer.p.type == CAPN_FAR_POINTER && s->promisedAnswer.p.data != 
 		break;
 	}
 }
-void write_MessageTarget(const struct MessageTarget *s capnp_unused, MessageTarget_ptr p) {
+CAPN_SCHEMA_EXPORT void write_MessageTarget(const struct MessageTarget *s capnp_unused, MessageTarget_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write16(p.p, 4, s->which);
@@ -665,29 +665,29 @@ void write_MessageTarget(const struct MessageTarget *s capnp_unused, MessageTarg
 		break;
 	}
 }
-void get_MessageTarget(struct MessageTarget *s, MessageTarget_list l, int i) {
+CAPN_SCHEMA_EXPORT void get_MessageTarget(struct MessageTarget *s, MessageTarget_list l, int i) {
 	MessageTarget_ptr p;
 	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_MessageTarget(s, p);
 }
-void set_MessageTarget(const struct MessageTarget *s, MessageTarget_list l, int i) {
+CAPN_SCHEMA_EXPORT void set_MessageTarget(const struct MessageTarget *s, MessageTarget_list l, int i) {
 	MessageTarget_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_MessageTarget(s, p);
 }
 
-Payload_ptr new_Payload(struct capn_segment *s) {
+CAPN_SCHEMA_EXPORT Payload_ptr new_Payload(struct capn_segment *s) {
 	Payload_ptr p;
 	p.p = capn_new_struct(s, 0, 2);
 	return p;
 }
-Payload_list new_Payload_list(struct capn_segment *s, int len) {
+CAPN_SCHEMA_EXPORT Payload_list new_Payload_list(struct capn_segment *s, int len) {
 	Payload_list p;
 	p.p = capn_new_struct_list(s, len, 0, 2);
 	return p;
 }
-void read_Payload(struct Payload *s capnp_unused, Payload_ptr p) {
+CAPN_SCHEMA_EXPORT void read_Payload(struct Payload *s capnp_unused, Payload_ptr p) {
 	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->content = capn_getp(p.p, 0, 0);
@@ -695,35 +695,35 @@ if (s->content.type == CAPN_FAR_POINTER && s->content.data != NULL && *(const ui
 	s->capTable.p = capn_getp(p.p, 1, 0);
 if (s->capTable.p.type == CAPN_FAR_POINTER && s->capTable.p.data != NULL && *(const uint64_t*)s->capTable.p.data == 0) s->capTable.p.type = CAPN_NULL;
 }
-void write_Payload(const struct Payload *s capnp_unused, Payload_ptr p) {
+CAPN_SCHEMA_EXPORT void write_Payload(const struct Payload *s capnp_unused, Payload_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_setp(p.p, 0, (s->content.type != CAPN_NULL) ? s->content : capn_null);
 	capn_setp(p.p, 1, (s->capTable.p.type != CAPN_NULL) ? s->capTable.p : capn_null);
 }
-void get_Payload(struct Payload *s, Payload_list l, int i) {
+CAPN_SCHEMA_EXPORT void get_Payload(struct Payload *s, Payload_list l, int i) {
 	Payload_ptr p;
 	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Payload(s, p);
 }
-void set_Payload(const struct Payload *s, Payload_list l, int i) {
+CAPN_SCHEMA_EXPORT void set_Payload(const struct Payload *s, Payload_list l, int i) {
 	Payload_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_Payload(s, p);
 }
 
-CapDescriptor_ptr new_CapDescriptor(struct capn_segment *s) {
+CAPN_SCHEMA_EXPORT CapDescriptor_ptr new_CapDescriptor(struct capn_segment *s) {
 	CapDescriptor_ptr p;
 	p.p = capn_new_struct(s, 8, 1);
 	return p;
 }
-CapDescriptor_list new_CapDescriptor_list(struct capn_segment *s, int len) {
+CAPN_SCHEMA_EXPORT CapDescriptor_list new_CapDescriptor_list(struct capn_segment *s, int len) {
 	CapDescriptor_list p;
 	p.p = capn_new_struct_list(s, len, 8, 1);
 	return p;
 }
-void read_CapDescriptor(struct CapDescriptor *s capnp_unused, CapDescriptor_ptr p) {
+CAPN_SCHEMA_EXPORT void read_CapDescriptor(struct CapDescriptor *s capnp_unused, CapDescriptor_ptr p) {
 	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->which = (enum CapDescriptor_which)(int) capn_read16(p.p, 0);
@@ -750,7 +750,7 @@ if (s->thirdPartyHosted.p.type == CAPN_FAR_POINTER && s->thirdPartyHosted.p.data
 	}
 	s->attachedFd = capn_read8(p.p, 2) ^ 255u;
 }
-void write_CapDescriptor(const struct CapDescriptor *s capnp_unused, CapDescriptor_ptr p) {
+CAPN_SCHEMA_EXPORT void write_CapDescriptor(const struct CapDescriptor *s capnp_unused, CapDescriptor_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write16(p.p, 0, s->which);
@@ -775,64 +775,64 @@ void write_CapDescriptor(const struct CapDescriptor *s capnp_unused, CapDescript
 	}
 	capn_write8(p.p, 2, s->attachedFd ^ 255u);
 }
-void get_CapDescriptor(struct CapDescriptor *s, CapDescriptor_list l, int i) {
+CAPN_SCHEMA_EXPORT void get_CapDescriptor(struct CapDescriptor *s, CapDescriptor_list l, int i) {
 	CapDescriptor_ptr p;
 	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_CapDescriptor(s, p);
 }
-void set_CapDescriptor(const struct CapDescriptor *s, CapDescriptor_list l, int i) {
+CAPN_SCHEMA_EXPORT void set_CapDescriptor(const struct CapDescriptor *s, CapDescriptor_list l, int i) {
 	CapDescriptor_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_CapDescriptor(s, p);
 }
 
-PromisedAnswer_ptr new_PromisedAnswer(struct capn_segment *s) {
+CAPN_SCHEMA_EXPORT PromisedAnswer_ptr new_PromisedAnswer(struct capn_segment *s) {
 	PromisedAnswer_ptr p;
 	p.p = capn_new_struct(s, 8, 1);
 	return p;
 }
-PromisedAnswer_list new_PromisedAnswer_list(struct capn_segment *s, int len) {
+CAPN_SCHEMA_EXPORT PromisedAnswer_list new_PromisedAnswer_list(struct capn_segment *s, int len) {
 	PromisedAnswer_list p;
 	p.p = capn_new_struct_list(s, len, 8, 1);
 	return p;
 }
-void read_PromisedAnswer(struct PromisedAnswer *s capnp_unused, PromisedAnswer_ptr p) {
+CAPN_SCHEMA_EXPORT void read_PromisedAnswer(struct PromisedAnswer *s capnp_unused, PromisedAnswer_ptr p) {
 	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->questionId = capn_read32(p.p, 0);
 	s->transform.p = capn_getp(p.p, 0, 0);
 if (s->transform.p.type == CAPN_FAR_POINTER && s->transform.p.data != NULL && *(const uint64_t*)s->transform.p.data == 0) s->transform.p.type = CAPN_NULL;
 }
-void write_PromisedAnswer(const struct PromisedAnswer *s capnp_unused, PromisedAnswer_ptr p) {
+CAPN_SCHEMA_EXPORT void write_PromisedAnswer(const struct PromisedAnswer *s capnp_unused, PromisedAnswer_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write32(p.p, 0, s->questionId);
 	capn_setp(p.p, 0, (s->transform.p.type != CAPN_NULL) ? s->transform.p : capn_null);
 }
-void get_PromisedAnswer(struct PromisedAnswer *s, PromisedAnswer_list l, int i) {
+CAPN_SCHEMA_EXPORT void get_PromisedAnswer(struct PromisedAnswer *s, PromisedAnswer_list l, int i) {
 	PromisedAnswer_ptr p;
 	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_PromisedAnswer(s, p);
 }
-void set_PromisedAnswer(const struct PromisedAnswer *s, PromisedAnswer_list l, int i) {
+CAPN_SCHEMA_EXPORT void set_PromisedAnswer(const struct PromisedAnswer *s, PromisedAnswer_list l, int i) {
 	PromisedAnswer_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_PromisedAnswer(s, p);
 }
 
-PromisedAnswer_Op_ptr new_PromisedAnswer_Op(struct capn_segment *s) {
+CAPN_SCHEMA_EXPORT PromisedAnswer_Op_ptr new_PromisedAnswer_Op(struct capn_segment *s) {
 	PromisedAnswer_Op_ptr p;
 	p.p = capn_new_struct(s, 8, 0);
 	return p;
 }
-PromisedAnswer_Op_list new_PromisedAnswer_Op_list(struct capn_segment *s, int len) {
+CAPN_SCHEMA_EXPORT PromisedAnswer_Op_list new_PromisedAnswer_Op_list(struct capn_segment *s, int len) {
 	PromisedAnswer_Op_list p;
 	p.p = capn_new_struct_list(s, len, 8, 0);
 	return p;
 }
-void read_PromisedAnswer_Op(struct PromisedAnswer_Op *s capnp_unused, PromisedAnswer_Op_ptr p) {
+CAPN_SCHEMA_EXPORT void read_PromisedAnswer_Op(struct PromisedAnswer_Op *s capnp_unused, PromisedAnswer_Op_ptr p) {
 	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->which = (enum PromisedAnswer_Op_which)(int) capn_read16(p.p, 0);
@@ -844,7 +844,7 @@ void read_PromisedAnswer_Op(struct PromisedAnswer_Op *s capnp_unused, PromisedAn
 		break;
 	}
 }
-void write_PromisedAnswer_Op(const struct PromisedAnswer_Op *s capnp_unused, PromisedAnswer_Op_ptr p) {
+CAPN_SCHEMA_EXPORT void write_PromisedAnswer_Op(const struct PromisedAnswer_Op *s capnp_unused, PromisedAnswer_Op_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_write16(p.p, 0, s->which);
@@ -856,64 +856,64 @@ void write_PromisedAnswer_Op(const struct PromisedAnswer_Op *s capnp_unused, Pro
 		break;
 	}
 }
-void get_PromisedAnswer_Op(struct PromisedAnswer_Op *s, PromisedAnswer_Op_list l, int i) {
+CAPN_SCHEMA_EXPORT void get_PromisedAnswer_Op(struct PromisedAnswer_Op *s, PromisedAnswer_Op_list l, int i) {
 	PromisedAnswer_Op_ptr p;
 	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_PromisedAnswer_Op(s, p);
 }
-void set_PromisedAnswer_Op(const struct PromisedAnswer_Op *s, PromisedAnswer_Op_list l, int i) {
+CAPN_SCHEMA_EXPORT void set_PromisedAnswer_Op(const struct PromisedAnswer_Op *s, PromisedAnswer_Op_list l, int i) {
 	PromisedAnswer_Op_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_PromisedAnswer_Op(s, p);
 }
 
-ThirdPartyCapDescriptor_ptr new_ThirdPartyCapDescriptor(struct capn_segment *s) {
+CAPN_SCHEMA_EXPORT ThirdPartyCapDescriptor_ptr new_ThirdPartyCapDescriptor(struct capn_segment *s) {
 	ThirdPartyCapDescriptor_ptr p;
 	p.p = capn_new_struct(s, 8, 1);
 	return p;
 }
-ThirdPartyCapDescriptor_list new_ThirdPartyCapDescriptor_list(struct capn_segment *s, int len) {
+CAPN_SCHEMA_EXPORT ThirdPartyCapDescriptor_list new_ThirdPartyCapDescriptor_list(struct capn_segment *s, int len) {
 	ThirdPartyCapDescriptor_list p;
 	p.p = capn_new_struct_list(s, len, 8, 1);
 	return p;
 }
-void read_ThirdPartyCapDescriptor(struct ThirdPartyCapDescriptor *s capnp_unused, ThirdPartyCapDescriptor_ptr p) {
+CAPN_SCHEMA_EXPORT void read_ThirdPartyCapDescriptor(struct ThirdPartyCapDescriptor *s capnp_unused, ThirdPartyCapDescriptor_ptr p) {
 	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->id = capn_getp(p.p, 0, 0);
 if (s->id.type == CAPN_FAR_POINTER && s->id.data != NULL && *(const uint64_t*)s->id.data == 0) s->id.type = CAPN_NULL;
 	s->vineId = capn_read32(p.p, 0);
 }
-void write_ThirdPartyCapDescriptor(const struct ThirdPartyCapDescriptor *s capnp_unused, ThirdPartyCapDescriptor_ptr p) {
+CAPN_SCHEMA_EXPORT void write_ThirdPartyCapDescriptor(const struct ThirdPartyCapDescriptor *s capnp_unused, ThirdPartyCapDescriptor_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_setp(p.p, 0, (s->id.type != CAPN_NULL) ? s->id : capn_null);
 	capn_write32(p.p, 0, s->vineId);
 }
-void get_ThirdPartyCapDescriptor(struct ThirdPartyCapDescriptor *s, ThirdPartyCapDescriptor_list l, int i) {
+CAPN_SCHEMA_EXPORT void get_ThirdPartyCapDescriptor(struct ThirdPartyCapDescriptor *s, ThirdPartyCapDescriptor_list l, int i) {
 	ThirdPartyCapDescriptor_ptr p;
 	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_ThirdPartyCapDescriptor(s, p);
 }
-void set_ThirdPartyCapDescriptor(const struct ThirdPartyCapDescriptor *s, ThirdPartyCapDescriptor_list l, int i) {
+CAPN_SCHEMA_EXPORT void set_ThirdPartyCapDescriptor(const struct ThirdPartyCapDescriptor *s, ThirdPartyCapDescriptor_list l, int i) {
 	ThirdPartyCapDescriptor_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_ThirdPartyCapDescriptor(s, p);
 }
 
-Exception_ptr new_Exception(struct capn_segment *s) {
+CAPN_SCHEMA_EXPORT Exception_ptr new_Exception(struct capn_segment *s) {
 	Exception_ptr p;
 	p.p = capn_new_struct(s, 8, 2);
 	return p;
 }
-Exception_list new_Exception_list(struct capn_segment *s, int len) {
+CAPN_SCHEMA_EXPORT Exception_list new_Exception_list(struct capn_segment *s, int len) {
 	Exception_list p;
 	p.p = capn_new_struct_list(s, len, 8, 2);
 	return p;
 }
-void read_Exception(struct Exception *s capnp_unused, Exception_ptr p) {
+CAPN_SCHEMA_EXPORT void read_Exception(struct Exception *s capnp_unused, Exception_ptr p) {
 	capn_resolve_struct(&p.p);
 	capnp_use(s);
 	s->reason = capn_get_text(p.p, 0, capn_val0);
@@ -922,7 +922,7 @@ void read_Exception(struct Exception *s capnp_unused, Exception_ptr p) {
 	s->obsoleteDurability = capn_read16(p.p, 2);
 	s->trace = capn_get_text(p.p, 1, capn_val0);
 }
-void write_Exception(const struct Exception *s capnp_unused, Exception_ptr p) {
+CAPN_SCHEMA_EXPORT void write_Exception(const struct Exception *s capnp_unused, Exception_ptr p) {
 	capn_resolve(&p.p);
 	capnp_use(s);
 	capn_set_text(p.p, 0, (s->reason.str != capn_val0.str) ? s->reason : capn_text_null);
@@ -931,13 +931,13 @@ void write_Exception(const struct Exception *s capnp_unused, Exception_ptr p) {
 	capn_write16(p.p, 2, s->obsoleteDurability);
 	capn_set_text(p.p, 1, (s->trace.str != capn_val0.str) ? s->trace : capn_text_null);
 }
-void get_Exception(struct Exception *s, Exception_list l, int i) {
+CAPN_SCHEMA_EXPORT void get_Exception(struct Exception *s, Exception_list l, int i) {
 	Exception_ptr p;
 	capn_resolve_struct_list(&l.p);
 	p.p = capn_getp(l.p, i, 0);
 	read_Exception(s, p);
 }
-void set_Exception(const struct Exception *s, Exception_list l, int i) {
+CAPN_SCHEMA_EXPORT void set_Exception(const struct Exception *s, Exception_list l, int i) {
 	Exception_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_Exception(s, p);

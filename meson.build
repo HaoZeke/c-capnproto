@@ -277,6 +277,15 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
       ],
       depends: [libcapnp_c],
     )
+    test(
+      'rpc-schema-exports',
+      export_sh,
+      args: [
+        export_tests / 'check-schema-export.sh',
+        meson.project_source_root(),
+      ],
+      timeout: 120,
+    )
   endif
 
   null_ptr_write_test = executable(

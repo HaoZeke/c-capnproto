@@ -103,6 +103,36 @@ struct UsesInherit {
   h @0 :Holder(Text);
 }
 
+struct BrandLeaf { x @0 :UInt32; }
+
+# capnp rejects List(T) when T is parameter 0 or 1 of its scope, so the
+# listed parameter is the third.
+struct Trio(A, B, T) {
+  items @0 :List(T);
+}
+
+struct UsesBrandLists {
+  leaves @0 :Trio(Text, Text, BrandLeaf);
+  texts @1 :Trio(Text, Text, Text);
+}
+
+# Each instantiation owns its groups. Grouped(Text) is first named
+# inside the unbound group.
+struct Grouped(T) {
+  g :group {
+    v @0 :T;
+    next @1 :Grouped(Text);
+    u :union {
+      none @2 :Void;
+      some @3 :T;
+    }
+  }
+}
+
+struct UsesGrouped {
+  d @0 :Grouped(Data);
+}
+
 struct UsesGenerics {
   ib @0 :Box(List(Int32));
   tb @1 :Box(Text);
