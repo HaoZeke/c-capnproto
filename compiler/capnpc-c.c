@@ -1946,6 +1946,56 @@ static void define_struct(struct node *n, const char *extattr, const char *extat
 
 static void emit_branded_body(struct node *n, Brand_ptr brand, const char *name);
 
+static void brand_fields(struct node *inst, int orig_len);
+
+/* define_group decodes into the group node it is given, so a brand
+ * types its own copy of each group and leaves the schema node alone. */
+static struct node *brand_group(struct node *g, const struct node *owner, int orig_len) {
+	struct node *c = calloc(1, sizeof *c);
+	int flen = capn_len(g->n._struct.fields);
+	if (c == NULL) {
+		fprintf(stderr, "out of memory branding a group\n");
+		exit(2);
+	}
+	*c = *g;
+	c->name = (struct str) STR_INIT;
+	str_add(&c->name, owner->name.str, owner->name.len);
+	if (g->name.len >= orig_len)
+		str_add(&c->name, g->name.str + orig_len, g->name.len - orig_len);
+	c->fields = calloc(flen > 0 ? (size_t) flen : 1, sizeof c->fields[0]);
+	if (c->fields == NULL) {
+		fprintf(stderr, "out of memory branding a group\n");
+		exit(2);
+	}
+	brand_fields(c, g->name.len);
+	return c;
+}
+
+/* orig_len is the length of the unbranded name of inst. */
+static void brand_fields(struct node *inst, int orig_len) {
+	int j, flen = capn_len(inst->n._struct.fields);
+	for (j = 0; j < flen; j++)
+		decode_field(inst->fields, inst->n._struct.fields, j);
+	for (j = 0; j < flen; j++) {
+		if (inst->fields[j].group != NULL)
+			inst->fields[j].group = brand_group(inst->fields[j].group, inst, orig_len);
+	}
+}
+
+static void brand_fields_release(struct node *inst) {
+	int j, flen = capn_len(inst->n._struct.fields);
+	for (j = 0; j < flen; j++) {
+		struct node *g = inst->fields[j].group;
+		str_release(&inst->fields[j].v.tname_buf);
+		if (g != NULL) {
+			brand_fields_release(g);
+			str_release(&g->name);
+			free(g->fields);
+			free(g);
+		}
+	}
+}
+
 static void emit_branded(struct node *n, Brand_ptr brand, const char *name) {
 	struct str up_hdr, up_src, hdr, src;
 	int outer;
@@ -1999,7 +2049,7 @@ static void emit_branded(struct node *n, Brand_ptr brand, const char *name) {
 }
 
 static void emit_branded_body(struct node *n, Brand_ptr brand, const char *name) {
-	int saved, flen, j;
+	int saved, flen;
 	struct node inst;
 	struct str nm = STR_INIT;
 
@@ -2024,8 +2074,7 @@ static void emit_branded_body(struct node *n, Brand_ptr brand, const char *name)
 		g_nsubst = saved;
 		return;
 	}
-	for (j = 0; j < flen; j++)
-		decode_field(inst.fields, n->n._struct.fields, j);
+	brand_fields(&inst, n->name.len);
 	define_struct(&inst, "", "");
 	str_addf(&HDR, "%s_ptr new_%s(struct capn_segment*);\n", name, name);
 	str_addf(&HDR, "%s_list new_%s_list(struct capn_segment*, int len);\n", name, name);
@@ -2041,8 +2090,7 @@ static void emit_branded_body(struct node *n, Brand_ptr brand, const char *name)
 		mk_struct_list_free(&g_ctx, &inst);
 		mk_struct_ptr_free(&g_ctx, &inst);
 	}
-	for (j = 0; j < flen; j++)
-		str_release(&inst.fields[j].v.tname_buf);
+	brand_fields_release(&inst);
 	free(inst.fields);
 	str_release(&nm);
 	g_nsubst = saved;

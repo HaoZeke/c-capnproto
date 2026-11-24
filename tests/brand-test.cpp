@@ -185,3 +185,62 @@ TEST(Brand, ListOfABoundStructIsAStructList) {
   EXPECT_EQ(9u, got.x);
   capn_free(&msg);
 }
+
+/* Grouped(Text) is emitted from inside the unbound Grouped.g. Its
+ * binding must not retype the unbound group, whose v stays a pointer. */
+TEST(Brand, GroupsAreTypedPerInstantiation) {
+  struct capn ctx;
+  capn_init_malloc(&ctx);
+  struct capn_segment *seg = capn_root(&ctx).seg;
+
+  BrandLeaf_ptr lp = new_BrandLeaf(seg);
+  struct BrandLeaf leaf;
+  leaf.x = 5;
+  write_BrandLeaf(&leaf, lp);
+
+  struct Grouped any;
+  memset(&any, 0, sizeof any);
+  any.g.v = lp.p;
+  any.g.u_which = Grouped_g_u_some;
+  any.g.u.some = lp.p;
+  Grouped_ptr ap = new_Grouped(seg);
+  write_Grouped(&any, ap);
+  struct Grouped any_got;
+  memset(&any_got, 0, sizeof any_got);
+  read_Grouped(&any_got, ap);
+  struct BrandLeaf from_any;
+  BrandLeaf_ptr fp;
+  fp.p = any_got.g.v;
+  read_BrandLeaf(&from_any, fp);
+  EXPECT_EQ(5u, from_any.x);
+  ASSERT_EQ(Grouped_g_u_some, any_got.g.u_which);
+
+  struct Grouped_Text text;
+  memset(&text, 0, sizeof text);
+  text.g.v.str = "v";
+  text.g.v.len = 1;
+  text.g.u_which = Grouped_Text_g_u_some;
+  text.g.u.some.str = "s";
+  text.g.u.some.len = 1;
+  Grouped_Text_ptr tp = new_Grouped_Text(seg);
+  write_Grouped_Text(&text, tp);
+  struct Grouped_Text text_got;
+  memset(&text_got, 0, sizeof text_got);
+  read_Grouped_Text(&text_got, tp);
+  EXPECT_STREQ("v", text_got.g.v.str);
+  ASSERT_EQ(Grouped_Text_g_u_some, text_got.g.u_which);
+  EXPECT_STREQ("s", text_got.g.u.some.str);
+
+  struct Grouped_Data data;
+  memset(&data, 0, sizeof data);
+  data.g.next = tp;
+  Grouped_Data_ptr dp = new_Grouped_Data(seg);
+  write_Grouped_Data(&data, dp);
+  struct Grouped_Data data_got;
+  memset(&data_got, 0, sizeof data_got);
+  read_Grouped_Data(&data_got, dp);
+  read_Grouped_Text(&text_got, data_got.g.next);
+  EXPECT_STREQ("v", text_got.g.v.str);
+
+  capn_free(&ctx);
+}

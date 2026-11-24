@@ -116,6 +116,23 @@ struct UsesBrandLists {
   texts @1 :Trio(Text, Text, Text);
 }
 
+# Each instantiation owns its groups. Grouped(Text) is first named
+# inside the unbound group.
+struct Grouped(T) {
+  g :group {
+    v @0 :T;
+    next @1 :Grouped(Text);
+    u :union {
+      none @2 :Void;
+      some @3 :T;
+    }
+  }
+}
+
+struct UsesGrouped {
+  d @0 :Grouped(Data);
+}
+
 struct UsesGenerics {
   ib @0 :Box(List(Int32));
   tb @1 :Box(Text);
