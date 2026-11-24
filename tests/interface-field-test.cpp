@@ -40,6 +40,31 @@ TEST(InterfaceField, GetSetCapability) {
   capn_free(&c);
 }
 
+TEST(InterfaceField, StructPointerIsASchemaMismatch) {
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *cs = capn_root(&c).seg;
+  Holder_ptr h = new_Holder(cs);
+  capn_ptr body = capn_new_struct(cs, 8, 0);
+  ASSERT_EQ(CAPN_STRUCT, body.type);
+  capn_write32(body, 0, 1);
+  ASSERT_EQ(0, capn_setp(h.p, 0, body));
+
+  Echo_ptr missing = Holder_get_cap(h);
+  EXPECT_EQ(CAPN_NULL, missing.p.type);
+  EXPECT_EQ(0, capn_ok(&c));
+
+  capn_clear_err(&c);
+  Echo_ptr e = new_Echo(cs);
+  e.p.cap_idx = 4;
+  Holder_set_cap(h, e);
+  Echo_ptr got = Holder_get_cap(h);
+  EXPECT_EQ(CAPN_INTERFACE, got.p.type);
+  EXPECT_EQ(4u, got.p.cap_idx);
+  EXPECT_EQ(1, capn_ok(&c));
+  capn_free(&c);
+}
+
 TEST(InterfaceField, WriteReadRoundTrip) {
   uint8_t buf[4096];
   int64_t sz = 0;

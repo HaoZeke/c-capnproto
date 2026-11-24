@@ -280,6 +280,9 @@ CAPN_EXPORT void capn_resolve(capn_ptr *p);
  * other pointer becomes CAPN_NULL and sets decode_err, the C++
  * "Schema mismatch" error. */
 CAPN_EXPORT void capn_resolve_struct(capn_ptr *p);
+/* C++ readCapabilityPointer accepts null and a capability pointer.
+ * Any other kind is a schema mismatch. */
+CAPN_EXPORT void capn_resolve_interface(capn_ptr *p);
 CAPN_EXPORT void capn_resolve_struct_list(capn_ptr *p);
 /* List(T) for any other T, whose schema.capnp ElementSize is `elem`.
  * C++ reads a list whose elements have at least the data bits and

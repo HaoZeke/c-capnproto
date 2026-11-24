@@ -1516,6 +1516,7 @@ TestInterface_ptr TestAllTypes_get_interfaceField(TestAllTypes_ptr p)
 	capn_resolve_struct(&p.p);
 	TestInterface_ptr interfaceField;
 	interfaceField.p = capn_getp(p.p, 3, 1);
+	capn_resolve_interface(&interfaceField.p);
 	return interfaceField;
 }
 
@@ -2358,6 +2359,7 @@ TestInterface_ptr TestDefaults_get_interfaceField(TestDefaults_ptr p)
 	capn_resolve_struct(&p.p);
 	TestInterface_ptr interfaceField;
 	interfaceField.p = capn_getp(p.p, 3, 1);
+	capn_resolve_interface(&interfaceField.p);
 	return interfaceField;
 }
 

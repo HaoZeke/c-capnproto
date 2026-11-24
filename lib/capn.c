@@ -777,6 +777,14 @@ void capn_resolve_struct(capn_ptr *p) {
 		schema_mismatch(p);
 }
 
+/* layout.c++ WireHelpers::readCapabilityPointer. A null word is a
+ * null capability. A struct or list in that slot is a schema mismatch. */
+void capn_resolve_interface(capn_ptr *p) {
+	capn_resolve(p);
+	if (p->type != CAPN_NULL && p->type != CAPN_INTERFACE)
+		schema_mismatch(p);
+}
+
 void capn_resolve_struct_list(capn_ptr *p) {
 	capn_resolve(p);
 	switch (p->type) {

@@ -1229,6 +1229,8 @@ static void get_member(struct str *func, struct field *f, const char *ptr, const
 		 * throws on a pointer of the wrong kind. */
 		if (resolve && f->v.t.which == Type__struct)
 			str_addf(func, "%scapn_resolve_struct(&%s);\n", tab, pvar);
+		if (resolve && f->v.t.which == Type__interface)
+			str_addf(func, "%scapn_resolve_interface(&%s);\n", tab, pvar);
 		if (resolve && f->v.t.which == Type__list) {
 			const char *elem = list_elem_size(f->v.t._list.elementType);
 			if (elem)
