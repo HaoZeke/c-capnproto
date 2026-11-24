@@ -71,6 +71,8 @@ static void relay_on_return(struct capn_rpc_conn *c, uint32_t local_qid,
 static int handle_resolve(struct capn_rpc_conn *c, Resolve_ptr rp);
 static void question_clear(struct capn_rpc_question *q);
 static void free_cap_paths(struct capn_rpc_pending_cap *caps, int n);
+static void release_export_ref(struct capn_rpc_conn *c, uint32_t id);
+static void stash_drop(struct capn_rpc_conn *c, uint32_t qid, int release);
 
 /* What a call or disembargo target names, after walking a promised
  * answer into the cap table of the Return that carried it. */
@@ -117,6 +119,14 @@ static int relay_add(struct capn_rpc_conn *c, uint32_t local_qid, uint32_t remot
 static struct capn_rpc_import *import_slot(struct capn_rpc_conn *c, uint32_t id);
 static int send_disembargo(struct capn_rpc_conn *c, uint32_t promise_id,
                            uint32_t embargo_id);
+
+/* One finished question's param exports, until its Return arrives. */
+struct capn_rpc_param_stash {
+	int used;
+	uint32_t question_id;
+	uint32_t *ids;
+	int n;
+};
 
 void capn_rpc_init(struct capn_rpc_conn *c, capn_rpc_send_fn send,
                    void *send_ctx)
@@ -173,6 +183,13 @@ void capn_rpc_free(struct capn_rpc_conn *c)
 	}
 	for (i = 0; i < c->questions_cap; i++)
 		question_clear(&c->questions[i]);
+	if (c->param_stash != NULL) {
+		for (i = 0; i < c->param_stash_cap; i++)
+			free(c->param_stash[i].ids);
+		free(c->param_stash);
+		c->param_stash = NULL;
+		c->param_stash_cap = 0;
+	}
 	release_unsent_caps(c, c->pending_caps, c->npending);
 	for (i = 0; i < CAPN_RPC_MAX_PENDING_CALLS; i++) {
 		free_cap_paths(c->pending_calls[i].caps, c->pending_calls[i].ncaps);
@@ -546,6 +563,70 @@ static void release_export_ref(struct capn_rpc_conn *c, uint32_t id)
 		memset(&c->exports[id], 0, sizeof c->exports[id]);
 	else
 		c->exports[id].refcount--;
+}
+
+/* rpc.c++ keeps Question::paramExports until Return, including when
+ * Finish was already sent. `release` is Return.releaseParamCaps. */
+static void stash_drop(struct capn_rpc_conn *c, uint32_t qid, int release)
+{
+	int i;
+
+	if (c->param_stash == NULL)
+		return;
+	for (i = 0; i < c->param_stash_cap; i++) {
+		struct capn_rpc_param_stash *s = &c->param_stash[i];
+		int k;
+
+		if (!s->used || s->question_id != qid)
+			continue;
+		if (release) {
+			for (k = 0; k < s->n; k++)
+				release_export_ref(c, s->ids[k]);
+		}
+		free(s->ids);
+		memset(s, 0, sizeof *s);
+	}
+}
+
+static void stash_save(struct capn_rpc_conn *c, struct capn_rpc_question *q)
+{
+	struct capn_rpc_param_stash *s;
+	int i, slot;
+
+	if (q->nparam_exports <= 0 || q->param_exports == NULL)
+		return;
+	s = NULL;
+	slot = -1;
+	for (i = 0; i < c->param_stash_cap; i++) {
+		if (c->param_stash[i].used &&
+		    c->param_stash[i].question_id == q->question_id) {
+			s = &c->param_stash[i];
+			break;
+		}
+		if (slot < 0 && !c->param_stash[i].used)
+			slot = i;
+	}
+	if (s == NULL) {
+		if (slot < 0) {
+			int old = c->param_stash_cap;
+			void *grown = table_grow(c->param_stash, &c->param_stash_cap,
+			                         sizeof *c->param_stash,
+			                         CAPN_RPC_MAX_TABLE_CAPACITY);
+			if (grown == NULL)
+				return;
+			c->param_stash = grown;
+			slot = old;
+		}
+		s = &c->param_stash[slot];
+	} else {
+		free(s->ids);
+	}
+	s->used = 1;
+	s->question_id = q->question_id;
+	s->ids = q->param_exports;
+	s->n = q->nparam_exports;
+	q->param_exports = NULL;
+	q->nparam_exports = 0;
 }
 
 static void release_unsent_caps(struct capn_rpc_conn *c,
@@ -1970,6 +2051,8 @@ static struct capn_rpc_question *question_claim(struct capn_rpc_conn *c,
 			question_clear(&c->questions[i]);
 			c->questions[i].used = 1;
 			c->questions[i].question_id = c->next_question_id++;
+			/* A reused id can no longer name the finished call. */
+			stash_drop(c, c->questions[i].question_id, 0);
 			*qid_out = c->questions[i].question_id;
 			return &c->questions[i];
 		}
@@ -1985,6 +2068,7 @@ static struct capn_rpc_question *question_claim(struct capn_rpc_conn *c,
 	}
 	c->questions[i].used = 1;
 	c->questions[i].question_id = c->next_question_id++;
+	stash_drop(c, c->questions[i].question_id, 0);
 	*qid_out = c->questions[i].question_id;
 	return &c->questions[i];
 }
@@ -4525,6 +4609,10 @@ int capn_rpc_send_finish(struct capn_rpc_conn *c, uint32_t question_id)
 
 		awaiting = !q->answered && !q->tail_wait;
 		release_unread_results(c, q);
+		/* Finish before Return still owes the peer a release of the
+		 * params' caps. rpc.c++ ~QuestionRef leaves the question up. */
+		if (!q->answered)
+			stash_save(c, q);
 		question_clear(q);
 		if (skip)
 			return 0;
@@ -4876,7 +4964,13 @@ static void handle_return(struct capn_rpc_conn *c, Return_ptr rp,
 
 	read_Return(&r, rp);
 	q = question_find(c, r.answerId);
-	if (q == NULL || q->answered)
+	if (q == NULL) {
+		/* Finish already dropped the question. The exports it sent
+		 * are still here, and releaseParamCaps drops them. */
+		stash_drop(c, r.answerId, r.releaseParamCaps);
+		return;
+	}
+	if (q->answered)
 		return;
 	/* rpc.c++ handleReturn: a level 0 peer asks the caller to drop the
 	 * params' caps, and a Return without caps needs no Finish. */

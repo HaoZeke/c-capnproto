@@ -372,6 +372,8 @@ struct capn_rpc_pending_call {
 	int nparam_imports;
 };
 
+struct capn_rpc_param_stash;
+
 struct capn_rpc_conn {
 	struct capn_rpc_export *exports;
 	int exports_cap;
@@ -424,6 +426,10 @@ struct capn_rpc_conn {
 	struct capn_rpc_relay relays[CAPN_RPC_MAX_RELAYS];
 	uint32_t next_embargo;
 	struct capn_rpc_echo echoes[CAPN_RPC_MAX_ECHOES];
+	/* Exports a finished Call named, kept until its Return.
+	 * rpc.c++ Question::paramExports. */
+	struct capn_rpc_param_stash *param_stash;
+	int param_stash_cap;
 };
 
 /* Zero the tables and install the transmit callback. */

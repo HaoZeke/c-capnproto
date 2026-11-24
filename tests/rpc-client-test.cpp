@@ -3171,6 +3171,21 @@ TEST_F(RpcClient, UnimplementedResolveToItselfKeepsThePromise)
 	EXPECT_EQ(before, export_refcount(&client, &promise_obj));
 }
 
+TEST_F(RpcClient, EarlyFinishThenReturnReleasesParamExports)
+{
+	g_callback_hits = 0;
+	uint32_t q = capn_rpc_send_call(&client, 0, 0x1234, 1, 0, 1,
+	                                fill_with_callback, &client);
+	ASSERT_NE((uint32_t)-1, q);
+	EXPECT_EQ(1, export_refcount(&client, &g_callback_hits));
+	EXPECT_EQ(0, capn_rpc_send_finish(&client, q));
+	EXPECT_EQ(1, export_refcount(&client, &g_callback_hits));
+	EXPECT_FALSE(capn_rpc_is_answered(&client, q));
+	std::vector<uint8_t> ret = return_flags(q, 1, 0);
+	EXPECT_EQ(0, capn_rpc_handle(&client, ret.data(), ret.size()));
+	EXPECT_EQ(0, export_refcount(&client, &g_callback_hits));
+}
+
 TEST_F(RpcClient, ReturnReleaseParamCapsDropsTheParamsExports)
 {
 	for (int release = 0; release < 2; release++) {
