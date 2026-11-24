@@ -906,6 +906,159 @@ TEST(Interface, CapabilityCallFrameDoesNotHang) {
   EXPECT_EQ(0, memcmp(frame, disk, sizeof frame));
 }
 
+TEST(DynText, ListFieldRejectsAStructPointer) {
+  struct capn_dyn_type u32t;
+  struct capn_dyn_field fields[1];
+  struct capn_dyn_struct box;
+  memset(&u32t, 0, sizeof u32t);
+  memset(fields, 0, sizeof fields);
+  memset(&box, 0, sizeof box);
+  u32t.kind = CAPN_DYN_UINT32;
+  fields[0].name = "nums";
+  fields[0].type.kind = CAPN_DYN_LIST;
+  fields[0].type.elem = &u32t;
+  fields[0].offset = 0;
+  fields[0].discriminant = CAPN_DYN_NO_DISCRIMINANT;
+  box.name = "Box";
+  box.pointers = 1;
+  box.nfields = 1;
+  box.fields = fields;
+
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *seg = capn_root(&c).seg;
+  capn_ptr st = capn_new_struct(seg, 0, 1);
+  capn_ptr inner = capn_new_struct(seg, 8, 0);
+  ASSERT_EQ(CAPN_STRUCT, st.type);
+  ASSERT_EQ(CAPN_STRUCT, inner.type);
+  capn_write32(inner, 0, 7);
+  ASSERT_EQ(0, capn_setp(st, 0, inner));
+
+  char *text = capn_dyn_to_text(&box, st);
+  char *json = capn_dyn_to_json(&box, st, 0);
+  ASSERT_NE(nullptr, text);
+  ASSERT_NE(nullptr, json);
+  EXPECT_NE(nullptr, strstr(text, "[]"));
+  EXPECT_NE(nullptr, strstr(json, "[]"));
+  EXPECT_EQ(0, capn_ok(&c));
+  free(text);
+  free(json);
+
+  capn_clear_err(&c);
+  capn_list32 nums = capn_new_list32(seg, 1);
+  ASSERT_EQ(CAPN_LIST, nums.p.type);
+  capn_set32(nums, 0, 9);
+  ASSERT_EQ(0, capn_setp(st, 0, nums.p));
+  text = capn_dyn_to_text(&box, st);
+  json = capn_dyn_to_json(&box, st, 0);
+  ASSERT_NE(nullptr, text);
+  ASSERT_NE(nullptr, json);
+  EXPECT_EQ(1, capn_ok(&c));
+  free(text);
+  free(json);
+  capn_free(&c);
+}
+
+/* Box(Data) whose slot holds List(UInt32). The parameter check has to
+ * clear the pointer before it is copied into the Data view, or the
+ * printers emit those list bytes. C++ 1.4.0 takes the empty default. */
+TEST(DynText, BoxDataRejectsAUint32List) {
+  struct capn_dyn_type data_ty, param, box_ty;
+  struct capn_dyn_field box_fields[1];
+  struct capn_dyn_field hold_fields[1];
+  struct capn_dyn_struct box, hold;
+  struct capn_dyn_scope scope;
+  struct capn_dyn_brand brand;
+  const uint64_t scope_id = 0xB0ull;
+
+  memset(&data_ty, 0, sizeof data_ty);
+  memset(&param, 0, sizeof param);
+  memset(&box_ty, 0, sizeof box_ty);
+  memset(box_fields, 0, sizeof box_fields);
+  memset(hold_fields, 0, sizeof hold_fields);
+  memset(&box, 0, sizeof box);
+  memset(&hold, 0, sizeof hold);
+  memset(&scope, 0, sizeof scope);
+  memset(&brand, 0, sizeof brand);
+
+  data_ty.kind = CAPN_DYN_DATA;
+  param.kind = CAPN_DYN_PARAM;
+  param.scope_id = scope_id;
+  param.index = 0;
+
+  box_fields[0].name = "val";
+  box_fields[0].type = param;
+  box_fields[0].offset = 0;
+  box_fields[0].discriminant = CAPN_DYN_NO_DISCRIMINANT;
+  box.name = "Box";
+  box.pointers = 1;
+  box.nfields = 1;
+  box.fields = box_fields;
+
+  scope.scope_id = scope_id;
+  scope.inherit = 0;
+  scope.nparams = 1;
+  scope.params = &data_ty;
+  brand.nscopes = 1;
+  brand.scopes = &scope;
+
+  box_ty.kind = CAPN_DYN_STRUCT;
+  box_ty.st = &box;
+  box_ty.brand = &brand;
+
+  hold_fields[0].name = "box";
+  hold_fields[0].type = box_ty;
+  hold_fields[0].offset = 0;
+  hold_fields[0].discriminant = CAPN_DYN_NO_DISCRIMINANT;
+  hold.name = "Holder";
+  hold.pointers = 1;
+  hold.nfields = 1;
+  hold.fields = hold_fields;
+
+  struct capn c;
+  capn_init_malloc(&c);
+  struct capn_segment *seg = capn_root(&c).seg;
+  capn_ptr st = capn_new_struct(seg, 0, 1);
+  capn_ptr inner = capn_new_struct(seg, 0, 1);
+  capn_list32 nums = capn_new_list32(seg, 2);
+  ASSERT_EQ(CAPN_STRUCT, st.type);
+  ASSERT_EQ(CAPN_STRUCT, inner.type);
+  ASSERT_EQ(CAPN_LIST, nums.p.type);
+  ASSERT_EQ(4u, nums.p.datasz);
+  capn_set32(nums, 0, 0x01020304u);
+  capn_set32(nums, 1, 0x05060708u);
+  ASSERT_EQ(0, capn_setp(inner, 0, nums.p));
+  ASSERT_EQ(0, capn_setp(st, 0, inner));
+
+  char *text = capn_dyn_to_text(&hold, st);
+  char *json = capn_dyn_to_json(&hold, st, 0);
+  ASSERT_NE(nullptr, text);
+  ASSERT_NE(nullptr, json);
+  EXPECT_STREQ("(box = (val = \"\"))", text);
+  EXPECT_STREQ("{\"box\": {\"val\": []}}", json);
+  EXPECT_EQ(0, capn_ok(&c));
+  free(text);
+  free(json);
+
+  capn_clear_err(&c);
+  capn_list8 bytes = capn_new_list8(seg, 2);
+  ASSERT_EQ(CAPN_LIST, bytes.p.type);
+  ASSERT_EQ(1u, bytes.p.datasz);
+  capn_set8(bytes, 0, 'h');
+  capn_set8(bytes, 1, 'i');
+  ASSERT_EQ(0, capn_setp(inner, 0, bytes.p));
+  text = capn_dyn_to_text(&hold, st);
+  json = capn_dyn_to_json(&hold, st, 0);
+  ASSERT_NE(nullptr, text);
+  ASSERT_NE(nullptr, json);
+  EXPECT_STREQ("(box = (val = \"hi\"))", text);
+  EXPECT_STREQ("{\"box\": {\"val\": [104, 105]}}", json);
+  EXPECT_EQ(1, capn_ok(&c));
+  free(text);
+  free(json);
+  capn_free(&c);
+}
+
 TEST(DynText, CapabilityListDoesNotOom) {
   uint8_t msg[16] = {
     0, 0, 0, 0, 1, 0, 0, 0,

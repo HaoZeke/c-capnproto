@@ -99,11 +99,82 @@ static capn_ptr wire_ptr(capn_ptr st, const struct capn_dyn_field *f)
 	return capn_getp(st, (int) f->offset, 1);
 }
 
+/* Element size for capn_resolve_list. A struct element is -1: C++ reads
+ * List(Struct) with readListPointer(INLINE_COMPOSITE), which is
+ * capn_resolve_struct_list here. */
+static int dyn_list_elem(const struct capn_dyn_type *elem)
+{
+	if (elem == NULL)
+		return CAPN_ELEM_POINTER;
+	switch (elem->kind) {
+	case CAPN_DYN_VOID:
+		return CAPN_ELEM_VOID;
+	case CAPN_DYN_BOOL:
+		return CAPN_ELEM_BIT;
+	case CAPN_DYN_INT8:
+	case CAPN_DYN_UINT8:
+		return CAPN_ELEM_BYTE;
+	case CAPN_DYN_INT16:
+	case CAPN_DYN_UINT16:
+	case CAPN_DYN_ENUM:
+		return CAPN_ELEM_2_BYTES;
+	case CAPN_DYN_INT32:
+	case CAPN_DYN_UINT32:
+	case CAPN_DYN_FLOAT32:
+		return CAPN_ELEM_4_BYTES;
+	case CAPN_DYN_INT64:
+	case CAPN_DYN_UINT64:
+	case CAPN_DYN_FLOAT64:
+		return CAPN_ELEM_8_BYTES;
+	case CAPN_DYN_STRUCT:
+		return -1;
+	default:
+		return CAPN_ELEM_POINTER;
+	}
+}
+
+/* layout.c++ readStructPointer / readListPointer / readCapabilityPointer.
+ * A pointer of the wrong kind sets decode_err and becomes null. */
+static void check_dyn_ptr(capn_ptr *p, const struct capn_dyn_type *t)
+{
+	int elem;
+
+	if (p == NULL || t == NULL || p->type == CAPN_NULL)
+		return;
+	switch (t->kind) {
+	case CAPN_DYN_STRUCT:
+		capn_resolve_struct(p);
+		break;
+	case CAPN_DYN_INTERFACE:
+		capn_resolve_interface(p);
+		break;
+	case CAPN_DYN_LIST:
+		elem = dyn_list_elem(t->elem);
+		if (elem < 0)
+			capn_resolve_struct_list(p);
+		else
+			capn_resolve_list(p, elem);
+		break;
+	case CAPN_DYN_TEXT:
+	case CAPN_DYN_DATA:
+		if (p->type != CAPN_LIST || p->datasz != 1) {
+			if (p->seg && p->seg->capn)
+				p->seg->capn->decode_err = 1;
+			memset(p, 0, sizeof *p);
+		}
+		break;
+	default:
+		break;
+	}
+}
+
 capn_ptr capn_dyn_get_ptr(capn_ptr st, const struct capn_dyn_field *f)
 {
 	capn_ptr p = wire_ptr(st, f);
 	if (p.type == CAPN_NULL && f->default_ptr != NULL)
 		return *f->default_ptr;
+	if (f->type.kind != CAPN_DYN_PARAM)
+		check_dyn_ptr(&p, &f->type);
 	return p;
 }
 
@@ -379,21 +450,33 @@ static void get_field_value(capn_ptr st, const struct capn_dyn_field *f,
 	case CAPN_DYN_TEXT:
 		v->text = capn_dyn_get_text(st, f);
 		v->p = capn_dyn_get_ptr(st, f);
+		if (f->type.kind == CAPN_DYN_PARAM)
+			check_dyn_ptr(&v->p, rt);
 		break;
 	case CAPN_DYN_DATA:
+		/* A parameter is checked only after the brand resolves it.
+		 * Copy into v->data afterwards: a rejected pointer is null,
+		 * and the text and JSON printers read v->data. */
 		v->p = capn_dyn_get_ptr(st, f);
+		if (f->type.kind == CAPN_DYN_PARAM)
+			check_dyn_ptr(&v->p, rt);
 		v->data.p = v->p;
 		break;
 	case CAPN_DYN_STRUCT:
 		if (f->is_group)
 			v->p = st;
-		else
+		else {
 			v->p = capn_dyn_get_ptr(st, f);
+			if (f->type.kind == CAPN_DYN_PARAM)
+				check_dyn_ptr(&v->p, rt);
+		}
 		break;
 	default:
-		if (is_pointer_kind(rt->kind))
+		if (is_pointer_kind(rt->kind)) {
 			v->p = capn_dyn_get_ptr(st, f);
-		else
+			if (f->type.kind == CAPN_DYN_PARAM)
+				check_dyn_ptr(&v->p, rt);
+		} else
 			v->bits = capn_dyn_get_bits(st, f);
 		break;
 	}
