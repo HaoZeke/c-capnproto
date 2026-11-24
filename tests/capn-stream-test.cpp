@@ -102,6 +102,33 @@ TEST(Stream, FlatBufferTableMustFit) {
   EXPECT_NE(0, capn_init_mem(&ctx, wrap.data(), wrap.size(), 0));
 }
 
+TEST(Stream, EmptyUnpackedStreamIsPrematureEof) {
+  /* kj::InputStream::read requires the framing word. Zero bytes is
+   * "Premature EOF". A flat buffer of zero bytes is an empty message. */
+  struct capn ctx;
+  FILE *f = tmpfile();
+  ASSERT_NE(nullptr, f);
+  EXPECT_NE(0, capn_init_fp(&ctx, f, 0));
+  EXPECT_EQ(0, capn_ok(&ctx));
+  EXPECT_EQ(0, capn_is_canonical(&ctx));
+  EXPECT_EQ(0, capn_ok(&ctx));
+  fclose(f);
+
+  static const uint8_t none = 0;
+  fd_buf = &none;
+  fd_len = 0;
+  EXPECT_NE(0, capn_init_fd(&ctx, read_buf, 0, 0));
+  EXPECT_EQ(0, capn_ok(&ctx));
+  EXPECT_EQ(0, capn_is_canonical(&ctx));
+  EXPECT_EQ(0, capn_ok(&ctx));
+
+  ASSERT_EQ(0, capn_init_mem(&ctx, NULL, 0, 0));
+  EXPECT_EQ(1, capn_ok(&ctx));
+  EXPECT_EQ(0, capn_is_canonical(&ctx));
+  EXPECT_EQ(1, capn_ok(&ctx));
+  capn_free(&ctx);
+}
+
 TEST(Stream, FileWithZeroWordSegmentIsAMessage) {
   /* C++ 1.4.0 `InputStreamMessageReader` reads a frame whose
    * segments hold no words. `capn_init_fd` does too. */

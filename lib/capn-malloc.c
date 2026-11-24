@@ -393,6 +393,10 @@ err:
 		free(hdr);
 	memset(c, 0, sizeof(*c));
 	free(s);
+	/* kj::InputStream::read throws "Premature EOF" when a stream
+	 * ends before the framing word. A flat buffer is not a stream. */
+	if (f || read_fd)
+		c->decode_err = 1;
 	return -1;
 }
 
