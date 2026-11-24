@@ -103,6 +103,19 @@ struct UsesInherit {
   h @0 :Holder(Text);
 }
 
+struct BrandLeaf { x @0 :UInt32; }
+
+# capnp rejects List(T) when T is parameter 0 or 1 of its scope, so the
+# listed parameter is the third.
+struct Trio(A, B, T) {
+  items @0 :List(T);
+}
+
+struct UsesBrandLists {
+  leaves @0 :Trio(Text, Text, BrandLeaf);
+  texts @1 :Trio(Text, Text, Text);
+}
+
 struct UsesGenerics {
   ib @0 :Box(List(Int32));
   tb @1 :Box(Text);

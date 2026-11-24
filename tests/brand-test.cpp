@@ -4,8 +4,7 @@
  * stays a raw pointer. A brand becomes its own struct.
  */
 
-#include <gtest/gtest.h>
-#include <cstring>
+#include "capnp-cli.h"
 
 extern "C" {
 #include "reflect.capnp.h"
@@ -123,4 +122,66 @@ TEST(Brand, InheritUsesTheEnclosingParameter) {
   EXPECT_STREQ("yes", from_rebind.value.str);
 
   capn_free(&ctx);
+}
+
+/* Trio(Text, Text, BrandLeaf).items is List(BrandLeaf), a struct list on
+ * the wire, as C++ List<T> is. */
+TEST(Brand, ListOfABoundStructIsAStructList) {
+  if (!capnp_present()) {
+    GTEST_SKIP() << "capnp CLI not found";
+  }
+  const std::string schema = join_path(source_root(), "tests/reflect.capnp");
+  const char *want = "(leaves = (items = [(x = 7), (x = 9)]))";
+
+  struct capn ctx;
+  capn_init_malloc(&ctx);
+  capn_ptr root = capn_root(&ctx);
+  struct capn_segment *seg = root.seg;
+  struct Trio_Text_Text_BrandLeaf trio;
+  memset(&trio, 0, sizeof trio);
+  trio.items = new_BrandLeaf_list(seg, 2);
+  struct BrandLeaf leaf;
+  leaf.x = 7;
+  set_BrandLeaf(&leaf, trio.items, 0);
+  leaf.x = 9;
+  set_BrandLeaf(&leaf, trio.items, 1);
+  Trio_Text_Text_BrandLeaf_ptr tp = new_Trio_Text_Text_BrandLeaf(seg);
+  write_Trio_Text_Text_BrandLeaf(&trio, tp);
+  struct UsesBrandLists uses;
+  memset(&uses, 0, sizeof uses);
+  uses.leaves = tp;
+  UsesBrandLists_ptr up = new_UsesBrandLists(seg);
+  write_UsesBrandLists(&uses, up);
+  ASSERT_EQ(0, capn_setp(root, 0, up.p));
+  uint8_t buf[4096];
+  ssize_t sz = capn_write_mem(&ctx, buf, sizeof buf, 0);
+  ASSERT_GT(sz, 0);
+  capn_free(&ctx);
+
+  std::vector<std::string> argv = capnp_cmd("decode", schema, "UsesBrandLists");
+  argv.insert(argv.begin() + 2, "--short");
+  CmdResult dec = run_argv(argv, buf, (size_t) sz);
+  ASSERT_EQ(0, dec.status) << dec.err;
+  while (!dec.out.empty() && dec.out.back() == '\n')
+    dec.out.pop_back();
+  EXPECT_EQ(want, dec.out);
+
+  CmdResult enc = capnp_encode_text(schema, "UsesBrandLists", want);
+  ASSERT_EQ(0, enc.status) << enc.err;
+  struct capn msg;
+  ASSERT_EQ(0, capn_init_mem(&msg, (const uint8_t *) enc.out.data(),
+                             enc.out.size(), 0));
+  UsesBrandLists_ptr rp;
+  rp.p = capn_getp(capn_root(&msg), 0, 1);
+  struct UsesBrandLists ru;
+  read_UsesBrandLists(&ru, rp);
+  struct Trio_Text_Text_BrandLeaf rt;
+  read_Trio_Text_Text_BrandLeaf(&rt, ru.leaves);
+  ASSERT_EQ(2, capn_len(rt.items));
+  struct BrandLeaf got;
+  get_BrandLeaf(&got, rt.items, 0);
+  EXPECT_EQ(7u, got.x);
+  get_BrandLeaf(&got, rt.items, 1);
+  EXPECT_EQ(9u, got.x);
+  capn_free(&msg);
 }

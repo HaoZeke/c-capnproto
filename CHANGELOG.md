@@ -10,6 +10,8 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ### Fixed
 
+- A `List(T)` field of a generic instantiation uses the list type of the
+  bound type, so `List(T)` bound to a struct is a struct list.
 - `$C.rpcstubs` handlers receive the results pointer. `CAPN_RPC_PENDING`
   is `-2` and preserves results written through it; a plain return of
   `1` is an exception.

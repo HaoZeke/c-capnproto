@@ -603,26 +603,26 @@ const char *node_brand_name(struct node *n, Brand_ptr brand) {
 
 static void emit_branded(struct node *n, Brand_ptr brand, const char *name);
 
-static void apply_subst(struct value *v) {
+static Type_ptr subst_type(Type_ptr tp) {
 	int depth;
 	for (depth = 0; depth < 8; depth++) {
-		Type_ptr repl;
-		int i, found = 0;
-		if (v->t.which != Type_anyPointer ||
-		    v->t.anyPointer.which != Type_anyPointer_parameter)
-			return;
+		struct Type t;
+		int i;
+		memset(&t, 0, sizeof t);
+		read_Type(&t, tp);
+		if (t.which != Type_anyPointer ||
+		    t.anyPointer.which != Type_anyPointer_parameter)
+			return tp;
 		for (i = g_nsubst - 1; i >= 0; i--) {
-			if (g_subst[i].scope == v->t.anyPointer.parameter.scopeId &&
-			    g_subst[i].index == v->t.anyPointer.parameter.parameterIndex) {
-				repl = g_subst[i].type;
-				found = 1;
+			if (g_subst[i].scope == t.anyPointer.parameter.scopeId &&
+			    g_subst[i].index == t.anyPointer.parameter.parameterIndex)
 				break;
-			}
 		}
-		if (!found)
-			return;
-		read_Type(&v->t, repl);
+		if (i < 0)
+			return tp;
+		tp = g_subst[i].type;
 	}
+	return tp;
 }
 
 /* Use a branded name when the type carries bindings, and emit that
@@ -651,8 +651,9 @@ static const char *with_suffix(struct value *v, const char *base, const char *su
 static void decode_value(struct value* v, Type_ptr type, Value_ptr value, const char *symbol) {
 	struct Type list_type;
 	memset(v, 0, sizeof(*v));
-	read_Type(&v->t, type);
-	apply_subst(v);
+	read_Type(&v->t, subst_type(type));
+	if (v->t.which == Type__list)
+		v->t._list.elementType = subst_type(v->t._list.elementType);
 	read_Value(&v->v, value);
 
 	switch (v->t.which) {
