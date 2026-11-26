@@ -101,7 +101,8 @@ static capn_ptr wire_ptr(capn_ptr st, const struct capn_dyn_field *f)
 
 /* Element size for capn_resolve_list. A struct element is -1: C++ reads
  * List(Struct) with readListPointer(INLINE_COMPOSITE), which is
- * capn_resolve_struct_list here. */
+ * capn_resolve_struct_list here. An unresolved parameter is -2: the
+ * brand binds it before the size check. */
 static int dyn_list_elem(const struct capn_dyn_type *elem)
 {
 	if (elem == NULL)
@@ -128,6 +129,8 @@ static int dyn_list_elem(const struct capn_dyn_type *elem)
 		return CAPN_ELEM_8_BYTES;
 	case CAPN_DYN_STRUCT:
 		return -1;
+	case CAPN_DYN_PARAM:
+		return -2;
 	default:
 		return CAPN_ELEM_POINTER;
 	}
@@ -150,6 +153,11 @@ static void check_dyn_ptr(capn_ptr *p, const struct capn_dyn_type *t)
 		break;
 	case CAPN_DYN_LIST:
 		elem = dyn_list_elem(t->elem);
+		/* -2: the element is still a parameter. layout.c++:2332
+		 * sizes the list from the bound type. A pointer-element
+		 * check drops a composite list with no pointers. */
+		if (elem < -1)
+			break;
 		if (elem < 0)
 			capn_resolve_struct_list(p);
 		else
@@ -440,8 +448,35 @@ static int is_pointer_kind(int kind)
 	}
 }
 
+static int list_elem_is_param(const struct capn_dyn_type *t)
+{
+	return t != NULL && t->kind == CAPN_DYN_LIST &&
+	       t->elem != NULL && t->elem->kind == CAPN_DYN_PARAM;
+}
+
+/* Size a List(parameter) from the binding in `fr`. The field descriptor
+ * still names the parameter; the brand lives on the enclosing struct. */
+static void check_after_brand(capn_ptr *p, const struct capn_dyn_type *t,
+                              const struct frame *fr)
+{
+	struct capn_dyn_type tmp;
+	const struct frame *efr;
+	const struct capn_dyn_type *et;
+
+	if (list_elem_is_param(t)) {
+		efr = fr;
+		et = resolve(t->elem, &efr);
+		tmp = *t;
+		tmp.elem = et;
+		check_dyn_ptr(p, &tmp);
+		return;
+	}
+	check_dyn_ptr(p, t);
+}
+
 static void get_field_value(capn_ptr st, const struct capn_dyn_field *f,
-                            const struct capn_dyn_type *rt, struct dv *v)
+                            const struct capn_dyn_type *rt, const struct frame *fr,
+                            struct dv *v)
 {
 	memset(v, 0, sizeof *v);
 	switch (rt->kind) {
@@ -474,8 +509,9 @@ static void get_field_value(capn_ptr st, const struct capn_dyn_field *f,
 	default:
 		if (is_pointer_kind(rt->kind)) {
 			v->p = capn_dyn_get_ptr(st, f);
-			if (f->type.kind == CAPN_DYN_PARAM)
-				check_dyn_ptr(&v->p, rt);
+			if (f->type.kind == CAPN_DYN_PARAM ||
+			    list_elem_is_param(&f->type) || list_elem_is_param(rt))
+				check_after_brand(&v->p, rt, fr);
 		} else
 			v->bits = capn_dyn_get_bits(st, f);
 		break;
@@ -738,7 +774,7 @@ static void text_struct(struct sb *b, const struct capn_dyn_struct *s, capn_ptr 
 		first = 0;
 		sb_str(b, f->name);
 		sb_str(b, " = ");
-		get_field_value(st, f, rt, &v);
+		get_field_value(st, f, rt, ffr, &v);
 		/* A group is read in the struct's own frame, not a new one. */
 		if (f->is_group)
 			text_struct(b, rt->st, v.p, fr);
@@ -931,7 +967,7 @@ static struct piece pretty_struct(const struct capn_dyn_struct *s, capn_ptr st,
 
 		if (!text_shown(s, st, f, rt))
 			continue;
-		get_field_value(st, f, rt, &v);
+		get_field_value(st, f, rt, ffr, &v);
 		if (f->is_group)
 			val = pretty_struct(rt->st, v.p, fr, amount + 1, PRETTY_PREFIXED);
 		else
@@ -1251,7 +1287,7 @@ static int json_emit_field(struct jctx *j, const struct capn_dyn_struct *s, capn
 		return first;
 	if (!active && !field_has(s, st, f, rt))
 		return first;
-	get_field_value(st, f, rt, &v);
+	get_field_value(st, f, rt, ffr, &v);
 	if (f->json_flatten && rt->kind == CAPN_DYN_STRUCT && rt->st != NULL) {
 		const char *pre = f->json_prefix != NULL ? f->json_prefix : "";
 		const char *outer = prefix != NULL ? prefix : "";

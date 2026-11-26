@@ -3102,8 +3102,26 @@ capn_ptr capn_new_string(struct capn_segment *seg, const char *str, ssize_t sz) 
 	return p;
 }
 
+/* layout.h ListReader::getPointerElement. A composite element stores
+ * its pointers after the data section. List(Text) and List(Data) read
+ * that first pointer. layout.c++:2362 accepts the list when the
+ * element has a pointer. capn_getp(list, i, 1) still returns the
+ * element struct, which struct-list readers use. */
+static capn_ptr list_first_pointer(capn_ptr p, int off)
+{
+	capn_ptr el;
+
+	if (p.type == CAPN_LIST && p.is_composite_list && p.ptrs > 0) {
+		el = capn_getp(p, off, 0);
+		if (el.type == CAPN_STRUCT && el.ptrs > 0)
+			return capn_getp(el, 0, 1);
+		return el;
+	}
+	return capn_getp(p, off, 1);
+}
+
 capn_text capn_get_text(capn_ptr p, int off, capn_text def) {
-	capn_ptr m = capn_getp(p, off, 1);
+	capn_ptr m = list_first_pointer(p, off);
 	capn_text ret = def;
 	struct capn *c;
 
@@ -3144,7 +3162,7 @@ capn_data capn_get_data(capn_ptr p, int off) {
 	capn_data ret;
 	struct capn *c;
 
-	ret.p = capn_getp(p, off, 1);
+	ret.p = list_first_pointer(p, off);
 	/* Data is a byte list, including an empty one. A wire-null
 	 * pointer is an absent field. Any other pointer is the schema
 	 * mismatch C++ 1.4.0 throws. */

@@ -10,6 +10,10 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ### Fixed
 
+- Reading `List(T)` through a brand uses the bound element size, so a
+  data-only struct list is read back in text and JSON.
+- Reading a struct list as `List(Text)` or `List(Data)` returns the
+  first pointer of each element.
 - A `List(T)` field of a generic instantiation uses the list type of the
   bound type, so `List(T)` bound to a struct is a struct list.
 - Each generic instantiation types its own groups. A brand no longer
