@@ -3,11 +3,13 @@
  * G5: List(T) bound to a one-word struct reads back in text and compact JSON.
  * G6: a composite list of { t @0 :Text } reads as List(Text).
  * The other direction, a pointer list read as a struct element, stays.
+ * A composite list stored behind a far pointer reads the same way.
  */
 
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 
 extern "C" {
@@ -249,5 +251,57 @@ TEST(ListReadParity, DataOnlyStructListIsNotText) {
   got = capn_get_text(list, 0, tlit(""));
   EXPECT_EQ(0, capn_ok(&c));
   EXPECT_STREQ("", got.str);
+  capn_free(&c);
+}
+
+/* Each allocation fills its segment, so the composite list lands in
+ * another segment and the struct slot is a far pointer. */
+static struct capn_segment *create_tight(void *, uint32_t, int sz)
+{
+  struct capn_segment *s;
+
+  sz += (int)sizeof(struct capn_segment);
+  s = (struct capn_segment *)calloc(1, (size_t)sz);
+  if (s == NULL)
+    return NULL;
+  s->data = (char *)(s + 1);
+  s->cap = (size_t)sz - sizeof(*s);
+  s->user = s;
+  return s;
+}
+
+TEST(ListReadParity, FarCompositeListReadsAsText) {
+  struct capn c;
+  capn_ptr root, list, e0, e1, slot;
+  capn_text a, bb;
+
+  capn_init_malloc(&c);
+  c.create = create_tight;
+
+  root = capn_new_struct(capn_root(&c).seg, 0, 1);
+  ASSERT_EQ(CAPN_STRUCT, root.type);
+  ASSERT_EQ(0, capn_set_root(&c, root));
+
+  list = capn_new_struct_list(root.seg, 2, 0, 1);
+  ASSERT_EQ(CAPN_LIST, list.type);
+  ASSERT_EQ(1, list.is_composite_list);
+  ASSERT_EQ(1u, list.ptrs);
+  e0 = capn_getp(list, 0, 0);
+  e1 = capn_getp(list, 1, 0);
+  ASSERT_EQ(0, capn_set_text(e0, 0, tlit("a")));
+  ASSERT_EQ(0, capn_set_text(e1, 0, tlit("bb")));
+  ASSERT_EQ(0, capn_setp(root, 0, list));
+
+  slot = capn_getp(root, 0, 0);
+  ASSERT_EQ(CAPN_FAR_POINTER, slot.type);
+
+  capn_clear_err(&c);
+  a = capn_get_text(slot, 0, tlit(""));
+  bb = capn_get_text(slot, 1, tlit(""));
+  EXPECT_EQ(1, capn_ok(&c));
+  EXPECT_EQ(1, a.len);
+  EXPECT_STREQ("a", a.str);
+  EXPECT_EQ(2, bb.len);
+  EXPECT_STREQ("bb", bb.str);
   capn_free(&c);
 }

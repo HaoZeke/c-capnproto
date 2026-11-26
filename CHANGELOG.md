@@ -14,6 +14,8 @@ Pre-1.0 minor releases may include breaking wire or API changes.
   data-only struct list is read back in text and JSON.
 - Reading a struct list as `List(Text)` or `List(Data)` returns the
   first pointer of each element.
+- A far pointer to a composite list is resolved before `List(Text)` and
+  `List(Data)` read the first pointer of each element.
 - `$C.fieldgetset` emits `<Struct>_has_<field>` for a pointer member of
   an unnamed union. The accessor is true when the discriminant selects
   that field and the pointer is non-null.

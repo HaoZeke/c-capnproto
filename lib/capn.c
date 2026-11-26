@@ -3111,6 +3111,10 @@ static capn_ptr list_first_pointer(capn_ptr p, int off)
 {
 	capn_ptr el;
 
+	/* A far pointer stays CAPN_FAR_POINTER until it is resolved, so the
+	 * composite check has to follow it. Otherwise the element struct is
+	 * what List(Text) and List(Data) see. */
+	capn_resolve(&p);
 	if (p.type == CAPN_LIST && p.is_composite_list && p.ptrs > 0) {
 		el = capn_getp(p, off, 0);
 		if (el.type == CAPN_STRUCT && el.ptrs > 0)
