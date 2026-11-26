@@ -150,6 +150,93 @@ TEST(JsonAnn, PaddedBase64Stays) {
   capn_free(&c);
 }
 
+TEST(JsonAnn, HexKeepsKjBytes) {
+  struct spec {
+    const char *in;
+    const char *bytes;
+    int n;
+    const char *json;
+  };
+  const char z1[] = {0};
+  const struct spec cases[] = {
+      {"{\"hx\":\"0\"}", "", 0,
+       "{\"age\":0,\"foo\":0,\"p.bee\":0,\"tagged\":\"left\",\"payload\":\"\","
+       "\"hx\":\"\",\"hue\":\"red\",\"nest\":{},\"kind\":\"n\",\"n\":0}"},
+      {"{\"hx\":\"zz\"}", z1, 1,
+       "{\"age\":0,\"foo\":0,\"p.bee\":0,\"tagged\":\"left\",\"payload\":\"\","
+       "\"hx\":\"00\",\"hue\":\"red\",\"nest\":{},\"kind\":\"n\",\"n\":0}"},
+  };
+  int i;
+  for (i = 0; i < (int)(sizeof cases / sizeof cases[0]); i++) {
+    struct capn c;
+    capn_ptr st;
+    struct capn_dyn_error err;
+    capn_list8 got;
+    char *j;
+    int k;
+    const struct spec *sp = &cases[i];
+    memset(&err, 0, sizeof err);
+    capn_init_malloc(&c);
+    if (capn_dyn_from_json(&Doc_dyn, sp->in, strlen(sp->in), capn_root(&c).seg, &st,
+                           &err) != 0) {
+      EXPECT_EQ(0, 1) << sp->in << " " << err.message;
+      capn_free(&c);
+      continue;
+    }
+    got.p = capn_dyn_get_ptr(st, field_of(&Doc_dyn, "hx"));
+    ASSERT_EQ(sp->n, capn_len(got)) << sp->in;
+    for (k = 0; k < sp->n; k++)
+      EXPECT_EQ((unsigned char)sp->bytes[k], (unsigned char)capn_get8(got, k)) << sp->in;
+    j = capn_dyn_to_json(&Doc_dyn, st, CAPN_DYN_COMPACT);
+    ASSERT_NE(nullptr, j) << sp->in;
+    EXPECT_EQ(std::string(sp->json), std::string(j)) << sp->in;
+    free(j);
+    capn_free(&c);
+  }
+}
+
+TEST(JsonAnn, EvenHexStays) {
+  struct spec {
+    const char *in;
+    const char *bytes;
+    int n;
+    const char *json;
+  };
+  const unsigned char ff[] = {0x00, 0xff};
+  const struct spec cases[] = {
+      {"{\"hx\":\"00FF\"}", (const char *)ff, 2,
+       "{\"age\":0,\"foo\":0,\"p.bee\":0,\"tagged\":\"left\",\"payload\":\"\","
+       "\"hx\":\"00ff\",\"hue\":\"red\",\"nest\":{},\"kind\":\"n\",\"n\":0}"},
+      {"{\"hx\":\"\"}", "", 0,
+       "{\"age\":0,\"foo\":0,\"p.bee\":0,\"tagged\":\"left\",\"payload\":\"\","
+       "\"hx\":\"\",\"hue\":\"red\",\"nest\":{},\"kind\":\"n\",\"n\":0}"},
+  };
+  int i;
+  for (i = 0; i < (int)(sizeof cases / sizeof cases[0]); i++) {
+    struct capn c;
+    capn_ptr st;
+    struct capn_dyn_error err;
+    capn_list8 got;
+    char *j;
+    int k;
+    const struct spec *sp = &cases[i];
+    memset(&err, 0, sizeof err);
+    capn_init_malloc(&c);
+    ASSERT_EQ(0, capn_dyn_from_json(&Doc_dyn, sp->in, strlen(sp->in), capn_root(&c).seg, &st,
+                                    &err))
+        << sp->in << " " << err.message;
+    got.p = capn_dyn_get_ptr(st, field_of(&Doc_dyn, "hx"));
+    ASSERT_EQ(sp->n, capn_len(got)) << sp->in;
+    for (k = 0; k < sp->n; k++)
+      EXPECT_EQ((unsigned char)sp->bytes[k], (unsigned char)capn_get8(got, k)) << sp->in;
+    j = capn_dyn_to_json(&Doc_dyn, st, CAPN_DYN_COMPACT);
+    ASSERT_NE(nullptr, j) << sp->in;
+    EXPECT_EQ(std::string(sp->json), std::string(j)) << sp->in;
+    free(j);
+    capn_free(&c);
+  }
+}
+
 TEST(JsonAnn, DiscriminatorSelectsVoidAndRenamedArm) {
   const char *void_arm =
       "{\"full_name\":\"\",\"age\":0,\"foo\":0,\"bar\":\"\",\"qux\":\"\","

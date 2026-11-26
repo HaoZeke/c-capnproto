@@ -2816,28 +2816,29 @@ static int hex_digit(int c)
 	return -1;
 }
 
+/* kj::decodeHex (Cap'n Proto 1.4.0). An odd trailing nibble is dropped.
+ * A non-hex nibble contributes zero. The JSON handler stores the bytes. */
 static int decode_hex(const char *s, size_t n, uint8_t **out, int *outn)
 {
-	size_t i;
+	size_t i, o = n / 2;
 	uint8_t *buf;
-	if (n % 2 != 0)
+	if (o > 0x1fffffffu || o > (size_t) INT_MAX)
 		return -1;
-	if (n / 2 > 0x1fffffffu || n / 2 > (size_t) INT_MAX)
-		return -1;
-	buf = (uint8_t *) malloc(n / 2 + 1);
+	buf = (uint8_t *) malloc(o > 0 ? o : 1);
 	if (buf == NULL)
 		return -1;
-	for (i = 0; i < n; i += 2) {
-		int hi = hex_digit(s[i]);
-		int lo = hex_digit(s[i + 1]);
-		if (hi < 0 || lo < 0) {
-			free(buf);
-			return -1;
-		}
-		buf[i / 2] = (uint8_t) ((hi << 4) | lo);
+	for (i = 0; i < o; i++) {
+		int hi = hex_digit(s[i * 2]);
+		int lo = hex_digit(s[i * 2 + 1]);
+		unsigned b = 0;
+		if (hi >= 0)
+			b = (unsigned) hi << 4;
+		if (lo >= 0)
+			b |= (unsigned) lo;
+		buf[i] = (uint8_t) b;
 	}
 	*out = buf;
-	*outn = (int) (n / 2);
+	*outn = (int) o;
 	return 0;
 }
 
