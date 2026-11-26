@@ -12,6 +12,9 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 - A text float with a leading zero accepts a signed exponent, so `0.1e-5`,
   `0e-1` and `0.5e+2` parse.
+- Text input rejects a leading plus, the names `NaN` and `Infinity`, an
+  upper-case `0X` prefix, a leading zero outside octal digits, a numeric or
+  quoted enumerant, and a number list used as Data.
 - JSON `null` is rejected for a struct field. `-010` stays rejected, and
   nested pretty JSON matches Cap'n Proto 1.4.0 byte for byte.
 - A JSON value for a flattened union is ignored when that union has no
