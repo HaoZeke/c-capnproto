@@ -1021,6 +1021,31 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
     )
     test('group-in-union-test', group_in_union_test)
 
+    union_pointer_has_gen = custom_target(
+      'union-pointer-has-capnp',
+      input: 'tests' / 'union-pointer-has.capnp',
+      output: ['union-pointer-has.capnp.c', 'union-pointer-has.capnp.h'],
+      command: [
+        capnp, 'compile',
+        '-o', capnpc_codegen.full_path() + ':' + '@OUTDIR@',
+        '-I', meson.current_source_dir() / 'compiler',
+        '--src-prefix', meson.current_source_dir() / 'tests',
+        '@INPUT@',
+      ],
+      depends: [capnpc_codegen],
+    )
+
+    union_pointer_has_test = executable(
+      'union-pointer-has-test',
+      'tests' / 'union-pointer-has-test.cpp',
+      union_pointer_has_gen,
+      include_directories: include_directories(['lib', 'tests', 'compiler']),
+      dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
+      cpp_args: common_cpp_args,
+      install: false,
+    )
+    test('union-pointer-has-test', union_pointer_has_test)
+
     list_decode_srcdest_gen = custom_target(
       'list-decode-srcdest-capnp',
       input: 'tests' / 'list-decode-srcdest.capnp',

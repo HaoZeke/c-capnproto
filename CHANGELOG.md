@@ -10,6 +10,9 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ### Fixed
 
+- `$C.fieldgetset` emits `<Struct>_has_<field>` for a pointer member of
+  an unnamed union. The accessor is true when the discriminant selects
+  that field and the pointer is non-null.
 - A `List(T)` field of a generic instantiation uses the list type of the
   bound type, so `List(T)` bound to a struct is a struct list.
 - Each generic instantiation types its own groups. A brand no longer
