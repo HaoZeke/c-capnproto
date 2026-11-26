@@ -207,6 +207,8 @@ EXTRA_DIST += \
 	tests/group-in-union.capnp \
 	tests/group-in-union.h \
 	tests/group-in-union-test.cpp \
+	tests/union-pointer-has.capnp \
+	tests/union-pointer-has-test.cpp \
 	tests/fieldgetset.capnp \
 	tests/create-min-sz-test.cpp \
 	tests/fortran-golden.md \

@@ -582,6 +582,8 @@ static const size_t Brand_Scope_struct_bytes_count = 24;
 
 uint64_t Brand_Scope_get_scopeId(Brand_Scope_ptr p);
 
+int Brand_Scope_has_bind(Brand_Scope_ptr p);
+
 void Brand_Scope_set_scopeId(Brand_Scope_ptr p, uint64_t scopeId);
 enum Brand_Binding_which {
 	Brand_Binding_unbound = 0,
@@ -601,6 +603,8 @@ static const size_t Brand_Binding_pointer_count = 1;
 
 static const size_t Brand_Binding_struct_bytes_count = 16;
 
+
+int Brand_Binding_has_type(Brand_Binding_ptr p);
 enum Value_which {
 	Value__void = 0,
 	Value__bool = 1,
@@ -652,6 +656,16 @@ static const size_t Value_pointer_count = 1;
 
 static const size_t Value_struct_bytes_count = 24;
 
+
+int Value_has_text(Value_ptr p);
+
+int Value_has_data(Value_ptr p);
+
+int Value_has__list(Value_ptr p);
+
+int Value_has__struct(Value_ptr p);
+
+int Value_has_anyPointer(Value_ptr p);
 
 struct Annotation {
 	uint64_t id;

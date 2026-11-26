@@ -1406,6 +1406,10 @@ static void declare_slot(struct strings *s, struct field *f) {
 static void define_group(struct strings *s, struct node *n, const char *group_name, bool enclose_unions,
 		const char *extattr, const char *extattr_space, const char *uniontag);
 
+static int is_pointer_slot(struct field *f);
+static void define_union_has_function(struct node *node, struct field *field,
+		struct strings *s, const char *extattr, const char *extattr_space);
+
 static void do_union(struct strings *s, struct node *n, struct field *first_field, const char *union_name,
 		const char *extattr, const char *extattr_space, const char *uniontag) {
 	int tagoff = 2 * n->n._struct.discriminantOffset;
@@ -1546,6 +1550,18 @@ static void do_union(struct strings *s, struct node *n, struct field *first_fiel
 	str_addf(&enums, "\n};\n");
 	str_add(&s->enums, enums.str, enums.len);
 	str_release(&enums);
+
+	/* Pointer members of this struct's union. A group has no _ptr,
+	 * so this uses the same gate as the non-union has accessors. */
+	if (g_fieldgetset &&
+	    !(n->n.which == Node__struct && n->n._struct.isGroup)) {
+		for (f = first_field;
+		     f < n->fields + capn_len(n->n._struct.fields) && in_union(f);
+		     f++) {
+			if (f->f.which == Field_slot && is_pointer_slot(f))
+				define_union_has_function(n, f, s, extattr, extattr_space);
+		}
+	}
 }
 
 static void define_field(struct strings *s, struct field *f, const char *extattr, const char *extattr_space) {
@@ -1675,6 +1691,32 @@ static void define_has_function(struct node* node, struct field* field,
 	         node->name.str, field_name(field), node->name.str);
 	str_addf(&s->pub_get, "{\n");
 	str_addf(&s->pub_get, "%scapn_resolve_struct(&p.p);\n", s->ftab.str);
+	str_addf(&s->pub_get, "%scapn_ptr %s;\n", s->ftab.str, field_name(field));
+	str_addf(&s->pub_get, "%s%s = capn_getp(p.p, %d, 1);\n",
+	         s->ftab.str, field_name(field), field->f.slot.offset);
+	str_addf(&s->pub_get, "%sreturn %s.type != CAPN_NULL;\n}\n",
+	         s->ftab.str, field_name(field));
+}
+
+static void define_union_has_function(struct node* node, struct field* field,
+                        struct strings* s, const char *extattr, const char *extattr_space)
+{
+	/* C++ Reader::hasX() on a union pointer: which() selects this
+	 * member, and the wire pointer is not CAPN_NULL. */
+	int tagoff = 2 * node->n._struct.discriminantOffset;
+
+	str_addf(&s->pub_get_header, "\n%s%sint %s_has_%s(%s_ptr p);\n",
+	         extattr, extattr_space,
+	         node->name.str, field_name(field), node->name.str);
+	str_addf(&s->pub_get, "\n%s%sint %s_has_%s(%s_ptr p)\n",
+	         extattr, extattr_space,
+	         node->name.str, field_name(field), node->name.str);
+	str_addf(&s->pub_get, "{\n");
+	str_addf(&s->pub_get, "%scapn_resolve_struct(&p.p);\n", s->ftab.str);
+	str_addf(&s->pub_get, "%sif ((enum %s_which)(int) capn_read16(p.p, %d) != %s_%s)\n",
+	         s->ftab.str, node->name.str, tagoff,
+	         node->name.str, field_name(field));
+	str_addf(&s->pub_get, "%s\treturn 0;\n", s->ftab.str);
 	str_addf(&s->pub_get, "%scapn_ptr %s;\n", s->ftab.str, field_name(field));
 	str_addf(&s->pub_get, "%s%s = capn_getp(p.p, %d, 1);\n",
 	         s->ftab.str, field_name(field), field->f.slot.offset);
