@@ -273,6 +273,22 @@ TEST(TextParse, LeadingZeroIsOctal) {
 	EXPECT_EQ(10, capn_get32(lst, 2));
 }
 
+TEST(TextParse, StructValueShorthand) {
+	Schemas &s = schemas();
+	Session sess;
+	capn_ptr st;
+	struct capn_dyn_error err;
+	ASSERT_EQ(0, sess.text(&s.outer, "(xs = [1, 2])", &st, &err)) << err.message;
+	EXPECT_EQ("(xs = [(a = 1), (a = 2)])", rendered(&s.outer, st));
+	ASSERT_EQ(0, sess.text(&s.outer, "(y = 3)", &st, &err)) << err.message;
+	EXPECT_EQ("(y = (a = 3))", rendered(&s.outer, st));
+	ASSERT_EQ(0, sess.text(&s.outer, "(xs = [(a = 1)])", &st, &err)) << err.message;
+	EXPECT_EQ("(xs = [(a = 1)])", rendered(&s.outer, st));
+	ASSERT_EQ(0, sess.text(&s.outer, "(y = (a = 3))", &st, &err)) << err.message;
+	EXPECT_EQ("(y = (a = 3))", rendered(&s.outer, st));
+	EXPECT_NE(0, sess.text(&s.outer, "3", &st, &err));
+}
+
 TEST(TextParse, JsonLeavesStay) {
 	Schemas &s = schemas();
 	Session sess;

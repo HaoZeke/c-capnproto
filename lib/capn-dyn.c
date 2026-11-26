@@ -2698,7 +2698,8 @@ static int parse_scalar(struct bctx *b, const struct capn_dyn_type *t,
 }
 
 static int fill_struct(struct bctx *b, const struct capn_dyn_struct *s,
-                       const struct frame *fr, capn_ptr st, const struct vnode *obj);
+                       const struct frame *fr, capn_ptr st, const struct vnode *obj,
+                       int nested);
 
 static int build_data(struct bctx *b, struct capn_segment *seg, const struct vnode *n, capn_ptr *out)
 {
@@ -2877,7 +2878,7 @@ static int build_list(struct bctx *b, struct capn_segment *seg, const struct cap
 			struct frame nf;
 			capn_ptr elt = capn_getp(list, i, 0);
 			enter_struct(&nf, et, efr);
-			if (fill_struct(b, et->st, &nf, elt, el) != 0)
+			if (fill_struct(b, et->st, &nf, elt, el, 1) != 0)
 				return -1;
 			break;
 		}
@@ -3050,7 +3051,7 @@ static int assign_field(struct bctx *b, const struct capn_dyn_struct *s, const s
 		if (sub.type == CAPN_NULL)
 			return berr(b, val, "could not allocate the struct");
 		enter_struct(&nf, rt, ffr);
-		if (fill_struct(b, rt->st, &nf, sub, val) != 0)
+		if (fill_struct(b, rt->st, &nf, sub, val, 1) != 0)
 			return -1;
 		return capn_setp(st, (int) f->offset, sub) ? berr(b, val, "could not store struct") : 0;
 	}
@@ -3250,7 +3251,7 @@ static int japply_leaf(struct bctx *b, const struct capn_dyn_struct *s, const st
 	if (f->is_group) {
 		if (rt->st == NULL)
 			return berr(b, val, "group %s has no descriptor", f->name);
-		return fill_struct(b, rt->st, fr, st, val);
+		return fill_struct(b, rt->st, fr, st, val, 1);
 	}
 	return assign_field(b, s, fr, st, f, rt, ffr, val);
 }
@@ -3306,13 +3307,53 @@ static int japply(struct bctx *b, const struct capn_dyn_struct *s, const struct 
 	return japply_leaf(b, h->step[h->n - 1].owner, curf, cur, h->step[h->n - 1].f, val);
 }
 
+/* A bare text value fills the struct's first field. The root value stays
+ * an object. JSON is unchanged. */
+static int fill_first_field(struct bctx *b, const struct capn_dyn_struct *s,
+                            const struct frame *fr, capn_ptr st, const struct vnode *val)
+{
+	const struct capn_dyn_field *f;
+	const struct frame *ffr;
+	const struct capn_dyn_type *rt;
+
+	if (s->nfields < 1)
+		return berr(b, val, "expected an object for %s", s->name);
+	f = &s->fields[0];
+	if (f->is_group)
+		return berr(b, val, "expected an object for %s", s->name);
+	ffr = fr;
+	rt = resolve(&f->type, &ffr);
+	switch (rt->kind) {
+	case CAPN_DYN_VOID:
+		if (!(val->kind == V_IDENT && str_is(val, "void")))
+			return berr(b, val, "expected an object for %s", s->name);
+		break;
+	case CAPN_DYN_BOOL:
+	case CAPN_DYN_INT8: case CAPN_DYN_INT16: case CAPN_DYN_INT32: case CAPN_DYN_INT64:
+	case CAPN_DYN_UINT8: case CAPN_DYN_UINT16: case CAPN_DYN_UINT32: case CAPN_DYN_UINT64:
+	case CAPN_DYN_FLOAT32: case CAPN_DYN_FLOAT64:
+	case CAPN_DYN_TEXT:
+		break;
+	default:
+		return berr(b, val, "expected an object for %s", s->name);
+	}
+	if (f->discriminant != CAPN_DYN_NO_DISCRIMINANT &&
+	    capn_dyn_set_which(s, st, f) != 0)
+		return berr(b, val, "cannot select %s", f->name);
+	return assign_field(b, s, fr, st, f, rt, ffr, val);
+}
+
 static int fill_struct(struct bctx *b, const struct capn_dyn_struct *s,
-                       const struct frame *fr, capn_ptr st, const struct vnode *obj)
+                       const struct frame *fr, capn_ptr st, const struct vnode *obj,
+                       int nested)
 {
 	int i;
 
-	if (obj->kind != V_OBJ)
+	if (obj->kind != V_OBJ) {
+		if (nested && !b->json)
+			return fill_first_field(b, s, fr, st, obj);
 		return berr(b, obj, "expected an object for %s", s->name);
+	}
 	if (!b->json) {
 		for (i = 0; i < obj->count; i++) {
 			const struct capn_dyn_field *f = capn_dyn_find_field(s, obj->k[i]);
@@ -3328,7 +3369,7 @@ static int fill_struct(struct bctx *b, const struct capn_dyn_struct *s,
 			if (f->is_group) {
 				if (rt->st == NULL)
 					return berr(b, obj->v[i], "group %s has no descriptor", f->name);
-				if (fill_struct(b, rt->st, fr, st, obj->v[i]) != 0)
+				if (fill_struct(b, rt->st, fr, st, obj->v[i], 1) != 0)
 					return -1;
 			} else if (assign_field(b, s, fr, st, f, rt, ffr, obj->v[i]) != 0) {
 				return -1;
@@ -3401,7 +3442,7 @@ static int decode(const struct capn_dyn_struct *s, const char *in, size_t len, i
 		berr(&b, root, "could not allocate the struct");
 		goto done;
 	}
-	if (fill_struct(&b, s, NULL, st, root) != 0)
+	if (fill_struct(&b, s, NULL, st, root, 0) != 0)
 		goto done;
 	*out = st;
 	rc = 0;
