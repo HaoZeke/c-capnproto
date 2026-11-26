@@ -174,6 +174,49 @@ TEST(JsonParity, TextUnknownFieldStaysRejected) {
   capn_free(&c);
 }
 
+TEST(JsonParity, NegativeLeadingZeroMatchesCpp) {
+  struct capn c;
+  capn_ptr st;
+  ASSERT_NE(0, decode(&Defaults_dyn, "{\"i8\":-010}", &c, &st));
+  capn_free(&c);
+}
+
+TEST(JsonParity, StructNullIsRejected) {
+  struct capn c;
+  capn_ptr st;
+  ASSERT_NE(0, decode(&Nested_dyn, "{\"i\":null}", &c, &st));
+  capn_free(&c);
+}
+
+TEST(JsonParity, NestedPrettyJsonMatchesCpp) {
+  struct capn c;
+  capn_ptr st;
+  const char *text =
+      "(label = \"root\", n = 1, kids = ["
+      "(label = \"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUV\", n = 2),"
+      "(label = \"beta\", n = 3, kids = ["
+      "(label = \"gamma\", n = 4),"
+      "(label = \"delta\", n = 5)])])";
+  const char *pretty =
+      "{ \"label\": \"root\",\n"
+      "  \"kids\": [\n"
+      "    { \"label\": \"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUV\",\n"
+      "      \"n\": 2 },\n"
+      "    { \"label\": \"beta\",\n"
+      "      \"kids\": [{\"label\": \"gamma\", \"n\": 4}, {\"label\": \"delta\", \"n\": 5}],\n"
+      "      \"n\": 3 } ],\n"
+      "  \"n\": 1 }";
+  clear_err();
+  capn_init_malloc(&c);
+  ASSERT_EQ(0, capn_dyn_from_text(&Node_dyn, text, strlen(text), capn_root(&c).seg, &st, &err))
+      << err.message;
+  char *wide = capn_dyn_to_json(&Node_dyn, st, 0);
+  ASSERT_NE(nullptr, wide);
+  EXPECT_EQ(pretty, std::string(wide));
+  free(wide);
+  capn_free(&c);
+}
+
 TEST(JsonParity, LeadingZeroInAJsonNumberIsRejected) {
   struct capn c;
   capn_ptr st;

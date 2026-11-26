@@ -92,3 +92,9 @@ struct BoxU {
   box @0 :InnerU $flatten();
   n @1 :Int32;
 }
+
+struct Node {
+  label @0 :Text;
+  kids @1 :List(Node);
+  n @2 :Int32;
+}

@@ -10,6 +10,8 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ### Fixed
 
+- JSON `null` is rejected for a struct field. `-010` stays rejected, and
+  nested pretty JSON matches Cap'n Proto 1.4.0 byte for byte.
 - A JSON value for a flattened union is ignored when that union has no
   tag yet. The discriminant stays at its default, and a flattened struct
   pointer is allocated empty.

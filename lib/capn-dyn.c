@@ -1200,7 +1200,7 @@ static void json_data_value(struct jctx *j, struct dv *v, int enc)
 	uint8_t *tmp;
 
 	if (enc == 0) {
-		json_value(j, &(struct capn_dyn_type){CAPN_DYN_DATA}, NULL, v);
+		json_value(j, &(struct capn_dyn_type){.kind = CAPN_DYN_DATA}, NULL, v);
 		return;
 	}
 	l.p = v->data.p;
@@ -1297,7 +1297,7 @@ static int json_fields(struct jctx *j, const struct capn_dyn_struct *s, capn_ptr
 		return first;
 	if (s->json_has_disc && s->json_disc_name != NULL && s->json_disc_name[0] != '\0') {
 		struct dv tag;
-		const struct capn_dyn_type text = {CAPN_DYN_TEXT};
+		const struct capn_dyn_type text = {.kind = CAPN_DYN_TEXT};
 		if (!first)
 			sb_str(j->b, j->comma);
 		json_escape_prefixed(j->b, prefix, s->json_disc_name);
@@ -1376,9 +1376,9 @@ static struct piece json_join(struct piece *elems, int n, int child_multi, int i
 	close_s[0] = close_ch;
 	close_s[1] = '\0';
 	sb_str(&b, open_s);
+	if (multiline != NULL)
+		*multiline = brk || child_multi;
 	if (brk) {
-		if (multiline != NULL)
-			*multiline = 1;
 		padn = (indent + 1) * 2;
 		if (padn < 0)
 			padn = 0;
@@ -1581,7 +1581,7 @@ static int json_fill_fields(const struct capn_dyn_struct *s, capn_ptr st,
 	if (s->json_has_disc && s->json_disc_name != NULL && s->json_disc_name[0] != '\0') {
 		struct dv tag;
 		struct piece val;
-		const struct capn_dyn_type text = {CAPN_DYN_TEXT};
+		const struct capn_dyn_type text = {.kind = CAPN_DYN_TEXT};
 		memset(&tag, 0, sizeof tag);
 		tag.text.str = json_key(u);
 		tag.text.len = (int) strlen(tag.text.str);
@@ -2113,7 +2113,7 @@ static struct vnode *parse_json(struct pctx *c)
 				c->pos++;
 			/* A second digit after a leading 0 rejects the JSON number. */
 			dig = c->p + start;
-			if (*dig == '+' || *dig == '-')
+			if (*dig == '-')
 				dig++;
 			if ((size_t) (dig - c->p) + 1 < c->pos && *dig == '0' &&
 			    dig[1] >= '0' && dig[1] <= '9') {
@@ -2364,16 +2364,16 @@ static int json_number_as_int(struct bctx *b, const struct vnode *n, int kind,
 		case 32: minv = (double) INT32_MIN; maxv = (double) INT32_MAX; break;
 		default: minv = (double) INT64_MIN; maxv = (double) INT64_MAX; break;
 		}
-			/* (double)INT64_MAX is 2^63, so an inclusive compare lets that
-			 * value through and the cast is out of range. */
-			if (!(d >= minv) || !(w == 64 ? d < maxv : d <= maxv))
-				return berr(b, n, "integer out of range");
-			switch (w) {
-			case 8: result = (int8_t) d; break;
-			case 16: result = (int16_t) d; break;
-			case 32: result = (int32_t) d; break;
-			default: result = (int64_t) d; break;
-			}
+		/* (double)INT64_MAX is 2^63, so an inclusive compare lets that
+		 * value through and the cast is out of range. */
+		if (!(d >= minv) || !(w == 64 ? d < maxv : d <= maxv))
+			return berr(b, n, "integer out of range");
+		switch (w) {
+		case 8: result = (int8_t) d; break;
+		case 16: result = (int16_t) d; break;
+		case 32: result = (int32_t) d; break;
+		default: result = (int64_t) d; break;
+		}
 		if ((double) result != d)
 			return berr(b, n, "integer out of range");
 		*bits = (uint64_t) result;
@@ -2386,15 +2386,15 @@ static int json_number_as_int(struct bctx *b, const struct vnode *n, int kind,
 		case 32: maxv = (double) UINT32_MAX; break;
 		default: maxv = (double) UINT64_MAX; break;
 		}
-			/* (double)UINT64_MAX is 2^64, same hole as the signed bound. */
-			if (!(d >= minv) || !(w == 64 ? d < maxv : d <= maxv))
-				return berr(b, n, "integer out of range");
-			switch (w) {
-			case 8: result = (uint8_t) d; break;
-			case 16: result = (uint16_t) d; break;
-			case 32: result = (uint32_t) d; break;
-			default: result = (uint64_t) d; break;
-			}
+		/* (double)UINT64_MAX is 2^64, same hole as the signed bound. */
+		if (!(d >= minv) || !(w == 64 ? d < maxv : d <= maxv))
+			return berr(b, n, "integer out of range");
+		switch (w) {
+		case 8: result = (uint8_t) d; break;
+		case 16: result = (uint16_t) d; break;
+		case 32: result = (uint32_t) d; break;
+		default: result = (uint64_t) d; break;
+		}
 		if ((double) result != d)
 			return berr(b, n, "integer out of range");
 		*bits = result;
@@ -2844,11 +2844,14 @@ static int assign_field(struct bctx *b, const struct capn_dyn_struct *s, const s
 			return -1;
 		return capn_setp(st, (int) f->offset, l) ? berr(b, val, "could not store list") : 0;
 	}
-	case CAPN_DYN_STRUCT: {
-		struct frame nf;
-		capn_ptr sub;
-		if (val->kind == V_NULL)
-			return 0;
+		case CAPN_DYN_STRUCT: {
+			struct frame nf;
+			capn_ptr sub;
+			if (val->kind == V_NULL) {
+				if (b->json)
+					return berr(b, val, "expected an object");
+				return 0;
+			}
 		if (rt->st == NULL)
 			return berr(b, val, "field %s has no descriptor", f->name);
 		sub = capn_new_struct(st.seg, rt->st->data_words * 8, rt->st->pointers);
