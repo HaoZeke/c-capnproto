@@ -24,7 +24,7 @@ struct Schemas {
 	struct capn_dyn_field tf;
 	struct capn_dyn_field box_fields[3];
 	struct capn_dyn_type text_st, data_st;
-	struct capn_dyn_struct f64s, f32s, i8s, i64s, u64s, ens, datas, lists;
+	struct capn_dyn_struct f64s, f32s, i8s, i64s, u64s, ens, data_values, lists;
 	struct capn_dyn_struct cell, outer, l32, texts, box;
 };
 
@@ -91,7 +91,7 @@ static Schemas &schemas()
 	set_struct(&s.i64s, "I64", 1, 0, 1, &s.i64f);
 	set_struct(&s.u64s, "U64", 1, 0, 1, &s.u64f);
 	set_struct(&s.ens, "EN", 1, 0, 1, &s.ef);
-	set_struct(&s.datas, "DT", 0, 1, 1, &s.df);
+	set_struct(&s.data_values, "DT", 0, 1, 1, &s.df);
 	set_struct(&s.lists, "LI", 0, 1, 1, &s.lstf);
 
 	set_field(&s.cell_a, "a", scalar(CAPN_DYN_INT32), 0);
@@ -114,7 +114,7 @@ static Schemas &schemas()
 	s.text_st = scalar(CAPN_DYN_STRUCT);
 	s.text_st.st = &s.texts;
 	s.data_st = scalar(CAPN_DYN_STRUCT);
-	s.data_st.st = &s.datas;
+	s.data_st.st = &s.data_values;
 	set_field(&s.box_fields[0], "t", s.text_st, 0);
 	set_field(&s.box_fields[1], "d", s.data_st, 1);
 	set_field(&s.box_fields[2], "i", s.cell_type, 2);
@@ -193,7 +193,7 @@ TEST(TextParse, RejectSpellingsCppRejects) {
 	};
 	const struct capn_dyn_struct *types[] = {
 	    &s.i8s,  &s.f64s, &s.f64s, &s.f64s, &s.f64s, &s.f64s, &s.f64s,
-	    &s.i64s, &s.i8s,  &s.f64s, &s.ens,  &s.ens,  &s.ens,  &s.datas,
+	    &s.i64s, &s.i8s,  &s.f64s, &s.ens,  &s.ens,  &s.ens,  &s.data_values,
 	};
 	for (size_t i = 0; i < sizeof rows / sizeof rows[0]; i++) {
 		Session sess;
@@ -219,13 +219,13 @@ TEST(TextParse, KeptSpellings) {
 	EXPECT_EQ(16, ival(st, &s.i64s, "i64"));
 	ASSERT_EQ(0, sess.text(&s.ens, "(e = gamma)", &st, &err)) << err.message;
 	EXPECT_EQ(2, ival(st, &s.ens, "e"));
-	ASSERT_EQ(0, sess.text(&s.datas, "(d = 0x\"ab\")", &st, &err)) << err.message;
+	ASSERT_EQ(0, sess.text(&s.data_values, "(d = 0x\"ab\")", &st, &err)) << err.message;
 	capn_list8 bytes;
-	bytes.p = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.datas, "d"));
+	bytes.p = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.data_values, "d"));
 	ASSERT_EQ(1, capn_len(bytes));
 	EXPECT_EQ(0xab, capn_get8(bytes, 0));
-	ASSERT_EQ(0, sess.text(&s.datas, "(d = \"ab\")", &st, &err)) << err.message;
-	bytes.p = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.datas, "d"));
+	ASSERT_EQ(0, sess.text(&s.data_values, "(d = \"ab\")", &st, &err)) << err.message;
+	bytes.p = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.data_values, "d"));
 	ASSERT_EQ(2, capn_len(bytes));
 	EXPECT_EQ('a', capn_get8(bytes, 0));
 	EXPECT_EQ('b', capn_get8(bytes, 1));
@@ -329,17 +329,17 @@ TEST(TextParse, JsonLeavesStay) {
 	EXPECT_EQ(0, ival(st, &s.ens, "e"));
 	ASSERT_EQ(0, sess.json(&s.ens, "{\"e\": \"gamma\"}", &st, &err)) << err.message;
 	EXPECT_EQ(2, ival(st, &s.ens, "e"));
-	ASSERT_EQ(0, sess.json(&s.datas, "{\"d\": [171]}", &st, &err)) << err.message;
+	ASSERT_EQ(0, sess.json(&s.data_values, "{\"d\": [171]}", &st, &err)) << err.message;
 	capn_list8 bytes;
-	bytes.p = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.datas, "d"));
+	bytes.p = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.data_values, "d"));
 	ASSERT_EQ(1, capn_len(bytes));
 	EXPECT_EQ(171, capn_get8(bytes, 0));
-	ASSERT_EQ(0, sess.json(&s.datas, "{\"d\": [1, 2]}", &st, &err)) << err.message;
-	bytes.p = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.datas, "d"));
+	ASSERT_EQ(0, sess.json(&s.data_values, "{\"d\": [1, 2]}", &st, &err)) << err.message;
+	bytes.p = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.data_values, "d"));
 	ASSERT_EQ(2, capn_len(bytes));
 	EXPECT_EQ(1, capn_get8(bytes, 0));
 	EXPECT_EQ(2, capn_get8(bytes, 1));
-	EXPECT_NE(0, sess.json(&s.datas, "{\"d\": \"ab\"}", &st, &err));
+	EXPECT_NE(0, sess.json(&s.data_values, "{\"d\": \"ab\"}", &st, &err));
 	EXPECT_NE(0, sess.json(&s.outer, "{\"y\": 3}", &st, &err));
 }
 
@@ -365,8 +365,8 @@ TEST(TextParse, BareValueMatchesFirstField) {
 	EXPECT_NE(0, rc);
 	rc = sess.text(&s.texts, "(t = 0x\"61\")", &st, &err);
 	EXPECT_NE(0, rc);
-	rc = sess.text(&s.datas, "(d = 0x\"61\")", &st, &err);
+	rc = sess.text(&s.data_values, "(d = 0x\"61\")", &st, &err);
 	EXPECT_EQ(0, rc) << err.message;
-	rc = sess.text(&s.datas, "(d = \"a\")", &st, &err);
+	rc = sess.text(&s.data_values, "(d = \"a\")", &st, &err);
 	EXPECT_EQ(0, rc) << err.message;
 }
