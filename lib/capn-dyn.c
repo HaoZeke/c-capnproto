@@ -2328,7 +2328,7 @@ static struct vnode *parse_text(struct pctx *c)
 			return token_node(c, V_NUM, start, c->pos);
 		while (c->pos < c->len && (is_ident_char(c->p[c->pos]) || c->p[c->pos] == '.' ||
 		       ((c->p[c->pos] == '-' || c->p[c->pos] == '+') &&
-		        (c->p[c->pos - 1] == 'e' || c->p[c->pos - 1] == 'E') && c->p[b] != '0')))
+		        (c->p[c->pos - 1] == 'e' || c->p[c->pos - 1] == 'E'))))
 			c->pos++;
 		/* "-inf" and "inf" are names; every other run is a number. */
 		if (c->pos - b >= 2 && c->p[b] == '-' && is_ident_char(c->p[b + 1]) &&

@@ -391,6 +391,17 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
   )
   test('gate-r5-test', gate_r5_test)
 
+  text_parse_parity_test = executable(
+    'text-parse-parity-test',
+    'tests' / 'text-parse-parity-test.cpp',
+    include_directories: include_directories(['lib', 'tests', 'compiler']),
+    dependencies: [libcapnp_dep, gtest_dep, gtest_main_dep, thread_dep],
+    cpp_args: common_cpp_args,
+    implicit_include_directories: false,
+    install: false,
+  )
+  test('text-parse-parity-test', text_parse_parity_test)
+
   # Codegen runs `capnpc_codegen`, a build-machine plugin, so a cross
   # build never executes the target capnpc-c.
   capnp = find_program('capnp', native: true, required: false)
