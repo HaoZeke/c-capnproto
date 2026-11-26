@@ -1747,6 +1747,7 @@ enum { V_NULL, V_BOOL, V_NUM, V_STR, V_IDENT, V_LIST, V_OBJ };
 struct vnode {
 	int kind;
 	int off;
+	int blob;
 	char *s;
 	size_t n;
 	struct vnode **v;
@@ -2428,6 +2429,7 @@ static struct vnode *parse_text(struct pctx *c)
 		out[o] = '\0';
 		n->s = out;
 		n->n = o;
+		n->blob = 1;
 		return n;
 	}
 	if (ch == '-' || (ch >= '0' && ch <= '9')) {
@@ -2744,7 +2746,7 @@ static int build_data(struct bctx *b, struct capn_segment *seg, const struct vno
 static int set_text_at(struct bctx *b, capn_ptr container, int off, const struct vnode *n)
 {
 	capn_text t;
-	if (n->kind != V_STR)
+	if (n->kind != V_STR || n->blob)
 		return berr(b, n, "expected text");
 	if (n->n > (size_t) INT_MAX)
 		return berr(b, n, "text too long");
@@ -3307,8 +3309,8 @@ static int japply(struct bctx *b, const struct capn_dyn_struct *s, const struct 
 	return japply_leaf(b, h->step[h->n - 1].owner, curf, cur, h->step[h->n - 1].f, val);
 }
 
-/* A bare text value fills the struct's first field. The root value stays
- * an object. JSON is unchanged. */
+/* A bare value fills the struct's first field when that field's assignment
+ * accepts the value. The root value stays an object. JSON is unchanged. */
 static int fill_first_field(struct bctx *b, const struct capn_dyn_struct *s,
                             const struct frame *fr, capn_ptr st, const struct vnode *val)
 {

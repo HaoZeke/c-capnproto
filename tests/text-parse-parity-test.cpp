@@ -21,8 +21,11 @@ struct Schemas {
 	struct capn_dyn_field f64f, f32f, i8f, i64f, u64f, ef, df, lstf;
 	struct capn_dyn_field cell_a, xs, y, l32xs;
 	struct capn_dyn_field outer_fields[2];
+	struct capn_dyn_field tf;
+	struct capn_dyn_field box_fields[3];
+	struct capn_dyn_type text_st, data_st;
 	struct capn_dyn_struct f64s, f32s, i8s, i64s, u64s, ens, datas, lists;
-	struct capn_dyn_struct cell, outer, l32;
+	struct capn_dyn_struct cell, outer, l32, texts, box;
 };
 
 static struct capn_dyn_type scalar(uint8_t kind)
@@ -105,6 +108,17 @@ static Schemas &schemas()
 	s.list_u32.elem = &s.u32;
 	set_field(&s.l32xs, "xs", s.list_u32, 0);
 	set_struct(&s.l32, "L32", 0, 1, 1, &s.l32xs);
+
+	set_field(&s.tf, "t", scalar(CAPN_DYN_TEXT), 0);
+	set_struct(&s.texts, "Tx", 0, 1, 1, &s.tf);
+	s.text_st = scalar(CAPN_DYN_STRUCT);
+	s.text_st.st = &s.texts;
+	s.data_st = scalar(CAPN_DYN_STRUCT);
+	s.data_st.st = &s.datas;
+	set_field(&s.box_fields[0], "t", s.text_st, 0);
+	set_field(&s.box_fields[1], "d", s.data_st, 1);
+	set_field(&s.box_fields[2], "i", s.cell_type, 2);
+	set_struct(&s.box, "Box", 0, 3, 3, s.box_fields);
 
 	ready = 1;
 	return s;
@@ -327,4 +341,32 @@ TEST(TextParse, JsonLeavesStay) {
 	EXPECT_EQ(2, capn_get8(bytes, 1));
 	EXPECT_NE(0, sess.json(&s.datas, "{\"d\": \"ab\"}", &st, &err));
 	EXPECT_NE(0, sess.json(&s.outer, "{\"y\": 3}", &st, &err));
+}
+
+TEST(TextParse, BareValueMatchesFirstField) {
+	Schemas &s = schemas();
+	Session sess;
+	capn_ptr st;
+	struct capn_dyn_error err;
+	int rc;
+
+	rc = sess.text(&s.box, "(t = 0x\"61\")", &st, &err);
+	EXPECT_NE(0, rc);
+	rc = sess.text(&s.box, "(t = \"a\")", &st, &err);
+	EXPECT_EQ(0, rc) << err.message;
+	if (rc == 0) {
+		EXPECT_EQ("(t = (t = \"a\"))", rendered(&s.box, st));
+	}
+	rc = sess.text(&s.box, "(d = 0x\"61\")", &st, &err);
+	EXPECT_NE(0, rc);
+	rc = sess.text(&s.box, "(d = \"a\")", &st, &err);
+	EXPECT_NE(0, rc);
+	rc = sess.text(&s.box, "(i = \"a\")", &st, &err);
+	EXPECT_NE(0, rc);
+	rc = sess.text(&s.texts, "(t = 0x\"61\")", &st, &err);
+	EXPECT_NE(0, rc);
+	rc = sess.text(&s.datas, "(d = 0x\"61\")", &st, &err);
+	EXPECT_EQ(0, rc) << err.message;
+	rc = sess.text(&s.datas, "(d = \"a\")", &st, &err);
+	EXPECT_EQ(0, rc) << err.message;
 }
