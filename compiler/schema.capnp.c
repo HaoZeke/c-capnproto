@@ -1368,6 +1368,16 @@ uint64_t Brand_Scope_get_scopeId(Brand_Scope_ptr p)
 	return scopeId;
 }
 
+int Brand_Scope_has_bind(Brand_Scope_ptr p)
+{
+	capn_resolve_struct(&p.p);
+	if ((enum Brand_Scope_which)(int) capn_read16(p.p, 8) != Brand_Scope_bind)
+		return 0;
+	capn_ptr bind;
+	bind = capn_getp(p.p, 0, 1);
+	return bind.type != CAPN_NULL;
+}
+
 void Brand_Scope_set_scopeId(Brand_Scope_ptr p, uint64_t scopeId)
 {
 	capn_resolve(&p.p);
@@ -1419,6 +1429,16 @@ void set_Brand_Binding(const struct Brand_Binding *s, Brand_Binding_list l, int 
 	Brand_Binding_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_Brand_Binding(s, p);
+}
+
+int Brand_Binding_has_type(Brand_Binding_ptr p)
+{
+	capn_resolve_struct(&p.p);
+	if ((enum Brand_Binding_which)(int) capn_read16(p.p, 0) != Brand_Binding_type)
+		return 0;
+	capn_ptr type;
+	type = capn_getp(p.p, 0, 1);
+	return type.type != CAPN_NULL;
 }
 
 Value_ptr new_Value(struct capn_segment *s) {
@@ -1564,6 +1584,56 @@ void set_Value(const struct Value *s, Value_list l, int i) {
 	Value_ptr p;
 	p.p = capn_getp(l.p, i, 0);
 	write_Value(s, p);
+}
+
+int Value_has_text(Value_ptr p)
+{
+	capn_resolve_struct(&p.p);
+	if ((enum Value_which)(int) capn_read16(p.p, 0) != Value_text)
+		return 0;
+	capn_ptr text;
+	text = capn_getp(p.p, 0, 1);
+	return text.type != CAPN_NULL;
+}
+
+int Value_has_data(Value_ptr p)
+{
+	capn_resolve_struct(&p.p);
+	if ((enum Value_which)(int) capn_read16(p.p, 0) != Value_data)
+		return 0;
+	capn_ptr data;
+	data = capn_getp(p.p, 0, 1);
+	return data.type != CAPN_NULL;
+}
+
+int Value_has__list(Value_ptr p)
+{
+	capn_resolve_struct(&p.p);
+	if ((enum Value_which)(int) capn_read16(p.p, 0) != Value__list)
+		return 0;
+	capn_ptr _list;
+	_list = capn_getp(p.p, 0, 1);
+	return _list.type != CAPN_NULL;
+}
+
+int Value_has__struct(Value_ptr p)
+{
+	capn_resolve_struct(&p.p);
+	if ((enum Value_which)(int) capn_read16(p.p, 0) != Value__struct)
+		return 0;
+	capn_ptr _struct;
+	_struct = capn_getp(p.p, 0, 1);
+	return _struct.type != CAPN_NULL;
+}
+
+int Value_has_anyPointer(Value_ptr p)
+{
+	capn_resolve_struct(&p.p);
+	if ((enum Value_which)(int) capn_read16(p.p, 0) != Value_anyPointer)
+		return 0;
+	capn_ptr anyPointer;
+	anyPointer = capn_getp(p.p, 0, 1);
+	return anyPointer.type != CAPN_NULL;
 }
 
 Annotation_ptr new_Annotation(struct capn_segment *s) {
