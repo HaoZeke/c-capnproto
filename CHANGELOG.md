@@ -10,6 +10,22 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ### Fixed
 
+- JSON numbers decode as doubles, matching Cap'n Proto 1.4.0: `9007199254740993`
+  becomes `9007199254740992`, and `18446744073709551615` is out of range.
+  Quoted 64-bit integers stay exact.
+- JSON `null` is rejected for text, data, and list fields. Void `null` is
+  still accepted.
+- An unannotated Data field rejects a JSON string. Number arrays,
+  `$Json.base64`, and `$Json.hex` are unchanged.
+- Unknown JSON field names are ignored.
+- A JSON number with a leading zero, such as `010`, is rejected. `0`,
+  `0.5`, and `-0` stay valid.
+- A JSON `\u` surrogate is stored as its own three-byte sequence, so
+  `\uD83D\uDE00` is `ed a0 bd ed b8 80`.
+- `capn_dyn_to_json` without `CAPN_DYN_COMPACT` pretty-prints with the
+  spacing of `capnp convert binary:json`. Compact JSON is unchanged.
+- A flattened union `$Json.discriminator` value with no tag leaves the
+  union unset. A tag together with the value still selects that member.
 - A `List(T)` field of a generic instantiation uses the list type of the
   bound type, so `List(T)` bound to a struct is a struct list.
 - Each generic instantiation types its own groups. A brand no longer
