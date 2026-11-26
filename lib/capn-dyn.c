@@ -2250,8 +2250,8 @@ static int match_float(const char *p, size_t len, size_t pos, size_t *end)
 	return 1;
 }
 
-/* Text integer spelling, magnitude in uint64. 0x is hex.
- * A leading + fails. Returns 0 on a full match. */
+/* Text integer spelling, magnitude in uint64. Leading 0 is octal, 0x is hex.
+ * A leading + is rejected. Returns 0 on a full match. */
 static int text_int_mag(const char *s, int *neg, unsigned long long *mag)
 {
 	char *end;
@@ -2268,6 +2268,8 @@ static int text_int_mag(const char *s, int *neg, unsigned long long *mag)
 		base = 16;
 	else if (s[0] == '0' && s[1] == 'X')
 		return -1;
+	else if (s[0] == '0')
+		base = 8;
 	else
 		base = 10;
 	errno = 0;
@@ -2594,7 +2596,7 @@ static int parse_scalar(struct bctx *b, const struct capn_dyn_type *t,
 			return json_number_as_int(b, n, kind, bits);
 		s = n->s;
 		if (!b->json && n->kind == V_NUM) {
-			/* Text spelling: upper-case 0X fails. */
+			/* Text spelling: leading 0 is octal. Upper-case 0X fails. */
 			if (text_int_mag(s, &neg, &mag) != 0)
 				return berr(b, n, "integer out of range or malformed");
 		} else {
@@ -2626,12 +2628,24 @@ static int parse_scalar(struct bctx *b, const struct capn_dyn_type *t,
 	case CAPN_DYN_FLOAT64: {
 		double d;
 		if (n->kind == V_NUM) {
-			if (!b->json && n->s[0] == '+')
+			int fneg = 0;
+			unsigned long long mag = 0;
+			if (!b->json && text_int_mag(n->s, &fneg, &mag) == 0) {
+				/* An integer token converts as that integer, so 010 is 8. */
+				if (fneg && mag > (unsigned long long) INT64_MAX + 1ull)
+					return berr(b, n, "expected a number");
+				if (fneg && mag != 0)
+					d = -(double) mag;
+				else
+					d = (double) mag;
+			} else if (!b->json && n->s[0] == '+') {
 				return berr(b, n, "expected a number");
-			errno = 0;
-			d = strtod(n->s, &end);
-			if (*end != '\0')
-				return berr(b, n, "expected a number");
+			} else {
+				errno = 0;
+				d = strtod(n->s, &end);
+				if (*end != '\0')
+					return berr(b, n, "expected a number");
+			}
 		} else if (n->kind == V_STR || n->kind == V_IDENT) {
 			if (!b->json && n->kind == V_IDENT) {
 				if (str_is(n, "nan")) d = NAN;

@@ -252,7 +252,7 @@ TEST(JsonParity, ZeroPointFiveAndNegativeZeroStay) {
   capn_free(&c);
 }
 
-TEST(JsonParity, TextLeadingZeroStaysDecimal) {
+TEST(JsonParity, TextLeadingZeroIsOctal) {
   struct capn c;
   capn_ptr st;
   clear_err();
@@ -260,8 +260,8 @@ TEST(JsonParity, TextLeadingZeroStaysDecimal) {
   EXPECT_EQ(0, capn_dyn_from_text(&Defaults_dyn, "(i8 = 010)", strlen("(i8 = 010)"),
                                  capn_root(&c).seg, &st, &err))
       << err.message;
-  EXPECT_EQ(10, capn_dyn_bits_to_i64(need(&Defaults_dyn, "i8"),
-                                    capn_dyn_get_bits(st, need(&Defaults_dyn, "i8"))));
+  EXPECT_EQ(8, capn_dyn_bits_to_i64(need(&Defaults_dyn, "i8"),
+                                   capn_dyn_get_bits(st, need(&Defaults_dyn, "i8"))));
   capn_free(&c);
 }
 
