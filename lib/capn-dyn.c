@@ -2364,14 +2364,16 @@ static int json_number_as_int(struct bctx *b, const struct vnode *n, int kind,
 		case 32: minv = (double) INT32_MIN; maxv = (double) INT32_MAX; break;
 		default: minv = (double) INT64_MIN; maxv = (double) INT64_MAX; break;
 		}
-		if (!(d >= minv) || !(d <= maxv))
-			return berr(b, n, "integer out of range");
-		switch (w) {
-		case 8: result = (int8_t) d; break;
-		case 16: result = (int16_t) d; break;
-		case 32: result = (int32_t) d; break;
-		default: result = (int64_t) d; break;
-		}
+			/* (double)INT64_MAX is 2^63, so an inclusive compare lets that
+			 * value through and the cast is out of range. */
+			if (!(d >= minv) || !(w == 64 ? d < maxv : d <= maxv))
+				return berr(b, n, "integer out of range");
+			switch (w) {
+			case 8: result = (int8_t) d; break;
+			case 16: result = (int16_t) d; break;
+			case 32: result = (int32_t) d; break;
+			default: result = (int64_t) d; break;
+			}
 		if ((double) result != d)
 			return berr(b, n, "integer out of range");
 		*bits = (uint64_t) result;
@@ -2384,14 +2386,15 @@ static int json_number_as_int(struct bctx *b, const struct vnode *n, int kind,
 		case 32: maxv = (double) UINT32_MAX; break;
 		default: maxv = (double) UINT64_MAX; break;
 		}
-		if (!(d >= minv) || !(d <= maxv))
-			return berr(b, n, "integer out of range");
-		switch (w) {
-		case 8: result = (uint8_t) d; break;
-		case 16: result = (uint16_t) d; break;
-		case 32: result = (uint32_t) d; break;
-		default: result = (uint64_t) d; break;
-		}
+			/* (double)UINT64_MAX is 2^64, same hole as the signed bound. */
+			if (!(d >= minv) || !(w == 64 ? d < maxv : d <= maxv))
+				return berr(b, n, "integer out of range");
+			switch (w) {
+			case 8: result = (uint8_t) d; break;
+			case 16: result = (uint16_t) d; break;
+			case 32: result = (uint32_t) d; break;
+			default: result = (uint64_t) d; break;
+			}
 		if ((double) result != d)
 			return berr(b, n, "integer out of range");
 		*bits = result;

@@ -55,6 +55,26 @@ const struct capn_dyn_field *need(const struct capn_dyn_struct *s, const char *n
 
 }  // namespace
 
+TEST(JsonParity, UnquotedInt64AndUint64MaxStayOutOfRange) {
+  struct capn c;
+  capn_ptr st;
+  const struct capn_dyn_field *i64 = need(&Defaults_dyn, "i64");
+  const struct capn_dyn_field *u64 = need(&Defaults_dyn, "u64");
+
+  ASSERT_NE(0, decode(&Defaults_dyn, "{\"i64\":9223372036854775807}", &c, &st));
+  capn_free(&c);
+  ASSERT_NE(0, decode(&Defaults_dyn, "{\"u64\":18446744073709551615}", &c, &st));
+  capn_free(&c);
+
+  ASSERT_EQ(0, decode(&Defaults_dyn, "{\"i64\":9223372036854774784}", &c, &st)) << err.message;
+  EXPECT_EQ(9223372036854774784ll, capn_dyn_bits_to_i64(i64, capn_dyn_get_bits(st, i64)));
+  capn_free(&c);
+
+  ASSERT_EQ(0, decode(&Defaults_dyn, "{\"u64\":18446744073709549568}", &c, &st)) << err.message;
+  EXPECT_EQ(18446744073709549568ull, capn_dyn_get_bits(st, u64));
+  capn_free(&c);
+}
+
 TEST(JsonParity, NumbersRoundThroughDouble) {
   struct capn c;
   capn_ptr st;

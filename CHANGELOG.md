@@ -10,6 +10,9 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ### Fixed
 
+- Unquoted JSON `9223372036854775807` and `18446744073709551615` are
+  rejected before a 64-bit conversion. `9223372036854774784` and
+  `18446744073709549568` still decode exactly.
 - JSON numbers decode as doubles, matching Cap'n Proto 1.4.0: `9007199254740993`
   becomes `9007199254740992`, and `18446744073709551615` is out of range.
   Quoted 64-bit integers stay exact.
