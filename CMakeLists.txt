@@ -210,6 +210,7 @@ if(BUILD_TESTING)
       tests/fortran-golden-test.cpp
       tests/interface-test.cpp
       tests/list-c6-upgrade-test.cpp
+      tests/list-read-parity-test.cpp
       tests/constants-test.cpp
       tests/addressbook.capnp.c
       compiler/test.capnp.c
