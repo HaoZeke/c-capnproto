@@ -15,6 +15,8 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 - Text input rejects a leading plus, the names `NaN` and `Infinity`, an
   upper-case `0X` prefix, a leading zero outside octal digits, a numeric or
   quoted enumerant, and a number list used as Data.
+- A text integer with a leading `0` is octal, so `010` is 8. `0` and `00`
+  stay 0.
 - JSON `null` is rejected for a struct field. `-010` stays rejected, and
   nested pretty JSON matches Cap'n Proto 1.4.0 byte for byte.
 - A JSON value for a flattened union is ignored when that union has no

@@ -236,6 +236,43 @@ TEST(TextParse, KeptSpellings) {
 	EXPECT_NE(0, sess.text(&s.f64s, "(f64 = 1e+)", &st, &err));
 }
 
+TEST(TextParse, LeadingZeroIsOctal) {
+	Schemas &s = schemas();
+	Session sess;
+	capn_ptr st;
+	struct capn_dyn_error err;
+	ASSERT_EQ(0, sess.text(&s.i8s, "(i8 = 010)", &st, &err)) << err.message;
+	EXPECT_EQ(8, ival(st, &s.i8s, "i8"));
+	ASSERT_EQ(0, sess.text(&s.i64s, "(i64 = 010)", &st, &err)) << err.message;
+	EXPECT_EQ(8, ival(st, &s.i64s, "i64"));
+	ASSERT_EQ(0, sess.text(&s.i8s, "(i8 = 0)", &st, &err)) << err.message;
+	EXPECT_EQ(0, ival(st, &s.i8s, "i8"));
+	ASSERT_EQ(0, sess.text(&s.i8s, "(i8 = 00)", &st, &err)) << err.message;
+	EXPECT_EQ(0, ival(st, &s.i8s, "i8"));
+	ASSERT_EQ(0, sess.text(&s.i8s, "(i8 = 01)", &st, &err)) << err.message;
+	EXPECT_EQ(1, ival(st, &s.i8s, "i8"));
+	ASSERT_EQ(0, sess.text(&s.lists, "(lst = [01, 010, 8])", &st, &err)) << err.message;
+	capn_list32 lst;
+	lst.p = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.lists, "lst"));
+	ASSERT_EQ(3, capn_len(lst));
+	EXPECT_EQ(1, capn_get32(lst, 0));
+	EXPECT_EQ(8, capn_get32(lst, 1));
+	EXPECT_EQ(8, capn_get32(lst, 2));
+	ASSERT_EQ(0, sess.text(&s.l32, "(xs = [1, 2, 010])", &st, &err)) << err.message;
+	lst.p = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.l32, "xs"));
+	ASSERT_EQ(3, capn_len(lst));
+	EXPECT_EQ(1, capn_get32(lst, 0));
+	EXPECT_EQ(2, capn_get32(lst, 1));
+	EXPECT_EQ(8, capn_get32(lst, 2));
+	ASSERT_EQ(0, sess.text(&s.f64s, "(f64 = 010)", &st, &err)) << err.message;
+	EXPECT_EQ(8.0, fval(st, &s.f64s, "f64"));
+	ASSERT_EQ(0, sess.text(&s.f64s, "(f64 = 0x10)", &st, &err)) << err.message;
+	EXPECT_EQ(16.0, fval(st, &s.f64s, "f64"));
+	ASSERT_EQ(0, sess.text(&s.lists, "(lst = [1, 2, 10])", &st, &err)) << err.message;
+	lst.p = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.lists, "lst"));
+	EXPECT_EQ(10, capn_get32(lst, 2));
+}
+
 TEST(TextParse, JsonLeavesStay) {
 	Schemas &s = schemas();
 	Session sess;
