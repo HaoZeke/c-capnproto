@@ -1,7 +1,7 @@
 /* list-read-parity-test.cpp
  *
- * G5: List(T) bound to a one-word struct reads back in text and compact JSON.
- * G6: a composite list of { t @0 :Text } reads as List(Text).
+ * List(T) bound to a one-word struct reads back in text and compact JSON.
+ * A composite list of { t @0 :Text } reads as List(Text).
  * The other direction, a pointer list read as a struct element, stays.
  * A composite list stored behind a far pointer reads the same way.
  */
