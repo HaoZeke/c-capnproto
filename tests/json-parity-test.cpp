@@ -338,6 +338,66 @@ TEST(JsonParity, FlattenedUnionValueWaitsForItsTag) {
   capn_free(&c);
 }
 
+TEST(JsonParity, UntaggedFlattenedUnionMatchesCppCanonical) {
+  struct capn c;
+  capn_ptr st;
+  /* capnp convert json:canonical, Cap'n Proto C++ 1.4.0. */
+  const char *arm_empty = "fcffffff00000000";
+  const char *box_empty = "0000000000000100fcffffff00000000";
+
+  ASSERT_EQ(0, decode(&ArmBox_dyn, "{\"value\":\"zz\"}", &c, &st)) << err.message;
+  EXPECT_EQ(0, capn_dyn_which(&ArmBox_dyn, st));
+  {
+    const struct capn_dyn_field *bar = need(&ArmBox_dyn, "bar");
+    capn_ptr p = capn_dyn_get_ptr(st, bar);
+    EXPECT_EQ(CAPN_NULL, p.type);
+    EXPECT_EQ(0, capn_dyn_has(&ArmBox_dyn, st, bar));
+  }
+  ASSERT_EQ(0, capn_set_root(&c, st));
+  EXPECT_EQ(arm_empty, hex_of(canonical(&c)));
+  capn_free(&c);
+
+  ASSERT_EQ(0, decode(&ArmBox_dyn, "{\"type\":\"bar\",\"value\":\"zz\"}", &c, &st)) << err.message;
+  {
+    const struct capn_dyn_field *bar = need(&ArmBox_dyn, "bar");
+    const struct capn_dyn_struct *pay = bar->type.st;
+    capn_ptr p = capn_dyn_get_ptr(st, bar);
+    capn_text t;
+    EXPECT_EQ((int) bar->discriminant, capn_dyn_which(&ArmBox_dyn, st));
+    ASSERT_NE(CAPN_NULL, p.type);
+    t = capn_dyn_get_text(p, need(pay, "value"));
+    EXPECT_EQ(std::string("zz"), std::string(t.str ? t.str : "", (size_t) t.len));
+  }
+  capn_free(&c);
+
+  ASSERT_EQ(0, decode(&BoxU_dyn, "{\"payload\":\"zz\"}", &c, &st)) << err.message;
+  {
+    const struct capn_dyn_field *box = need(&BoxU_dyn, "box");
+    const struct capn_dyn_struct *inner = box->type.st;
+    capn_ptr p = capn_dyn_get_ptr(st, box);
+    capn_text t;
+    ASSERT_NE(CAPN_NULL, p.type);
+    EXPECT_EQ(0, capn_dyn_which(inner, p));
+    t = capn_dyn_get_text(p, need(inner, "left"));
+    EXPECT_EQ(0, t.len);
+  }
+  ASSERT_EQ(0, capn_set_root(&c, st));
+  EXPECT_EQ(box_empty, hex_of(canonical(&c)));
+  capn_free(&c);
+
+  ASSERT_EQ(0, decode(&BoxU_dyn, "{\"kind\":\"left\",\"payload\":\"zz\"}", &c, &st)) << err.message;
+  {
+    const struct capn_dyn_field *box = need(&BoxU_dyn, "box");
+    capn_ptr p = capn_dyn_get_ptr(st, box);
+    const struct capn_dyn_struct *inner = box->type.st;
+    capn_text t;
+    ASSERT_NE(CAPN_NULL, p.type);
+    t = capn_dyn_get_text(p, need(inner, "left"));
+    EXPECT_EQ(std::string("zz"), std::string(t.str ? t.str : "", (size_t) t.len));
+  }
+  capn_free(&c);
+}
+
 TEST(JsonParity, FlattenedUnionTagAndValueStay) {
   struct capn c;
   capn_ptr st;

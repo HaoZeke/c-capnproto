@@ -10,6 +10,9 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ### Fixed
 
+- A JSON value for a flattened union is ignored when that union has no
+  tag yet. The discriminant stays at its default, and a flattened struct
+  pointer is allocated empty.
 - Unquoted JSON `9223372036854775807` and `18446744073709551615` are
   rejected before a 64-bit conversion. `9223372036854774784` and
   `18446744073709549568` still decode exactly.

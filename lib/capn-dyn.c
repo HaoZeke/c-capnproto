@@ -2954,8 +2954,12 @@ static int jfind(const struct capn_dyn_struct *s, const struct frame *fr,
 	return 0;
 }
 
+static char *union_disc_ptr(capn_ptr st, const struct capn_dyn_struct *s);
+static int union_seen_has(struct bctx *b, char *disc);
+
 /* Walk flattened containers. *curs is the struct the remaining key
- * belongs to. */
+ * belongs to. Returns 1 when a union member on the path has not been
+ * tagged yet. That member stays unallocated. Structs before it stay. */
 static int jwalk(struct bctx *b, const struct vnode *at,
                  const struct capn_dyn_struct *s, const struct frame *fr, capn_ptr st,
                  const struct jhit *h, int ncont, struct frame *owned,
@@ -2969,9 +2973,12 @@ static int jwalk(struct bctx *b, const struct vnode *at,
 		const struct jstep *step = &h->step[i];
 		const struct frame *ffr = *curf;
 		const struct capn_dyn_type *rt = resolve(&step->f->type, &ffr);
-		if (step->f->discriminant != CAPN_DYN_NO_DISCRIMINANT &&
-		    capn_dyn_set_which(step->owner, *cur, step->f) != 0)
-			return berr(b, at, "cannot select %s", step->f->name);
+		if (step->f->discriminant != CAPN_DYN_NO_DISCRIMINANT) {
+			if (!union_seen_has(b, union_disc_ptr(*cur, step->owner)))
+				return 1;
+			if (capn_dyn_set_which(step->owner, *cur, step->f) != 0)
+				return berr(b, at, "cannot select %s", step->f->name);
+		}
 		if (step->f->is_group) {
 			*curs = rt->st;
 			continue;
@@ -3061,10 +3068,14 @@ static int japply(struct bctx *b, const struct capn_dyn_struct *s, const struct 
 	struct frame owned[8];
 	capn_ptr cur;
 	int ncont = h->n;
+	int walked;
 
 	if (h->kind == J_FIELD)
 		ncont = h->n - 1;
-	if (jwalk(b, val, s, fr, st, h, ncont, owned, &curs, &curf, &cur) != 0)
+	walked = jwalk(b, val, s, fr, st, h, ncont, owned, &curs, &curf, &cur);
+	if (walked > 0)
+		return 0;
+	if (walked != 0)
 		return -1;
 	if (h->kind == J_TAG) {
 		int i;

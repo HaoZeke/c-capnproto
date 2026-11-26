@@ -69,3 +69,26 @@ struct Doc $discriminator(name = "kind") {
 
   defaultNest @17 :DefaultNest = (value = "default") $flatten();
 }
+
+struct Pay {
+  value @0 :Text;
+}
+
+struct ArmBox $discriminator(name = "type") {
+  union {
+    foo @0 :UInt32;
+    bar @1 :Pay $flatten();
+  }
+}
+
+struct InnerU $discriminator(name = "kind", valueName = "payload") {
+  union {
+    left @0 :Text;
+    right @1 :UInt32;
+  }
+}
+
+struct BoxU {
+  box @0 :InnerU $flatten();
+  n @1 :Int32;
+}
