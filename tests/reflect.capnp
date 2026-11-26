@@ -214,3 +214,8 @@ struct FirstIsPointer {
   }
   after @2 :UInt8;
 }
+
+# List(PT) read as List(Text) follows the first pointer of each element.
+struct PT { t @0 :Text; }
+struct LT { xs @0 :List(Text); }
+struct LST { xs @0 :List(PT); }

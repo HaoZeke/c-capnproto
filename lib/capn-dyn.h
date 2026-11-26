@@ -13,9 +13,10 @@
  *
  * Not covered: Interface and AnyPointer fields are opaque (printed as
  * a placeholder, never decoded). Fields typed by a generic parameter are
- * AnyPointer until a brand binds them. Pointer defaults are returned by
- * capn_dyn_get_ptr and capn_dyn_get_text; capn_dyn_has stays false when
- * the wire pointer is null.
+ * AnyPointer until a brand binds them. A list whose element is a
+ * parameter takes its element size from that binding. Pointer defaults
+ * are returned by capn_dyn_get_ptr and capn_dyn_get_text; capn_dyn_has
+ * stays false when the wire pointer is null.
  */
 
 #ifndef CAPN_DYN_H
