@@ -1481,7 +1481,7 @@ static int json_skip_field(const struct capn_dyn_struct *s, capn_ptr st,
 		return 1;
 	if (!active && !field_has(s, st, f, rt))
 		return 1;
-	get_field_value(st, f, rt, v);
+	get_field_value(st, f, rt, ffr, v);
 	return 0;
 }
 
