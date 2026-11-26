@@ -2731,54 +2731,77 @@ static int build_list(struct bctx *b, struct capn_segment *seg, const struct cap
 	return 0;
 }
 
-static int b64_digit(int c)
+/* kj::base64_decode_value. -1 is whitespace, -2 is padding, -3 is anything else. */
+static int b64_value(unsigned char c)
 {
-	if (c >= 'A' && c <= 'Z') return c - 'A';
-	if (c >= 'a' && c <= 'z') return c - 'a' + 26;
-	if (c >= '0' && c <= '9') return c - '0' + 52;
-	if (c == '+') return 62;
-	if (c == '/') return 63;
-	return -1;
+	static const signed char decoding[256] = {
+		-3,-3,-3,-3,-3,-3,-3,-3,  -3,-1,-1,-3,-1,-1,-3,-3,
+		-3,-3,-3,-3,-3,-3,-3,-3,  -3,-3,-3,-3,-3,-3,-3,-3,
+		-1,-3,-3,-3,-3,-3,-3,-3,  -3,-3,-3,62,-3,-3,-3,63,
+		52,53,54,55,56,57,58,59,  60,61,-3,-3,-3,-2,-3,-3,
+		-3, 0, 1, 2, 3, 4, 5, 6,   7, 8, 9,10,11,12,13,14,
+		15,16,17,18,19,20,21,22,  23,24,25,-3,-3,-3,-3,-3,
+		-3,26,27,28,29,30,31,32,  33,34,35,36,37,38,39,40,
+		41,42,43,44,45,46,47,48,  49,50,51,-3,-3,-3,-3,-3,
+		-3,-3,-3,-3,-3,-3,-3,-3,  -3,-3,-3,-3,-3,-3,-3,-3,
+		-3,-3,-3,-3,-3,-3,-3,-3,  -3,-3,-3,-3,-3,-3,-3,-3,
+		-3,-3,-3,-3,-3,-3,-3,-3,  -3,-3,-3,-3,-3,-3,-3,-3,
+		-3,-3,-3,-3,-3,-3,-3,-3,  -3,-3,-3,-3,-3,-3,-3,-3,
+		-3,-3,-3,-3,-3,-3,-3,-3,  -3,-3,-3,-3,-3,-3,-3,-3,
+		-3,-3,-3,-3,-3,-3,-3,-3,  -3,-3,-3,-3,-3,-3,-3,-3,
+		-3,-3,-3,-3,-3,-3,-3,-3,  -3,-3,-3,-3,-3,-3,-3,-3,
+		-3,-3,-3,-3,-3,-3,-3,-3,  -3,-3,-3,-3,-3,-3,-3,-3,
+	};
+	return decoding[c];
 }
 
+/* kj::decodeBase64 (Cap'n Proto 1.4.0). Non-alphabet bytes are skipped.
+ * A trailing partial quantum is left unwritten. The JSON handler stores
+ * the bytes. A result past the list limit is rejected. */
 static int decode_base64(const char *s, size_t n, uint8_t **out, int *outn)
 {
-	size_t i = 0, o = 0;
+	size_t max_out, i, o;
 	uint8_t *buf;
-	if (n % 4 != 0)
+	unsigned acc;
+	int step;
+
+	if (n > (SIZE_MAX - 7) / 6)
 		return -1;
-	/* Output is a data list. A length past the list limit, or one
-	 * that does not fit in the int the caller stores, is rejected. */
-	if (n / 4 > (0x1fffffffu / 3) || n / 4 * 3 > (size_t) INT_MAX)
-		return -1;
-	buf = (uint8_t *) malloc(n / 4 * 3 + 1);
+	max_out = (n * 6 + 7) / 8;
+	buf = (uint8_t *) malloc(max_out > 0 ? max_out : 1);
 	if (buf == NULL)
 		return -1;
-	while (i < n) {
-		int last = (i + 4 == n);
-		int a, b, c, d;
-		/* Padding is only `=` at the end of the last quartet, as
-		 * `xx==` or `xxx=`. An earlier `=` or `AA=A` is not base64. */
-		if (s[i] == '=' || s[i + 1] == '=' ||
-		    (s[i + 2] == '=' && s[i + 3] != '=') ||
-		    ((s[i + 2] == '=' || s[i + 3] == '=') && !last)) {
-			free(buf);
-			return -1;
+	acc = 0;
+	step = 0;
+	o = 0;
+	for (i = 0; i < n; i++) {
+		int fragment = b64_value((unsigned char) s[i]);
+		if (fragment < 0)
+			continue;
+		switch (step) {
+		case 0:
+			acc = (unsigned) (fragment & 0x3f) << 2;
+			step = 1;
+			break;
+		case 1:
+			buf[o++] = (uint8_t) (acc | ((unsigned) (fragment & 0x30) >> 4));
+			acc = (unsigned) (fragment & 0x0f) << 4;
+			step = 2;
+			break;
+		case 2:
+			buf[o++] = (uint8_t) (acc | ((unsigned) (fragment & 0x3c) >> 2));
+			acc = (unsigned) (fragment & 0x03) << 6;
+			step = 3;
+			break;
+		default:
+			buf[o++] = (uint8_t) (acc | (unsigned) (fragment & 0x3f));
+			step = 0;
+			break;
 		}
-		a = b64_digit(s[i]);
-		b = b64_digit(s[i + 1]);
-		c = s[i + 2] == '=' ? 0 : b64_digit(s[i + 2]);
-		d = s[i + 3] == '=' ? 0 : b64_digit(s[i + 3]);
-		if (a < 0 || b < 0 || c < 0 || d < 0) {
-			free(buf);
-			return -1;
-		}
-		buf[o++] = (uint8_t) ((a << 2) | (b >> 4));
-		if (s[i + 2] != '=')
-			buf[o++] = (uint8_t) ((b << 4) | (c >> 2));
-		if (s[i + 3] != '=')
-			buf[o++] = (uint8_t) ((c << 6) | d);
-		i += 4;
+	}
+	if (o > 0x1fffffffu || o > (size_t) INT_MAX) {
+		free(buf);
+		return -1;
 	}
 	*out = buf;
 	*outn = (int) o;
