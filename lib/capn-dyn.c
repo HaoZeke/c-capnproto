@@ -1236,7 +1236,7 @@ static void json_data_value(struct jctx *j, struct dv *v, int enc)
 	uint8_t *tmp;
 
 	if (enc == 0) {
-		json_value(j, &(struct capn_dyn_type){CAPN_DYN_DATA}, NULL, v);
+		json_value(j, &(struct capn_dyn_type){.kind = CAPN_DYN_DATA}, NULL, v);
 		return;
 	}
 	l.p = v->data.p;
@@ -1333,7 +1333,7 @@ static int json_fields(struct jctx *j, const struct capn_dyn_struct *s, capn_ptr
 		return first;
 	if (s->json_has_disc && s->json_disc_name != NULL && s->json_disc_name[0] != '\0') {
 		struct dv tag;
-		const struct capn_dyn_type text = {CAPN_DYN_TEXT};
+		const struct capn_dyn_type text = {.kind = CAPN_DYN_TEXT};
 		if (!first)
 			sb_str(j->b, j->comma);
 		json_escape_prefixed(j->b, prefix, s->json_disc_name);
@@ -1359,15 +1359,371 @@ static void json_struct(struct jctx *j, const struct capn_dyn_struct *s, capn_pt
 	sb_str(j->b, "}");
 }
 
-char *capn_dyn_to_json(const struct capn_dyn_struct *s, capn_ptr st, int flags)
+/* Pretty JSON follows JsonCodec::encodeList. One line uses ", " between
+ * items. Several items break when one is already multi-line or any item
+ * is longer than 50 bytes: a space or a newline-indent before the first,
+ * ",\n" plus indent between items, and a space before the closer. */
+static void pieces_free(struct piece *p, int n)
+{
+	int i;
+	if (p == NULL)
+		return;
+	for (i = 0; i < n; i++)
+		free(p[i].s);
+	free(p);
+}
+
+static struct piece json_leaf(const struct capn_dyn_type *t, const struct frame *fr,
+                              struct dv *v)
 {
 	struct sb b;
 	struct jctx j;
 
 	memset(&b, 0, sizeof b);
+	memset(&j, 0, sizeof j);
 	j.b = &b;
-	j.colon = (flags & CAPN_DYN_COMPACT) ? ":" : ": ";
-	j.comma = (flags & CAPN_DYN_COMPACT) ? "," : ", ";
+	j.colon = ": ";
+	j.comma = ", ";
+	json_value(&j, t, fr, v);
+	return piece_from_sb(&b);
+}
+
+static struct piece json_join(struct piece *elems, int n, int child_multi, int indent,
+                              int *multiline, int has_prefix, char open_ch, char close_ch)
+{
+	size_t maxc = 0;
+	int i, brk, padn;
+	struct sb b;
+	char stackpad[256];
+	char *pad = stackpad;
+	char *heap = NULL;
+	char open_s[2], close_s[2];
+
+	for (i = 0; i < n; i++) {
+		if (elems[i].s == NULL)
+			return piece_fail();
+		if (elems[i].n > maxc)
+			maxc = elems[i].n;
+	}
+	brk = n > 1 && (child_multi || maxc > 50);
+	memset(&b, 0, sizeof b);
+	open_s[0] = open_ch;
+	open_s[1] = '\0';
+	close_s[0] = close_ch;
+	close_s[1] = '\0';
+	sb_str(&b, open_s);
+	if (multiline != NULL)
+		*multiline = brk || child_multi;
+	if (brk) {
+		padn = (indent + 1) * 2;
+		if (padn < 0)
+			padn = 0;
+		if (padn > (int) sizeof stackpad - 1) {
+			heap = (char *) malloc((size_t) padn + 1);
+			if (heap == NULL) {
+				free(b.buf);
+				return piece_fail();
+			}
+			pad = heap;
+		}
+		memset(pad, ' ', (size_t) padn);
+		pad[padn] = '\0';
+		if (has_prefix) {
+			sb_str(&b, "\n");
+			sb_str(&b, pad);
+		} else {
+			sb_str(&b, " ");
+		}
+		for (i = 0; i < n; i++) {
+			if (i) {
+				sb_str(&b, ",\n");
+				sb_str(&b, pad);
+			}
+			sb_add(&b, elems[i].s, elems[i].n);
+		}
+		sb_str(&b, " ");
+	} else {
+		for (i = 0; i < n; i++) {
+			if (i)
+				sb_str(&b, ", ");
+			sb_add(&b, elems[i].s, elems[i].n);
+		}
+	}
+	sb_str(&b, close_s);
+	free(heap);
+	return piece_from_sb(&b);
+}
+
+static struct piece json_pretty_value(const struct capn_dyn_type *t, const struct frame *fr,
+                                      struct dv *v, int indent, int *multiline, int has_prefix);
+static struct piece json_pretty_struct(const struct capn_dyn_struct *s, capn_ptr st,
+                                       const struct frame *fr, int indent, int *multiline,
+                                       int has_prefix);
+static int json_count_fields(const struct capn_dyn_struct *s, capn_ptr st,
+                             const struct frame *fr);
+static int json_fill_fields(const struct capn_dyn_struct *s, capn_ptr st,
+                            const struct frame *fr, const char *prefix, int sub_indent,
+                            struct piece *out, int cap, int *at, int *child_multi);
+
+static int json_skip_field(const struct capn_dyn_struct *s, capn_ptr st,
+                           const struct capn_dyn_field *f, const struct frame *fr,
+                           const struct frame **ffr_out, const struct capn_dyn_type **rt_out,
+                           struct dv *v, int active)
+{
+	const struct frame *ffr = fr;
+	const struct capn_dyn_type *rt = resolve(&f->type, &ffr);
+
+	*ffr_out = ffr;
+	*rt_out = rt;
+	if (rt->kind == CAPN_DYN_INTERFACE || rt->kind == CAPN_DYN_ANYPOINTER)
+		return 1;
+	if (rt->kind == CAPN_DYN_STRUCT && !f->is_group && rt->st == NULL)
+		return 1;
+	if (!active && !field_has(s, st, f, rt))
+		return 1;
+	get_field_value(st, f, rt, ffr, v);
+	return 0;
+}
+
+static int json_count_one(const struct capn_dyn_struct *s, capn_ptr st,
+                          const struct capn_dyn_field *f, const struct frame *fr, int active)
+{
+	const struct frame *ffr;
+	const struct capn_dyn_type *rt;
+	struct dv v;
+
+	if (json_skip_field(s, st, f, fr, &ffr, &rt, &v, active))
+		return 0;
+	if (f->json_flatten && rt->kind == CAPN_DYN_STRUCT && rt->st != NULL) {
+		if (f->is_group)
+			return json_count_fields(rt->st, st, fr);
+		{
+			struct frame nf;
+			enter_struct(&nf, rt, ffr);
+			return json_count_fields(rt->st, v.p, &nf);
+		}
+	}
+	return 1;
+}
+
+static int json_count_fields(const struct capn_dyn_struct *s, capn_ptr st,
+                             const struct frame *fr)
+{
+	int i, n = 0;
+	const struct capn_dyn_field *u;
+
+	capn_resolve(&st);
+	for (i = 0; i < s->nfields; i++) {
+		if (s->fields[i].discriminant == CAPN_DYN_NO_DISCRIMINANT)
+			n += json_count_one(s, st, &s->fields[i], fr, 0);
+	}
+	u = active_union_field(s, st);
+	if (u == NULL)
+		return n;
+	if (s->json_has_disc && s->json_disc_name != NULL && s->json_disc_name[0] != '\0')
+		n++;
+	if (s->json_has_disc && u->type.kind == CAPN_DYN_VOID)
+		return n;
+	n += json_count_one(s, st, u, fr, 1);
+	return n;
+}
+
+static int json_push_field(struct piece *out, int cap, int *at, const char *prefix,
+                           const char *key, struct piece val)
+{
+	struct sb b;
+
+	if (val.s == NULL)
+		return -1;
+	if (*at >= cap) {
+		free(val.s);
+		return -1;
+	}
+	memset(&b, 0, sizeof b);
+	json_escape_prefixed(&b, prefix, key);
+	sb_str(&b, ": ");
+	sb_add(&b, val.s, val.n);
+	free(val.s);
+	out[*at] = piece_from_sb(&b);
+	if (out[*at].s == NULL)
+		return -1;
+	(*at)++;
+	return 0;
+}
+
+static int json_fill_one(const struct capn_dyn_struct *s, capn_ptr st,
+                         const struct capn_dyn_field *f, const struct frame *fr,
+                         const char *prefix, const char *key_over, int sub_indent,
+                         struct piece *out, int cap, int *at, int *child_multi, int active)
+{
+	const struct frame *ffr;
+	const struct capn_dyn_type *rt;
+	struct dv v;
+	struct piece val;
+
+	if (json_skip_field(s, st, f, fr, &ffr, &rt, &v, active))
+		return 0;
+	if (f->json_flatten && rt->kind == CAPN_DYN_STRUCT && rt->st != NULL) {
+		const char *pre = f->json_prefix != NULL ? f->json_prefix : "";
+		const char *outer = prefix != NULL ? prefix : "";
+		char nested[512];
+		int nw = snprintf(nested, sizeof nested, "%s%s", outer, pre);
+		if (nw < 0 || (size_t) nw >= sizeof nested)
+			return -1;
+		if (f->is_group)
+			return json_fill_fields(rt->st, st, fr, nested, sub_indent, out, cap, at, child_multi);
+		{
+			struct frame nf;
+			enter_struct(&nf, rt, ffr);
+			return json_fill_fields(rt->st, v.p, &nf, nested, sub_indent, out, cap, at, child_multi);
+		}
+	}
+	if (f->is_group)
+		val = json_pretty_struct(rt->st, v.p, fr, sub_indent, child_multi, 1);
+	else if (rt->kind == CAPN_DYN_DATA && f->json_data != 0) {
+		struct sb b;
+		struct jctx j;
+		memset(&b, 0, sizeof b);
+		memset(&j, 0, sizeof j);
+		j.b = &b;
+		j.colon = ":";
+		j.comma = ",";
+		json_data_value(&j, &v, f->json_data);
+		val = piece_from_sb(&b);
+	} else {
+		val = json_pretty_value(rt, ffr, &v, sub_indent, child_multi, 1);
+	}
+	return json_push_field(out, cap, at, prefix, key_over != NULL ? key_over : json_key(f), val);
+}
+
+static int json_fill_fields(const struct capn_dyn_struct *s, capn_ptr st,
+                            const struct frame *fr, const char *prefix, int sub_indent,
+                            struct piece *out, int cap, int *at, int *child_multi)
+{
+	int i;
+	const struct capn_dyn_field *u;
+
+	capn_resolve(&st);
+	for (i = 0; i < s->nfields; i++) {
+		if (s->fields[i].discriminant != CAPN_DYN_NO_DISCRIMINANT)
+			continue;
+		if (json_fill_one(s, st, &s->fields[i], fr, prefix, NULL, sub_indent,
+		                  out, cap, at, child_multi, 0) != 0)
+			return -1;
+	}
+	u = active_union_field(s, st);
+	if (u == NULL)
+		return 0;
+	if (s->json_has_disc && s->json_disc_name != NULL && s->json_disc_name[0] != '\0') {
+		struct dv tag;
+		struct piece val;
+		const struct capn_dyn_type text = {.kind = CAPN_DYN_TEXT};
+		memset(&tag, 0, sizeof tag);
+		tag.text.str = json_key(u);
+		tag.text.len = (int) strlen(tag.text.str);
+		val = json_pretty_value(&text, NULL, &tag, sub_indent, child_multi, 1);
+		if (json_push_field(out, cap, at, prefix, s->json_disc_name, val) != 0)
+			return -1;
+	}
+	if (s->json_has_disc && u->type.kind == CAPN_DYN_VOID)
+		return 0;
+	if (s->json_has_disc && s->json_disc_value != NULL)
+		return json_fill_one(s, st, u, fr, prefix, s->json_disc_value, sub_indent,
+		                      out, cap, at, child_multi, 1);
+	return json_fill_one(s, st, u, fr, prefix, NULL, sub_indent, out, cap, at, child_multi, 1);
+}
+
+static struct piece json_pretty_list(const struct capn_dyn_type *t, const struct frame *fr,
+                                     capn_ptr list, int indent, int *multiline, int has_prefix)
+{
+	const struct frame *efr = fr;
+	const struct capn_dyn_type *et = resolve(t->elem, &efr);
+	struct piece *elems = NULL;
+	struct piece body;
+	int i, n, sub, child = 0;
+
+	capn_resolve(&list);
+	n = capn_ptr_len(list);
+	if (n < 0)
+		n = 0;
+	sub = indent + (n > 1);
+	if (n > 0) {
+		elems = (struct piece *) calloc((size_t) n, sizeof *elems);
+		if (elems == NULL)
+			return piece_fail();
+		for (i = 0; i < n; i++) {
+			struct dv ev;
+			get_elem_value(list, et, i, &ev);
+			elems[i] = json_pretty_value(et, efr, &ev, sub, &child, 0);
+			if (elems[i].s == NULL) {
+				pieces_free(elems, n);
+				return piece_fail();
+			}
+		}
+	}
+	body = json_join(elems, n, child, indent, multiline, has_prefix, '[', ']');
+	pieces_free(elems, n);
+	return body;
+}
+
+static struct piece json_pretty_value(const struct capn_dyn_type *t, const struct frame *fr,
+                                      struct dv *v, int indent, int *multiline, int has_prefix)
+{
+	switch (t->kind) {
+	case CAPN_DYN_LIST:
+		return json_pretty_list(t, fr, v->p, indent, multiline, has_prefix);
+	case CAPN_DYN_STRUCT:
+		if (t->st == NULL)
+			return json_leaf(t, fr, v);
+		{
+			struct frame nf;
+			enter_struct(&nf, t, fr);
+			return json_pretty_struct(t->st, v->p, &nf, indent, multiline, has_prefix);
+		}
+	default:
+		return json_leaf(t, fr, v);
+	}
+}
+
+static struct piece json_pretty_struct(const struct capn_dyn_struct *s, capn_ptr st,
+                                       const struct frame *fr, int indent, int *multiline,
+                                       int has_prefix)
+{
+	int n = json_count_fields(s, st, fr);
+	int sub = indent + (n > 1);
+	int child = 0, at = 0;
+	struct piece *elems = NULL;
+	struct piece body;
+
+	if (n > 0) {
+		elems = (struct piece *) calloc((size_t) n, sizeof *elems);
+		if (elems == NULL)
+			return piece_fail();
+		if (json_fill_fields(s, st, fr, NULL, sub, elems, n, &at, &child) != 0 || at != n) {
+			pieces_free(elems, n);
+			return piece_fail();
+		}
+	}
+	body = json_join(elems, n, child, indent, multiline, has_prefix, '{', '}');
+	pieces_free(elems, n);
+	return body;
+}
+
+char *capn_dyn_to_json(const struct capn_dyn_struct *s, capn_ptr st, int flags)
+{
+	struct sb b;
+	struct jctx j;
+
+	if ((flags & CAPN_DYN_COMPACT) == 0) {
+		struct piece p;
+		int multi = 0;
+		p = json_pretty_struct(s, st, NULL, 0, &multi, 0);
+		return p.s;
+	}
+	memset(&b, 0, sizeof b);
+	j.b = &b;
+	j.colon = ":";
+	j.comma = ",";
 	json_struct(&j, s, st, NULL);
 	if (b.err) {
 		free(b.buf);
@@ -1585,6 +1941,9 @@ static struct vnode *parse_string(struct pctx *c, int json)
 		case 'u': {
 			unsigned long cp = 0;
 			int k;
+			/* Each \uXXXX is its own UTF-8 sequence, including a surrogate.
+			 * A pair is two 3-byte sequences (ed a0 bd ed b8 80 for
+			 * \uD83D\uDE00), the same bytes JsonCodec writes. */
 			if (!json)
 				goto bad;
 			for (k = 0; k < 4; k++) {
@@ -1593,24 +1952,6 @@ static struct vnode *parse_string(struct pctx *c, int json)
 					goto bad;
 				cp = cp * 16 + (unsigned long) hv;
 				c->pos++;
-			}
-			if (cp >= 0xd800 && cp < 0xdc00) {
-				unsigned long lo = 0;
-				if (c->pos + 6 > c->len || c->p[c->pos] != '\\' || c->p[c->pos + 1] != 'u')
-					goto bad;
-				c->pos += 2;
-				for (k = 0; k < 4; k++) {
-					int hv = c->pos < c->len ? hexval(c->p[c->pos]) : -1;
-					if (hv < 0)
-						goto bad;
-					lo = lo * 16 + (unsigned long) hv;
-					c->pos++;
-				}
-				if (lo < 0xdc00 || lo > 0xdfff)
-					goto bad;
-				cp = 0x10000 + ((cp - 0xd800) << 10) + (lo - 0xdc00);
-			} else if (cp >= 0xdc00 && cp < 0xe000) {
-				goto bad;
 			}
 			append_utf8(out, &o, cp);
 			break;
@@ -1802,9 +2143,19 @@ static struct vnode *parse_json(struct pctx *c)
 	}
 	default:
 		if (c->p[c->pos] == '-' || (c->p[c->pos] >= '0' && c->p[c->pos] <= '9')) {
+			const char *dig;
 			while (c->pos < c->len && (strchr("+-.eE", c->p[c->pos]) ||
 			       (c->p[c->pos] >= '0' && c->p[c->pos] <= '9')))
 				c->pos++;
+			/* A second digit after a leading 0 rejects the JSON number. */
+			dig = c->p + start;
+			if (*dig == '-')
+				dig++;
+			if ((size_t) (dig - c->p) + 1 < c->pos && *dig == '0' &&
+			    dig[1] >= '0' && dig[1] <= '9') {
+				perr(c, (int) (dig - c->p), "unexpected character in JSON");
+				return NULL;
+			}
 			return token_node(c, V_NUM, start, c->pos);
 		}
 		perr(c, start, "unexpected character in JSON");
@@ -2000,6 +2351,10 @@ struct bctx {
 	struct capn_dyn_error *err;
 	int failed;
 	int json;
+	/* Discriminant addresses whose JSON tag was present. A valueName
+	 * with no tag leaves that union unset. */
+	char **seen;
+	int nseen, capseen;
 };
 
 static int berr(struct bctx *b, const struct vnode *at, const char *fmt, ...)
@@ -2020,6 +2375,69 @@ static int berr(struct bctx *b, const struct vnode *at, const char *fmt, ...)
 static int str_is(const struct vnode *n, const char *lit)
 {
 	return n->s != NULL && strcmp(n->s, lit) == 0;
+}
+
+/* A JSON number is a double, then checked the way dynamic.c++ checks a
+ * float-to-integer conversion: in range of the widened min and max, and
+ * equal to that integer when read back as a double. */
+static int json_number_as_int(struct bctx *b, const struct vnode *n, int kind,
+                              uint64_t *bits)
+{
+	static const int width[] = {0, 0, 8, 16, 32, 64, 8, 16, 32, 64};
+	int w = width[kind];
+	int sgn = is_signed(kind);
+	char *end;
+	double d, minv, maxv;
+
+	d = strtod(n->s, &end);
+	if (end == n->s || *end != '\0')
+		return berr(b, n, "expected an integer");
+	if (sgn) {
+		int64_t result;
+		switch (w) {
+		case 8: minv = (double) INT8_MIN; maxv = (double) INT8_MAX; break;
+		case 16: minv = (double) INT16_MIN; maxv = (double) INT16_MAX; break;
+		case 32: minv = (double) INT32_MIN; maxv = (double) INT32_MAX; break;
+		default: minv = (double) INT64_MIN; maxv = (double) INT64_MAX; break;
+		}
+		/* (double)INT64_MAX is 2^63, so an inclusive compare lets that
+		 * value through and the cast is out of range. */
+		if (!(d >= minv) || !(w == 64 ? d < maxv : d <= maxv))
+			return berr(b, n, "integer out of range");
+		switch (w) {
+		case 8: result = (int8_t) d; break;
+		case 16: result = (int16_t) d; break;
+		case 32: result = (int32_t) d; break;
+		default: result = (int64_t) d; break;
+		}
+		if ((double) result != d)
+			return berr(b, n, "integer out of range");
+		*bits = (uint64_t) result;
+	} else {
+		uint64_t result;
+		minv = 0;
+		switch (w) {
+		case 8: maxv = (double) UINT8_MAX; break;
+		case 16: maxv = (double) UINT16_MAX; break;
+		case 32: maxv = (double) UINT32_MAX; break;
+		default: maxv = (double) UINT64_MAX; break;
+		}
+		/* (double)UINT64_MAX is 2^64, same hole as the signed bound. */
+		if (!(d >= minv) || !(w == 64 ? d < maxv : d <= maxv))
+			return berr(b, n, "integer out of range");
+		switch (w) {
+		case 8: result = (uint8_t) d; break;
+		case 16: result = (uint16_t) d; break;
+		case 32: result = (uint32_t) d; break;
+		default: result = (uint64_t) d; break;
+		}
+		if ((double) result != d)
+			return berr(b, n, "integer out of range");
+		*bits = result;
+	}
+	if (w < 64)
+		*bits &= (1ull << w) - 1;
+	return 0;
 }
 
 static int parse_scalar(struct bctx *b, const struct capn_dyn_type *t,
@@ -2047,6 +2465,9 @@ static int parse_scalar(struct bctx *b, const struct capn_dyn_type *t,
 
 		if ((n->kind != V_NUM && n->kind != V_STR) || n->n == 0)
 			return berr(b, n, "expected an integer");
+		/* Text integers and JSON strings stay exact. A JSON number is a double. */
+		if (b->json && n->kind == V_NUM)
+			return json_number_as_int(b, n, kind, bits);
 		s = n->s;
 		neg = (*s == '-');
 		if (*s == '-' || *s == '+')
@@ -2132,6 +2553,10 @@ static int build_data(struct bctx *b, struct capn_segment *seg, const struct vno
 	int i;
 
 	if (n->kind == V_STR) {
+		/* Text spells Data as a string or 0x"...". JSON accepts a string
+		 * only through $Json.base64 and $Json.hex, which never reach here. */
+		if (b->json)
+			return berr(b, n, "expected data");
 		if (n->n > 0x1fffffffu)
 			return berr(b, n, "data too long");
 		l = capn_new_list8(seg, (int) n->n);
@@ -2405,13 +2830,19 @@ static int assign_field(struct bctx *b, const struct capn_dyn_struct *s, const s
 	case CAPN_DYN_VOID:
 		return 0;
 	case CAPN_DYN_TEXT:
-		if (val->kind == V_NULL)
+		if (val->kind == V_NULL) {
+			if (b->json)
+				return berr(b, val, "expected text");
 			return 0;
+		}
 		return set_text_at(b, st, (int) f->offset, val);
 	case CAPN_DYN_DATA: {
 		capn_ptr d;
-		if (val->kind == V_NULL)
+		if (val->kind == V_NULL) {
+			if (b->json)
+				return berr(b, val, "expected data");
 			return 0;
+		}
 		if (b->json && f->json_data != 0) {
 			uint8_t *raw = NULL;
 			int rn = 0;
@@ -2440,17 +2871,23 @@ static int assign_field(struct bctx *b, const struct capn_dyn_struct *s, const s
 	}
 	case CAPN_DYN_LIST: {
 		capn_ptr l;
-		if (val->kind == V_NULL)
+		if (val->kind == V_NULL) {
+			if (b->json)
+				return berr(b, val, "expected a list");
 			return 0;
+		}
 		if (build_list(b, st.seg, rt, ffr, val, &l) != 0)
 			return -1;
 		return capn_setp(st, (int) f->offset, l) ? berr(b, val, "could not store list") : 0;
 	}
-	case CAPN_DYN_STRUCT: {
-		struct frame nf;
-		capn_ptr sub;
-		if (val->kind == V_NULL)
-			return 0;
+		case CAPN_DYN_STRUCT: {
+			struct frame nf;
+			capn_ptr sub;
+			if (val->kind == V_NULL) {
+				if (b->json)
+					return berr(b, val, "expected an object");
+				return 0;
+			}
 		if (rt->st == NULL)
 			return berr(b, val, "field %s has no descriptor", f->name);
 		sub = capn_new_struct(st.seg, rt->st->data_words * 8, rt->st->pointers);
@@ -2556,8 +2993,12 @@ static int jfind(const struct capn_dyn_struct *s, const struct frame *fr,
 	return 0;
 }
 
+static char *union_disc_ptr(capn_ptr st, const struct capn_dyn_struct *s);
+static int union_seen_has(struct bctx *b, char *disc);
+
 /* Walk flattened containers. *curs is the struct the remaining key
- * belongs to. */
+ * belongs to. Returns 1 when a union member on the path has not been
+ * tagged yet. That member stays unallocated. Structs before it stay. */
 static int jwalk(struct bctx *b, const struct vnode *at,
                  const struct capn_dyn_struct *s, const struct frame *fr, capn_ptr st,
                  const struct jhit *h, int ncont, struct frame *owned,
@@ -2571,9 +3012,12 @@ static int jwalk(struct bctx *b, const struct vnode *at,
 		const struct jstep *step = &h->step[i];
 		const struct frame *ffr = *curf;
 		const struct capn_dyn_type *rt = resolve(&step->f->type, &ffr);
-		if (step->f->discriminant != CAPN_DYN_NO_DISCRIMINANT &&
-		    capn_dyn_set_which(step->owner, *cur, step->f) != 0)
-			return berr(b, at, "cannot select %s", step->f->name);
+		if (step->f->discriminant != CAPN_DYN_NO_DISCRIMINANT) {
+			if (!union_seen_has(b, union_disc_ptr(*cur, step->owner)))
+				return 1;
+			if (capn_dyn_set_which(step->owner, *cur, step->f) != 0)
+				return berr(b, at, "cannot select %s", step->f->name);
+		}
 		if (step->f->is_group) {
 			*curs = rt->st;
 			continue;
@@ -2595,6 +3039,47 @@ static int jwalk(struct bctx *b, const struct vnode *at,
 			*curf = &owned[i];
 		}
 	}
+	return 0;
+}
+
+static char *union_disc_ptr(capn_ptr st, const struct capn_dyn_struct *s)
+{
+	capn_resolve(&st);
+	if (s == NULL || s->union_count == 0 || st.type != CAPN_STRUCT || st.data == NULL)
+		return NULL;
+	return st.data + 2 * (int) s->union_offset;
+}
+
+static int union_seen_has(struct bctx *b, char *disc)
+{
+	int i;
+	if (disc == NULL)
+		return 0;
+	for (i = 0; i < b->nseen; i++)
+		if (b->seen[i] == disc)
+			return 1;
+	return 0;
+}
+
+static int union_seen_add(struct bctx *b, char *disc)
+{
+	int i;
+	char **nbuf;
+	int cap;
+	if (disc == NULL)
+		return 0;
+	for (i = 0; i < b->nseen; i++)
+		if (b->seen[i] == disc)
+			return 0;
+	if (b->nseen == b->capseen) {
+		cap = b->capseen ? b->capseen * 2 : 4;
+		nbuf = (char **) realloc(b->seen, (size_t) cap * sizeof *nbuf);
+		if (nbuf == NULL)
+			return -1;
+		b->seen = nbuf;
+		b->capseen = cap;
+	}
+	b->seen[b->nseen++] = disc;
 	return 0;
 }
 
@@ -2622,10 +3107,14 @@ static int japply(struct bctx *b, const struct capn_dyn_struct *s, const struct 
 	struct frame owned[8];
 	capn_ptr cur;
 	int ncont = h->n;
+	int walked;
 
 	if (h->kind == J_FIELD)
 		ncont = h->n - 1;
-	if (jwalk(b, val, s, fr, st, h, ncont, owned, &curs, &curf, &cur) != 0)
+	walked = jwalk(b, val, s, fr, st, h, ncont, owned, &curs, &curf, &cur);
+	if (walked > 0)
+		return 0;
+	if (walked != 0)
 		return -1;
 	if (h->kind == J_TAG) {
 		int i;
@@ -2643,10 +3132,17 @@ static int japply(struct bctx *b, const struct capn_dyn_struct *s, const struct 
 			return berr(b, val, "no union member named %s", val->s);
 		if (capn_dyn_set_which(curs, cur, mem) != 0)
 			return berr(b, val, "cannot select %s", mem->name);
+		if (union_seen_add(b, union_disc_ptr(cur, curs)) != 0)
+			return berr(b, val, "out of memory");
 		return 0;
 	}
 	if (h->kind == J_VALUE) {
-		const struct capn_dyn_field *mem = active_union_field(curs, cur);
+		const struct capn_dyn_field *mem;
+		/* The tag is applied in an earlier pass. With no tag, the
+		 * value is left unread and the union stays at its wire default. */
+		if (!union_seen_has(b, union_disc_ptr(cur, curs)))
+			return 0;
+		mem = active_union_field(curs, cur);
 		if (mem == NULL)
 			return berr(b, val, "union value without a selected member");
 		return japply_leaf(b, curs, curf, cur, mem, val);
@@ -2689,7 +3185,7 @@ static int fill_struct(struct bctx *b, const struct capn_dyn_struct *s,
 		struct jhit h;
 		memset(&h, 0, sizeof h);
 		if (!jfind(s, fr, obj->k[i], &h, 0))
-			return berr(b, obj->v[i], "no field named %s in %s", obj->k[i], s->name);
+			continue;
 		if (h.kind == J_TAG && japply(b, s, fr, st, &h, obj->v[i]) != 0)
 			return -1;
 	}
@@ -2697,7 +3193,7 @@ static int fill_struct(struct bctx *b, const struct capn_dyn_struct *s,
 		struct jhit h;
 		memset(&h, 0, sizeof h);
 		if (!jfind(s, fr, obj->k[i], &h, 0))
-			return berr(b, obj->v[i], "no field named %s in %s", obj->k[i], s->name);
+			continue;
 		if (h.kind == J_TAG)
 			continue;
 		if (japply(b, s, fr, st, &h, obj->v[i]) != 0)
@@ -2754,6 +3250,7 @@ static int decode(const struct capn_dyn_struct *s, const char *in, size_t len, i
 	*out = st;
 	rc = 0;
 done:
+	free(b.seen);
 	vfree_all(&c);
 	return rc;
 }

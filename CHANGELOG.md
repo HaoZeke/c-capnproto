@@ -10,6 +10,30 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ### Fixed
 
+- JSON `null` is rejected for a struct field. `-010` stays rejected, and
+  nested pretty JSON matches Cap'n Proto 1.4.0 byte for byte.
+- A JSON value for a flattened union is ignored when that union has no
+  tag yet. The discriminant stays at its default, and a flattened struct
+  pointer is allocated empty.
+- Unquoted JSON `9223372036854775807` and `18446744073709551615` are
+  rejected before a 64-bit conversion. `9223372036854774784` and
+  `18446744073709549568` still decode exactly.
+- JSON numbers decode as doubles, matching Cap'n Proto 1.4.0: `9007199254740993`
+  becomes `9007199254740992`, and `18446744073709551615` is out of range.
+  Quoted 64-bit integers stay exact.
+- JSON `null` is rejected for text, data, and list fields. Void `null` is
+  still accepted.
+- An unannotated Data field rejects a JSON string. Number arrays,
+  `$Json.base64`, and `$Json.hex` are unchanged.
+- Unknown JSON field names are ignored.
+- A JSON number with a leading zero, such as `010`, is rejected. `0`,
+  `0.5`, and `-0` stay valid.
+- A JSON `\u` surrogate is stored as its own three-byte sequence, so
+  `\uD83D\uDE00` is `ed a0 bd ed b8 80`.
+- `capn_dyn_to_json` without `CAPN_DYN_COMPACT` pretty-prints with the
+  spacing of `capnp convert binary:json`. Compact JSON is unchanged.
+- A flattened union `$Json.discriminator` value with no tag leaves the
+  union unset. A tag together with the value still selects that member.
 - Reading `List(T)` through a brand uses the bound element size, so a
   data-only struct list is read back in text and JSON.
 - Reading a struct list as `List(Text)` or `List(Data)` returns the
