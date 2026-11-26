@@ -169,3 +169,109 @@ TEST(TextParse, SignedExponentAfterLeadingZero) {
 	EXPECT_EQ(1.0, fval(st, &s.f64s, "f64"));
 }
 
+TEST(TextParse, RejectSpellingsCppRejects) {
+	Schemas &s = schemas();
+	const char *rows[] = {
+	    "(i8 = +7)",       "(f64 = +1.5)",    "(f64 = +0.1e-5)", "(f64 = +inf)",
+	    "(f64 = NaN)",     "(f64 = Infinity)", "(f64 = -Infinity)", "(i64 = 0X10)",
+	    "(i8 = 08)",       "(f64 = 08.5)",    "(e = 2)",         "(e = 0)",
+	    "(e = \"gamma\")", "(d = [171])",
+	};
+	const struct capn_dyn_struct *types[] = {
+	    &s.i8s,  &s.f64s, &s.f64s, &s.f64s, &s.f64s, &s.f64s, &s.f64s,
+	    &s.i64s, &s.i8s,  &s.f64s, &s.ens,  &s.ens,  &s.ens,  &s.datas,
+	};
+	for (size_t i = 0; i < sizeof rows / sizeof rows[0]; i++) {
+		Session sess;
+		capn_ptr st;
+		struct capn_dyn_error err;
+		EXPECT_NE(0, sess.text(types[i], rows[i], &st, &err)) << rows[i];
+		EXPECT_NE('\0', err.message[0]) << rows[i];
+	}
+}
+
+TEST(TextParse, KeptSpellings) {
+	Schemas &s = schemas();
+	Session sess;
+	capn_ptr st;
+	struct capn_dyn_error err;
+	ASSERT_EQ(0, sess.text(&s.f64s, "(f64 = nan)", &st, &err)) << err.message;
+	EXPECT_TRUE(std::isnan(fval(st, &s.f64s, "f64")));
+	ASSERT_EQ(0, sess.text(&s.f64s, "(f64 = inf)", &st, &err)) << err.message;
+	EXPECT_TRUE(std::isinf(fval(st, &s.f64s, "f64")) && fval(st, &s.f64s, "f64") > 0);
+	ASSERT_EQ(0, sess.text(&s.f64s, "(f64 = -inf)", &st, &err)) << err.message;
+	EXPECT_TRUE(std::isinf(fval(st, &s.f64s, "f64")) && fval(st, &s.f64s, "f64") < 0);
+	ASSERT_EQ(0, sess.text(&s.i64s, "(i64 = 0x10)", &st, &err)) << err.message;
+	EXPECT_EQ(16, ival(st, &s.i64s, "i64"));
+	ASSERT_EQ(0, sess.text(&s.ens, "(e = gamma)", &st, &err)) << err.message;
+	EXPECT_EQ(2, ival(st, &s.ens, "e"));
+	ASSERT_EQ(0, sess.text(&s.datas, "(d = 0x\"ab\")", &st, &err)) << err.message;
+	capn_list8 bytes;
+	bytes.p = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.datas, "d"));
+	ASSERT_EQ(1, capn_len(bytes));
+	EXPECT_EQ(0xab, capn_get8(bytes, 0));
+	ASSERT_EQ(0, sess.text(&s.datas, "(d = \"ab\")", &st, &err)) << err.message;
+	bytes.p = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.datas, "d"));
+	ASSERT_EQ(2, capn_len(bytes));
+	EXPECT_EQ('a', capn_get8(bytes, 0));
+	EXPECT_EQ('b', capn_get8(bytes, 1));
+	ASSERT_EQ(0, sess.text(&s.i8s, "(i8 = 7)", &st, &err)) << err.message;
+	EXPECT_EQ(7, ival(st, &s.i8s, "i8"));
+	ASSERT_EQ(0, sess.text(&s.i8s, "(i8 = -5)", &st, &err)) << err.message;
+	EXPECT_EQ(-5, ival(st, &s.i8s, "i8"));
+	ASSERT_EQ(0, sess.text(&s.f64s, "(f64 = -0.0)", &st, &err)) << err.message;
+	EXPECT_TRUE(std::signbit(fval(st, &s.f64s, "f64")));
+	ASSERT_EQ(0, sess.text(&s.f64s, "(f64 = 10.)", &st, &err)) << err.message;
+	EXPECT_EQ(10.0, fval(st, &s.f64s, "f64"));
+	ASSERT_EQ(0, sess.text(&s.f64s, "(f64 = 00.5)", &st, &err)) << err.message;
+	EXPECT_EQ(0.5, fval(st, &s.f64s, "f64"));
+	ASSERT_EQ(0, sess.text(&s.u64s, "(u64 = 0xffffffffffffffff)", &st, &err)) << err.message;
+	EXPECT_EQ(~0ull, capn_dyn_get_bits(st, capn_dyn_find_field(&s.u64s, "u64")));
+	ASSERT_EQ(0, sess.text(&s.i64s, "(i64 = -9223372036854775808)", &st, &err)) << err.message;
+	EXPECT_EQ(INT64_MIN, ival(st, &s.i64s, "i64"));
+	ASSERT_EQ(0, sess.text(&s.f64s, "(f64 = 1e9999)", &st, &err)) << err.message;
+	EXPECT_TRUE(std::isinf(fval(st, &s.f64s, "f64")));
+	EXPECT_NE(0, sess.text(&s.i8s, "(i8 = 0x80)", &st, &err));
+	EXPECT_NE(0, sess.text(&s.f64s, "(f64 = 0.1e)", &st, &err));
+	EXPECT_NE(0, sess.text(&s.f64s, "(f64 = 1e+)", &st, &err));
+}
+
+TEST(TextParse, JsonLeavesStay) {
+	Schemas &s = schemas();
+	Session sess;
+	capn_ptr st;
+	struct capn_dyn_error err;
+	ASSERT_EQ(0, sess.json(&s.f64s, "{\"f64\": 0.1e-5}", &st, &err)) << err.message;
+	EXPECT_EQ(strtod("0.1e-5", nullptr), fval(st, &s.f64s, "f64"));
+	EXPECT_NE(0, sess.json(&s.i8s, "{\"i8\": 010}", &st, &err));
+	ASSERT_EQ(0, sess.json(&s.i8s, "{\"i8\": \"+7\"}", &st, &err)) << err.message;
+	EXPECT_EQ(7, ival(st, &s.i8s, "i8"));
+	ASSERT_EQ(0, sess.json(&s.i64s, "{\"i64\": \"0X10\"}", &st, &err)) << err.message;
+	EXPECT_EQ(16, ival(st, &s.i64s, "i64"));
+	ASSERT_EQ(0, sess.json(&s.i64s, "{\"i64\": \"010\"}", &st, &err)) << err.message;
+	EXPECT_EQ(10, ival(st, &s.i64s, "i64"));
+	ASSERT_EQ(0, sess.json(&s.f64s, "{\"f64\": \"NaN\"}", &st, &err)) << err.message;
+	EXPECT_TRUE(std::isnan(fval(st, &s.f64s, "f64")));
+	ASSERT_EQ(0, sess.json(&s.f64s, "{\"f64\": \"Infinity\"}", &st, &err)) << err.message;
+	EXPECT_TRUE(std::isinf(fval(st, &s.f64s, "f64")) && fval(st, &s.f64s, "f64") > 0);
+	ASSERT_EQ(0, sess.json(&s.f64s, "{\"f64\": \"-Infinity\"}", &st, &err)) << err.message;
+	EXPECT_TRUE(std::isinf(fval(st, &s.f64s, "f64")) && fval(st, &s.f64s, "f64") < 0);
+	ASSERT_EQ(0, sess.json(&s.ens, "{\"e\": 2}", &st, &err)) << err.message;
+	EXPECT_EQ(2, ival(st, &s.ens, "e"));
+	ASSERT_EQ(0, sess.json(&s.ens, "{\"e\": 0}", &st, &err)) << err.message;
+	EXPECT_EQ(0, ival(st, &s.ens, "e"));
+	ASSERT_EQ(0, sess.json(&s.ens, "{\"e\": \"gamma\"}", &st, &err)) << err.message;
+	EXPECT_EQ(2, ival(st, &s.ens, "e"));
+	ASSERT_EQ(0, sess.json(&s.datas, "{\"d\": [171]}", &st, &err)) << err.message;
+	capn_list8 bytes;
+	bytes.p = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.datas, "d"));
+	ASSERT_EQ(1, capn_len(bytes));
+	EXPECT_EQ(171, capn_get8(bytes, 0));
+	ASSERT_EQ(0, sess.json(&s.datas, "{\"d\": [1, 2]}", &st, &err)) << err.message;
+	bytes.p = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.datas, "d"));
+	ASSERT_EQ(2, capn_len(bytes));
+	EXPECT_EQ(1, capn_get8(bytes, 0));
+	EXPECT_EQ(2, capn_get8(bytes, 1));
+	EXPECT_NE(0, sess.json(&s.datas, "{\"d\": \"ab\"}", &st, &err));
+	EXPECT_NE(0, sess.json(&s.outer, "{\"y\": 3}", &st, &err));
+}
