@@ -2505,6 +2505,24 @@ static int str_is(const struct vnode *n, const char *lit)
 	return n->s != NULL && strcmp(n->s, lit) == 0;
 }
 
+/* Text integer tokens are numbers. A float also takes the names nan,
+ * inf, and -inf. A quoted string and a binary literal fill neither.
+ * A bare value and a named field share this check. */
+static int text_number_token(int kind, const struct vnode *val)
+{
+	switch (kind) {
+	case CAPN_DYN_INT8: case CAPN_DYN_INT16: case CAPN_DYN_INT32: case CAPN_DYN_INT64:
+	case CAPN_DYN_UINT8: case CAPN_DYN_UINT16: case CAPN_DYN_UINT32: case CAPN_DYN_UINT64:
+		return val->kind == V_NUM;
+	case CAPN_DYN_FLOAT32: case CAPN_DYN_FLOAT64:
+		return val->kind == V_NUM ||
+		       (val->kind == V_IDENT &&
+		        (str_is(val, "nan") || str_is(val, "inf") || str_is(val, "-inf")));
+	default:
+		return 0;
+	}
+}
+
 /* A JSON number is a double, then checked the way dynamic.c++ checks a
  * float-to-integer conversion: in range of the widened min and max, and
  * equal to that integer when read back as a double. */
@@ -2591,6 +2609,8 @@ static int parse_scalar(struct bctx *b, const struct capn_dyn_type *t,
 		unsigned long long mag;
 		unsigned long long limit;
 
+		if (!b->json && !text_number_token(kind, n))
+			return berr(b, n, "expected an integer");
 		if ((n->kind != V_NUM && n->kind != V_STR) || n->n == 0)
 			return berr(b, n, "expected an integer");
 		/* Text integers and JSON strings stay exact. A JSON number is a double. */
@@ -2629,6 +2649,8 @@ static int parse_scalar(struct bctx *b, const struct capn_dyn_type *t,
 	case CAPN_DYN_FLOAT32:
 	case CAPN_DYN_FLOAT64: {
 		double d;
+		if (!b->json && !text_number_token(kind, n))
+			return berr(b, n, "expected a number");
 		if (n->kind == V_NUM) {
 			int fneg = 0;
 			unsigned long long mag = 0;
@@ -3363,13 +3385,8 @@ static int fill_first_field(struct bctx *b, const struct capn_dyn_struct *s,
 		break;
 	case CAPN_DYN_INT8: case CAPN_DYN_INT16: case CAPN_DYN_INT32: case CAPN_DYN_INT64:
 	case CAPN_DYN_UINT8: case CAPN_DYN_UINT16: case CAPN_DYN_UINT32: case CAPN_DYN_UINT64:
-		if (val->kind != V_NUM)
-			return berr(b, val, "expected an object for %s", s->name);
-		break;
 	case CAPN_DYN_FLOAT32: case CAPN_DYN_FLOAT64:
-		if (!(val->kind == V_NUM ||
-		      (val->kind == V_IDENT &&
-		       (str_is(val, "nan") || str_is(val, "inf") || str_is(val, "-inf")))))
+		if (!text_number_token(rt->kind, val))
 			return berr(b, val, "expected an object for %s", s->name);
 		break;
 	case CAPN_DYN_TEXT:
