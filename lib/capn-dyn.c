@@ -1747,6 +1747,7 @@ enum { V_NULL, V_BOOL, V_NUM, V_STR, V_IDENT, V_LIST, V_OBJ };
 struct vnode {
 	int kind;
 	int off;
+	int blob;
 	char *s;
 	size_t n;
 	struct vnode **v;
@@ -2170,6 +2171,115 @@ static int is_ident_char(int ch)
 	       (ch >= '0' && ch <= '9') || ch == '_';
 }
 
+/* A C++ number ends before a letter, '_' or '.'. Digits are a valid end. */
+static int num_boundary(int ch)
+{
+	if (ch < 0)
+		return 1;
+	if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_' || ch == '.')
+		return 0;
+	return 1;
+}
+
+/* Schema integer: 0x + hex, a leading 0 + octal digits, or a decimal.
+ * The octal form wins on a short match, so 08 and 08.5 stop after the 0. */
+static int match_integer(const char *p, size_t len, size_t pos, size_t *end)
+{
+	size_t j;
+	int next;
+
+	if (pos >= len || p[pos] < '0' || p[pos] > '9')
+		return 0;
+	if (p[pos] == '0' && pos + 1 < len && p[pos + 1] == 'x') {
+		j = pos + 2;
+		if (j >= len || hexval((unsigned char) p[j]) < 0)
+			return 0;
+		while (j < len && hexval((unsigned char) p[j]) >= 0)
+			j++;
+		next = j < len ? (unsigned char) p[j] : -1;
+		if (!num_boundary(next))
+			return 0;
+		*end = j;
+		return 1;
+	}
+	if (p[pos] == '0') {
+		j = pos + 1;
+		while (j < len && p[j] >= '0' && p[j] <= '7')
+			j++;
+		next = j < len ? (unsigned char) p[j] : -1;
+		if (!num_boundary(next))
+			return 0;
+		*end = j;
+		return 1;
+	}
+	j = pos + 1;
+	while (j < len && p[j] >= '0' && p[j] <= '9')
+		j++;
+	next = j < len ? (unsigned char) p[j] : -1;
+	if (!num_boundary(next))
+		return 0;
+	*end = j;
+	return 1;
+}
+
+/* Schema float. The exponent sign is part of the token after a leading 0. */
+static int match_float(const char *p, size_t len, size_t pos, size_t *end)
+{
+	size_t j = pos;
+	int next;
+
+	if (j >= len || p[j] < '0' || p[j] > '9')
+		return 0;
+	while (j < len && p[j] >= '0' && p[j] <= '9')
+		j++;
+	if (j < len && p[j] == '.') {
+		j++;
+		while (j < len && p[j] >= '0' && p[j] <= '9')
+			j++;
+	}
+	if (j < len && (p[j] == 'e' || p[j] == 'E')) {
+		j++;
+		if (j < len && (p[j] == '+' || p[j] == '-'))
+			j++;
+		while (j < len && p[j] >= '0' && p[j] <= '9')
+			j++;
+	}
+	next = j < len ? (unsigned char) p[j] : -1;
+	if (!num_boundary(next))
+		return 0;
+	*end = j;
+	return 1;
+}
+
+/* Text integer spelling, magnitude in uint64. Leading 0 is octal, 0x is hex.
+ * A leading + is rejected. Returns 0 on a full match. */
+static int text_int_mag(const char *s, int *neg, unsigned long long *mag)
+{
+	char *end;
+	int base;
+
+	*neg = 0;
+	if (*s == '-') {
+		*neg = 1;
+		s++;
+	}
+	if (*s < '0' || *s > '9')
+		return -1;
+	if (s[0] == '0' && s[1] == 'x')
+		base = 16;
+	else if (s[0] == '0' && s[1] == 'X')
+		return -1;
+	else if (s[0] == '0')
+		base = 8;
+	else
+		base = 10;
+	errno = 0;
+	*mag = strtoull(s, &end, base);
+	if (end == s || *end != '\0' || errno == ERANGE)
+		return -1;
+	return 0;
+}
+
 static struct vnode *parse_text(struct pctx *c)
 {
 	struct vnode *n;
@@ -2319,21 +2429,39 @@ static struct vnode *parse_text(struct pctx *c)
 		out[o] = '\0';
 		n->s = out;
 		n->n = o;
+		n->blob = 1;
 		return n;
 	}
-	if (ch == '-' || ch == '+' || (ch >= '0' && ch <= '9')) {
-		size_t b = c->pos;
-		c->pos++;
-		if (c->pos < c->len && is_ident_char(c->p[c->pos]) == 0 && c->p[c->pos] != '.')
-			return token_node(c, V_NUM, start, c->pos);
-		while (c->pos < c->len && (is_ident_char(c->p[c->pos]) || c->p[c->pos] == '.' ||
-		       ((c->p[c->pos] == '-' || c->p[c->pos] == '+') &&
-		        (c->p[c->pos - 1] == 'e' || c->p[c->pos - 1] == 'E') && c->p[b] != '0')))
-			c->pos++;
-		/* "-inf" and "inf" are names; every other run is a number. */
-		if (c->pos - b >= 2 && c->p[b] == '-' && is_ident_char(c->p[b + 1]) &&
-		    !(c->p[b + 1] >= '0' && c->p[b + 1] <= '9'))
-			return token_node(c, V_IDENT, start, c->pos);
+	if (ch == '-' || (ch >= '0' && ch <= '9')) {
+		size_t dig, end = 0;
+		int letter;
+
+		/* "-inf" is one name. A leading + fails. */
+		if (ch == '-') {
+			letter = c->pos + 1 < c->len &&
+			         (((c->p[c->pos + 1] >= 'a' && c->p[c->pos + 1] <= 'z') ||
+			           (c->p[c->pos + 1] >= 'A' && c->p[c->pos + 1] <= 'Z') ||
+			           c->p[c->pos + 1] == '_'));
+			if (letter) {
+				c->pos++;
+				while (c->pos < c->len && is_ident_char(c->p[c->pos]))
+					c->pos++;
+				return token_node(c, V_IDENT, start, c->pos);
+			}
+			if (c->pos + 1 >= c->len || c->p[c->pos + 1] < '0' || c->p[c->pos + 1] > '9') {
+				perr(c, start, "unexpected character");
+				return NULL;
+			}
+			dig = c->pos + 1;
+		} else {
+			dig = c->pos;
+		}
+		if (!match_integer(c->p, c->len, dig, &end) &&
+		    !match_float(c->p, c->len, dig, &end)) {
+			perr(c, start, "unexpected character");
+			return NULL;
+		}
+		c->pos = end;
 		return token_node(c, V_NUM, start, c->pos);
 	}
 	if (is_ident_char(ch)) {
@@ -2469,15 +2597,21 @@ static int parse_scalar(struct bctx *b, const struct capn_dyn_type *t,
 		if (b->json && n->kind == V_NUM)
 			return json_number_as_int(b, n, kind, bits);
 		s = n->s;
-		neg = (*s == '-');
-		if (*s == '-' || *s == '+')
-			s++;
-		if (!(*s >= '0' && *s <= '9'))
-			return berr(b, n, "expected an integer");
-		errno = 0;
-		mag = strtoull(s, &end, (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) ? 16 : 10);
-		if (*end != '\0' || errno == ERANGE)
-			return berr(b, n, "integer out of range or malformed");
+		if (!b->json && n->kind == V_NUM) {
+			/* Text spelling: leading 0 is octal. Upper-case 0X fails. */
+			if (text_int_mag(s, &neg, &mag) != 0)
+				return berr(b, n, "integer out of range or malformed");
+		} else {
+			neg = (*s == '-');
+			if (*s == '-' || *s == '+')
+				s++;
+			if (!(*s >= '0' && *s <= '9'))
+				return berr(b, n, "expected an integer");
+			errno = 0;
+			mag = strtoull(s, &end, (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) ? 16 : 10);
+			if (*end != '\0' || errno == ERANGE)
+				return berr(b, n, "integer out of range or malformed");
+		}
 		limit = sgn ? (1ull << (w - 1)) : (w == 64 ? ~0ull : (1ull << w) - 1);
 		if (neg) {
 			if (!sgn || mag > limit)
@@ -2496,12 +2630,31 @@ static int parse_scalar(struct bctx *b, const struct capn_dyn_type *t,
 	case CAPN_DYN_FLOAT64: {
 		double d;
 		if (n->kind == V_NUM) {
-			errno = 0;
-			d = strtod(n->s, &end);
-			if (*end != '\0')
+			int fneg = 0;
+			unsigned long long mag = 0;
+			if (!b->json && text_int_mag(n->s, &fneg, &mag) == 0) {
+				/* An integer token converts as that integer, so 010 is 8. */
+				if (fneg && mag > (unsigned long long) INT64_MAX + 1ull)
+					return berr(b, n, "expected a number");
+				if (fneg && mag != 0)
+					d = -(double) mag;
+				else
+					d = (double) mag;
+			} else if (!b->json && n->s[0] == '+') {
 				return berr(b, n, "expected a number");
+			} else {
+				errno = 0;
+				d = strtod(n->s, &end);
+				if (*end != '\0')
+					return berr(b, n, "expected a number");
+			}
 		} else if (n->kind == V_STR || n->kind == V_IDENT) {
-			if (str_is(n, "NaN") || str_is(n, "nan")) d = NAN;
+			if (!b->json && n->kind == V_IDENT) {
+				if (str_is(n, "nan")) d = NAN;
+				else if (str_is(n, "inf")) d = INFINITY;
+				else if (str_is(n, "-inf")) d = -INFINITY;
+				else return berr(b, n, "expected a number");
+			} else if (str_is(n, "NaN") || str_is(n, "nan")) d = NAN;
 			else if (str_is(n, "Infinity") || str_is(n, "inf")) d = INFINITY;
 			else if (str_is(n, "-Infinity") || str_is(n, "-inf")) d = -INFINITY;
 			else return berr(b, n, "expected a number");
@@ -2516,6 +2669,8 @@ static int parse_scalar(struct bctx *b, const struct capn_dyn_type *t,
 	}
 	case CAPN_DYN_ENUM: {
 		int i;
+		if (!b->json && n->kind != V_IDENT)
+			return berr(b, n, "expected an enumerant name");
 		if ((n->kind == V_STR || n->kind == V_IDENT) && t->en != NULL) {
 			for (i = 0; i < t->en->n; i++) {
 				const char *jn = t->en->json_names != NULL ? t->en->json_names[i] : NULL;
@@ -2530,7 +2685,7 @@ static int parse_scalar(struct bctx *b, const struct capn_dyn_type *t,
 			}
 			return berr(b, n, "no such enumerant: %s", n->s);
 		}
-		if (n->kind == V_NUM) {
+		if (b->json && n->kind == V_NUM) {
 			unsigned long v = strtoul(n->s, &end, 10);
 			if (*end == '\0' && v < 65536) {
 				*bits = v;
@@ -2545,7 +2700,8 @@ static int parse_scalar(struct bctx *b, const struct capn_dyn_type *t,
 }
 
 static int fill_struct(struct bctx *b, const struct capn_dyn_struct *s,
-                       const struct frame *fr, capn_ptr st, const struct vnode *obj);
+                       const struct frame *fr, capn_ptr st, const struct vnode *obj,
+                       int nested);
 
 static int build_data(struct bctx *b, struct capn_segment *seg, const struct vnode *n, capn_ptr *out)
 {
@@ -2568,6 +2724,9 @@ static int build_data(struct bctx *b, struct capn_segment *seg, const struct vno
 		return 0;
 	}
 	if (n->kind == V_LIST) {
+		/* JSON data is a byte list. Text data is a string or 0x"...". */
+		if (!b->json)
+			return berr(b, n, "expected data");
 		l = capn_new_list8(seg, n->count);
 		if (l.p.type == CAPN_NULL)
 			return berr(b, n, "out of memory");
@@ -2587,7 +2746,7 @@ static int build_data(struct bctx *b, struct capn_segment *seg, const struct vno
 static int set_text_at(struct bctx *b, capn_ptr container, int off, const struct vnode *n)
 {
 	capn_text t;
-	if (n->kind != V_STR)
+	if (n->kind != V_STR || n->blob)
 		return berr(b, n, "expected text");
 	if (n->n > (size_t) INT_MAX)
 		return berr(b, n, "text too long");
@@ -2721,7 +2880,7 @@ static int build_list(struct bctx *b, struct capn_segment *seg, const struct cap
 			struct frame nf;
 			capn_ptr elt = capn_getp(list, i, 0);
 			enter_struct(&nf, et, efr);
-			if (fill_struct(b, et->st, &nf, elt, el) != 0)
+			if (fill_struct(b, et->st, &nf, elt, el, 1) != 0)
 				return -1;
 			break;
 		}
@@ -2918,7 +3077,7 @@ static int assign_field(struct bctx *b, const struct capn_dyn_struct *s, const s
 		if (sub.type == CAPN_NULL)
 			return berr(b, val, "could not allocate the struct");
 		enter_struct(&nf, rt, ffr);
-		if (fill_struct(b, rt->st, &nf, sub, val) != 0)
+		if (fill_struct(b, rt->st, &nf, sub, val, 1) != 0)
 			return -1;
 		return capn_setp(st, (int) f->offset, sub) ? berr(b, val, "could not store struct") : 0;
 	}
@@ -3118,7 +3277,7 @@ static int japply_leaf(struct bctx *b, const struct capn_dyn_struct *s, const st
 	if (f->is_group) {
 		if (rt->st == NULL)
 			return berr(b, val, "group %s has no descriptor", f->name);
-		return fill_struct(b, rt->st, fr, st, val);
+		return fill_struct(b, rt->st, fr, st, val, 1);
 	}
 	return assign_field(b, s, fr, st, f, rt, ffr, val);
 }
@@ -3174,13 +3333,69 @@ static int japply(struct bctx *b, const struct capn_dyn_struct *s, const struct 
 	return japply_leaf(b, h->step[h->n - 1].owner, curf, cur, h->step[h->n - 1].f, val);
 }
 
+/* A bare value fills the struct's first field only when the token matches
+ * that field. A string stays text and a binary literal stays data, so
+ * neither fills an integer. The root value stays an object. JSON is
+ * unchanged. */
+static int fill_first_field(struct bctx *b, const struct capn_dyn_struct *s,
+                            const struct frame *fr, capn_ptr st, const struct vnode *val)
+{
+	const struct capn_dyn_field *f;
+	const struct frame *ffr;
+	const struct capn_dyn_type *rt;
+
+	if (s->nfields < 1)
+		return berr(b, val, "expected an object for %s", s->name);
+	f = &s->fields[0];
+	if (f->is_group)
+		return berr(b, val, "expected an object for %s", s->name);
+	ffr = fr;
+	rt = resolve(&f->type, &ffr);
+	switch (rt->kind) {
+	case CAPN_DYN_VOID:
+		if (!(val->kind == V_IDENT && str_is(val, "void")))
+			return berr(b, val, "expected an object for %s", s->name);
+		break;
+	case CAPN_DYN_BOOL:
+		if (!(val->kind == V_IDENT &&
+		      (str_is(val, "true") || str_is(val, "false"))))
+			return berr(b, val, "expected an object for %s", s->name);
+		break;
+	case CAPN_DYN_INT8: case CAPN_DYN_INT16: case CAPN_DYN_INT32: case CAPN_DYN_INT64:
+	case CAPN_DYN_UINT8: case CAPN_DYN_UINT16: case CAPN_DYN_UINT32: case CAPN_DYN_UINT64:
+		if (val->kind != V_NUM)
+			return berr(b, val, "expected an object for %s", s->name);
+		break;
+	case CAPN_DYN_FLOAT32: case CAPN_DYN_FLOAT64:
+		if (!(val->kind == V_NUM ||
+		      (val->kind == V_IDENT &&
+		       (str_is(val, "nan") || str_is(val, "inf") || str_is(val, "-inf")))))
+			return berr(b, val, "expected an object for %s", s->name);
+		break;
+	case CAPN_DYN_TEXT:
+		if (val->kind != V_STR || val->blob)
+			return berr(b, val, "expected an object for %s", s->name);
+		break;
+	default:
+		return berr(b, val, "expected an object for %s", s->name);
+	}
+	if (f->discriminant != CAPN_DYN_NO_DISCRIMINANT &&
+	    capn_dyn_set_which(s, st, f) != 0)
+		return berr(b, val, "cannot select %s", f->name);
+	return assign_field(b, s, fr, st, f, rt, ffr, val);
+}
+
 static int fill_struct(struct bctx *b, const struct capn_dyn_struct *s,
-                       const struct frame *fr, capn_ptr st, const struct vnode *obj)
+                       const struct frame *fr, capn_ptr st, const struct vnode *obj,
+                       int nested)
 {
 	int i;
 
-	if (obj->kind != V_OBJ)
+	if (obj->kind != V_OBJ) {
+		if (nested && !b->json)
+			return fill_first_field(b, s, fr, st, obj);
 		return berr(b, obj, "expected an object for %s", s->name);
+	}
 	if (!b->json) {
 		for (i = 0; i < obj->count; i++) {
 			const struct capn_dyn_field *f = capn_dyn_find_field(s, obj->k[i]);
@@ -3196,7 +3411,7 @@ static int fill_struct(struct bctx *b, const struct capn_dyn_struct *s,
 			if (f->is_group) {
 				if (rt->st == NULL)
 					return berr(b, obj->v[i], "group %s has no descriptor", f->name);
-				if (fill_struct(b, rt->st, fr, st, obj->v[i]) != 0)
+				if (fill_struct(b, rt->st, fr, st, obj->v[i], 1) != 0)
 					return -1;
 			} else if (assign_field(b, s, fr, st, f, rt, ffr, obj->v[i]) != 0) {
 				return -1;
@@ -3269,7 +3484,7 @@ static int decode(const struct capn_dyn_struct *s, const char *in, size_t len, i
 		berr(&b, root, "could not allocate the struct");
 		goto done;
 	}
-	if (fill_struct(&b, s, NULL, st, root) != 0)
+	if (fill_struct(&b, s, NULL, st, root, 0) != 0)
 		goto done;
 	*out = st;
 	rc = 0;

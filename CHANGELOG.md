@@ -17,6 +17,19 @@ Pre-1.0 minor releases may include breaking wire or API changes.
   compiles them.
 - `$Json.hex` decodes the strings Cap'n Proto 1.4.0 `kj::decodeHex` decodes. Odd length `0` is empty and `zz` is a zero byte.
 - `$Json.base64` decodes the strings Cap'n Proto 1.4.0 `kj::decodeBase64` decodes. `YWI`, `AA==AAAA`, and `AA=A` keep those bytes.
+- A text float with a leading zero accepts a signed exponent, so `0.1e-5`,
+  `0e-1` and `0.5e+2` parse.
+- Text input rejects a leading plus, the names `NaN` and `Infinity`, an
+  upper-case `0X` prefix, a leading zero outside octal digits, a numeric or
+  quoted enumerant, and a number list used as Data.
+- A text integer with a leading `0` is octal, so `010` is 8. `0` and `00`
+  stay 0.
+- A bare text value in a struct field fills that struct's first field, so
+  a list of numbers can build a list of structs.
+- A binary literal is rejected for Text, both as a named field and as a
+  bare first field.
+- A bare value fills a struct's first field only when it matches that
+  field, so a quoted string or a binary literal is rejected for an integer.
 - JSON `null` is rejected for a struct field. `-010` stays rejected, and
   nested pretty JSON matches Cap'n Proto 1.4.0 byte for byte.
 - A JSON value for a flattened union is ignored when that union has no
