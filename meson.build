@@ -479,12 +479,13 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
   test('spell-finish-test', spell_finish_test)
 
   # The struct layout grew, so the shared object name moved with it.
+  # ELF uses readelf. Mach-O uses otool -D. Neither format exits 77.
   test(
     'soname',
     find_program('sh', native: true),
     args: [
-      '-c',
-      'readelf -d "' + libcapnp_c.full_path() + '" | grep -q "libcapnp_c.so.2"',
+      meson.project_source_root() / 'scripts' / 'check-soname.sh',
+      libcapnp_c.full_path(),
     ],
   )
 
