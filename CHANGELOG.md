@@ -10,6 +10,8 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ### Fixed
 
+- `$Json.hex` decodes the strings Cap'n Proto 1.4.0 `kj::decodeHex` decodes. Odd length `0` is empty and `zz` is a zero byte.
+- `$Json.base64` decodes the strings Cap'n Proto 1.4.0 `kj::decodeBase64` decodes. `YWI`, `AA==AAAA`, and `AA=A` keep those bytes.
 - JSON `null` is rejected for a struct field. `-010` stays rejected, and
   nested pretty JSON matches Cap'n Proto 1.4.0 byte for byte.
 - A JSON value for a flattened union is ignored when that union has no
