@@ -30,6 +30,9 @@ Pre-1.0 minor releases may include breaking wire or API changes.
   bare first field.
 - A bare value fills a struct's first field only when it matches that
   field, so a quoted string or a binary literal is rejected for an integer.
+- A named integer or float in text input rejects a quoted string and a
+  binary literal, as does a list element of those types. JSON integer
+  strings stay exact.
 - JSON `null` is rejected for a struct field. `-010` stays rejected, and
   nested pretty JSON matches Cap'n Proto 1.4.0 byte for byte.
 - A JSON value for a flattened union is ignored when that union has no
