@@ -10,6 +10,11 @@ Pre-1.0 minor releases may include breaking wire or API changes.
 
 ### Fixed
 
+- The soname test reads a Mach-O install name with `otool -D`, and RPC
+  listeners are detected with `netstat` when `/proc/net/tcp` is absent.
+- RPC promise and release servers bind loopback through
+  `posix_loopback_addr()`, so macOS with `_POSIX_C_SOURCE=200809L`
+  compiles them.
 - `$Json.hex` decodes the strings Cap'n Proto 1.4.0 `kj::decodeHex` decodes. Odd length `0` is empty and `zz` is a zero byte.
 - `$Json.base64` decodes the strings Cap'n Proto 1.4.0 `kj::decodeBase64` decodes. `YWI`, `AA==AAAA`, and `AA=A` keep those bytes.
 - JSON `null` is rejected for a struct field. `-010` stays rejected, and

@@ -6,6 +6,8 @@ SERVER=$1
 CLIENT=$2
 SPID=
 SPID2=
+# shellcheck source=listen_table.sh
+. "$(dirname "$0")/listen_table.sh"
 
 # Wait until pid is listening on port. A connect would be accepted by a
 # server that takes one client, so look at the listen table instead.
@@ -13,15 +15,13 @@ SPID2=
 wait_for_listen() {
 	port=$1
 	pid=$2
-	hex=$(printf '%04X' "$port")
 	i=0
 	while [ "$i" -lt 50 ]; do
 		if ! kill -0 "$pid" 2>/dev/null; then
 			echo "server $pid exited before listening on $port" >&2
 			return 1
 		fi
-		if awk -v h="$hex" '$2 ~ ":" h "$" && $4 == "0A" { found = 1 } END { exit !found }' \
-			/proc/net/tcp /proc/net/tcp6 2>/dev/null; then
+		if port_listening "$port"; then
 			return 0
 		fi
 		i=$((i + 1))
@@ -73,9 +73,7 @@ start_peer() {
 pick_port() {
 	while :; do
 		p=$((RANDOM % 20000 + 30000))
-		h=$(printf '%04X' "$p")
-		if ! awk -v h="$h" '$2 ~ ":" h "$" { found = 1 } END { exit !found }' \
-			/proc/net/tcp /proc/net/tcp6 2>/dev/null; then
+		if ! port_in_use "$p"; then
 			echo "$p"
 			return
 		fi
