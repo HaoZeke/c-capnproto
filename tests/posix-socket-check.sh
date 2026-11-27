@@ -3,7 +3,8 @@
 set -eu
 CC=$1
 ROOT=$2
-for src in interop/frame_wrap_test.c interop/rpc_server.c; do
+for src in interop/frame_wrap_test.c interop/release_c_server.c \
+	interop/rpc_promise_server.c interop/rpc_server.c; do
   "$CC" -std=c99 -D_POSIX_C_SOURCE=200809L -fsyntax-only \
     -include "$ROOT/tests/no-bsd-socket.h" \
     -I"$ROOT/interop" -I"$ROOT/lib" -I"$ROOT/compiler" "$ROOT/$src"

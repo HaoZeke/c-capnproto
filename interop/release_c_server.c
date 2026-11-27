@@ -7,6 +7,8 @@
  * `release_c_server <port>`.
  */
 
+#include "posix_net.h"
+
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <stdint.h>
@@ -86,7 +88,7 @@ int main(int argc, char **argv)
 	memset(&addr, 0, sizeof addr);
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons((uint16_t)port);
-	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	addr.sin_addr.s_addr = posix_loopback_addr();
 	if (bind(lst, (struct sockaddr *)&addr, sizeof addr) != 0 ||
 	    listen(lst, 1) != 0) {
 		perror("listen");
