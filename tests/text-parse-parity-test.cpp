@@ -23,9 +23,10 @@ struct Schemas {
 	struct capn_dyn_field outer_fields[2];
 	struct capn_dyn_field tf;
 	struct capn_dyn_field box_fields[3];
-	struct capn_dyn_type text_st, data_st;
+	struct capn_dyn_field nest_f;
+	struct capn_dyn_type text_st, data_st, f64_st;
 	struct capn_dyn_struct f64s, f32s, i8s, i64s, u64s, ens, data_values, lists;
-	struct capn_dyn_struct cell, outer, l32, texts, box;
+	struct capn_dyn_struct cell, outer, l32, texts, box, nest;
 };
 
 static struct capn_dyn_type scalar(uint8_t kind)
@@ -119,6 +120,11 @@ static Schemas &schemas()
 	set_field(&s.box_fields[1], "d", s.data_st, 1);
 	set_field(&s.box_fields[2], "i", s.cell_type, 2);
 	set_struct(&s.box, "Box", 0, 3, 3, s.box_fields);
+
+	s.f64_st = scalar(CAPN_DYN_STRUCT);
+	s.f64_st.st = &s.f64s;
+	set_field(&s.nest_f, "f", s.f64_st, 0);
+	set_struct(&s.nest, "Nest", 0, 1, 1, &s.nest_f);
 
 	ready = 1;
 	return s;
@@ -369,4 +375,44 @@ TEST(TextParse, BareValueMatchesFirstField) {
 	EXPECT_EQ(0, rc) << err.message;
 	rc = sess.text(&s.data_values, "(d = \"a\")", &st, &err);
 	EXPECT_EQ(0, rc) << err.message;
+}
+
+TEST(TextParse, BareIntRejectsStringAndBinary) {
+	Schemas &s = schemas();
+	const char *rows[] = {
+	    "(y = \"3\")",
+	    "(y = 0x\"31\")",
+	    "(xs = [\"3\"])",
+	    "(xs = [0x\"31\"])",
+	};
+	for (size_t i = 0; i < sizeof rows / sizeof rows[0]; i++) {
+		Session sess;
+		capn_ptr st;
+		struct capn_dyn_error err;
+		EXPECT_NE(0, sess.text(&s.outer, rows[i], &st, &err)) << rows[i];
+		EXPECT_NE('\0', err.message[0]) << rows[i];
+	}
+	Session sess;
+	capn_ptr st;
+	struct capn_dyn_error err;
+	capn_ptr inner;
+	ASSERT_EQ(0, sess.text(&s.outer, "(y = 010)", &st, &err)) << err.message;
+	EXPECT_EQ("(y = (a = 8))", rendered(&s.outer, st));
+	ASSERT_EQ(0, sess.text(&s.nest, "(f = nan)", &st, &err)) << err.message;
+	inner = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.nest, "f"));
+	EXPECT_TRUE(std::isnan(fval(inner, &s.f64s, "f64")));
+	ASSERT_EQ(0, sess.text(&s.nest, "(f = inf)", &st, &err)) << err.message;
+	inner = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.nest, "f"));
+	EXPECT_TRUE(std::isinf(fval(inner, &s.f64s, "f64")) && fval(inner, &s.f64s, "f64") > 0);
+	ASSERT_EQ(0, sess.text(&s.nest, "(f = -inf)", &st, &err)) << err.message;
+	inner = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.nest, "f"));
+	EXPECT_TRUE(std::isinf(fval(inner, &s.f64s, "f64")) && fval(inner, &s.f64s, "f64") < 0);
+	ASSERT_EQ(0, sess.text(&s.nest, "(f = 010)", &st, &err)) << err.message;
+	inner = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.nest, "f"));
+	EXPECT_EQ(8.0, fval(inner, &s.f64s, "f64"));
+	ASSERT_EQ(0, sess.text(&s.nest, "(f = 1.5)", &st, &err)) << err.message;
+	inner = capn_dyn_get_ptr(st, capn_dyn_find_field(&s.nest, "f"));
+	EXPECT_EQ(1.5, fval(inner, &s.f64s, "f64"));
+	EXPECT_NE(0, sess.text(&s.nest, "(f = \"nan\")", &st, &err));
+	EXPECT_NE(0, sess.text(&s.nest, "(f = 0x\"31\")", &st, &err));
 }

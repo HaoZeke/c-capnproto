@@ -3333,8 +3333,10 @@ static int japply(struct bctx *b, const struct capn_dyn_struct *s, const struct 
 	return japply_leaf(b, h->step[h->n - 1].owner, curf, cur, h->step[h->n - 1].f, val);
 }
 
-/* A bare value fills the struct's first field when that field's assignment
- * accepts the value. The root value stays an object. JSON is unchanged. */
+/* A bare value fills the struct's first field only when the token matches
+ * that field. A string stays text and a binary literal stays data, so
+ * neither fills an integer. The root value stays an object. JSON is
+ * unchanged. */
 static int fill_first_field(struct bctx *b, const struct capn_dyn_struct *s,
                             const struct frame *fr, capn_ptr st, const struct vnode *val)
 {
@@ -3355,10 +3357,24 @@ static int fill_first_field(struct bctx *b, const struct capn_dyn_struct *s,
 			return berr(b, val, "expected an object for %s", s->name);
 		break;
 	case CAPN_DYN_BOOL:
+		if (!(val->kind == V_IDENT &&
+		      (str_is(val, "true") || str_is(val, "false"))))
+			return berr(b, val, "expected an object for %s", s->name);
+		break;
 	case CAPN_DYN_INT8: case CAPN_DYN_INT16: case CAPN_DYN_INT32: case CAPN_DYN_INT64:
 	case CAPN_DYN_UINT8: case CAPN_DYN_UINT16: case CAPN_DYN_UINT32: case CAPN_DYN_UINT64:
+		if (val->kind != V_NUM)
+			return berr(b, val, "expected an object for %s", s->name);
+		break;
 	case CAPN_DYN_FLOAT32: case CAPN_DYN_FLOAT64:
+		if (!(val->kind == V_NUM ||
+		      (val->kind == V_IDENT &&
+		       (str_is(val, "nan") || str_is(val, "inf") || str_is(val, "-inf")))))
+			return berr(b, val, "expected an object for %s", s->name);
+		break;
 	case CAPN_DYN_TEXT:
+		if (val->kind != V_STR || val->blob)
+			return berr(b, val, "expected an object for %s", s->name);
 		break;
 	default:
 		return berr(b, val, "expected an object for %s", s->name);

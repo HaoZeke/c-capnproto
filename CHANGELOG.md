@@ -28,6 +28,8 @@ Pre-1.0 minor releases may include breaking wire or API changes.
   a list of numbers can build a list of structs.
 - A binary literal is rejected for Text, both as a named field and as a
   bare first field.
+- A bare value fills a struct's first field only when it matches that
+  field, so a quoted string or a binary literal is rejected for an integer.
 - JSON `null` is rejected for a struct field. `-010` stays rejected, and
   nested pretty JSON matches Cap'n Proto 1.4.0 byte for byte.
 - A JSON value for a flattened union is ignored when that union has no
