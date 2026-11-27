@@ -1,7 +1,8 @@
 #!/bin/sh
 # ELF soname is libcapnp_c.so.2 (readelf -d). A Mach-O build records
-# soversion 2 in the install name (@rpath/libcapnp_c.2.dylib), which
-# otool -D prints on the lines after the file header. Exit 77 when the
+# soversion 2 in the install name (@rpath/libcapnp_c.2.dylib). otool -D
+# prints a header line per architecture, then that arch's install name.
+# Skip headers and require every install name to match. Exit 77 when the
 # file is neither format or the matching tool is missing.
 set -eu
 lib=${1:?}
@@ -18,7 +19,11 @@ feedfacf|cffaedfe|feedface|cefaedfe|cafebabe|bebafeca)
 	if ! command -v otool >/dev/null 2>&1; then
 		exit 77
 	fi
-	otool -D "$lib" | awk 'NR > 1 && index($0, "libcapnp_c.2.dylib") { found = 1 } END { exit !found }'
+	otool -D "$lib" | awk '
+		NR == 1 || /:$/ { next }
+		{ n++; if (index($0, "libcapnp_c.2.dylib") == 0) bad = 1 }
+		END { exit !(n && !bad) }
+	'
 	;;
 *)
 	exit 77

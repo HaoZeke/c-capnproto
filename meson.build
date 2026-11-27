@@ -499,6 +499,13 @@ if not meson.is_subproject() and get_option('enable_tests').allowed()
       libcapnp_c.full_path(),
     ],
   )
+  test(
+    'soname-parse',
+    find_program('sh', native: true),
+    args: [
+      meson.project_source_root() / 'scripts' / 'check-soname-parse.sh',
+    ],
+  )
 
   if have_host_capnp
     test(
